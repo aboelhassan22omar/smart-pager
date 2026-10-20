@@ -771,3 +771,16 @@
   color: var(--muted);
   font-size: var(--fs-xs);
 }
+
+.backup-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  margin-top: 10px;
+}
+
+.backup-line p {
+  margin: 0;
+}

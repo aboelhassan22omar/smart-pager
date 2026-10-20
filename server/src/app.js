@@ -9,6 +9,7 @@ import { createNotifier } from './notify/index.js';
 import { PUBLIC_DIR } from './paths.js';
 import { ensureSecrets } from './secrets.js';
 import { createService } from './service.js';
+import { scheduleBackups } from './backup.js';
 import { runWeeklySummaries } from './summary.js';
 import adminRoutes from './routes/admin.js';
 import barRoutes from './routes/bar.js';
@@ -108,6 +109,7 @@ export async function buildApp(config) {
   const summaries = setInterval(() => {
     runWeeklySummaries({ config, control, tenants, screens, log: app.log }).catch((err) => app.log.error({ err }, 'weekly summary job failed'));
   }, 3600_000);
+  const stopBackups = scheduleBackups({ config, control, tenants, log: app.log });
   app.addHook('onReady', async () => {
     service.runJobs();
     control.refreshPlanStatuses();
@@ -118,6 +120,7 @@ export async function buildApp(config) {
     clearInterval(plans);
     clearInterval(rollups);
     clearInterval(summaries);
+    stopBackups();
     notifier.close();
     tenants.closeAll();
     control.close();

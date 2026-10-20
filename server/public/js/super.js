@@ -81,6 +81,13 @@ function attentionItems() {
       }
     }
   }
+  // Backups: nightly at 03:30; a failure or a gap of more than a day and a half needs a look.
+  const backup = overview.backup;
+  if (backup && !backup.ok) {
+    items.push({ tone: 'alert', text: `النسخة الاحتياطية بتاعة ${backup.day} فشلت: ${backup.errors[0] ?? ''}`, act: 'backup', id: '', label: 'جرّب تاني' });
+  } else if (backup && Date.now() - backup.at > 36 * 3600_000) {
+    items.push({ tone: 'alert', text: `آخر نسخة احتياطية من ${ago(backup.at)}`, act: 'backup', id: '', label: 'اعمل نسخة دلوقتي' });
+  }
   const dayAgo = Date.now() - 86400000;
   const failed = activity.filter((e) => e.action === 'super.login_failed' && e.at > dayAgo).length;
   if (failed >= 3) items.push({ tone: 'alert', text: `${failed} محاولات دخول غلط للوحة الإدارة في آخر 24 ساعة` });
@@ -88,7 +95,17 @@ function attentionItems() {
   return items.sort((a, b) => (b.tone === 'alert') - (a.tone === 'alert'));
 }
 
+function renderBackupLine() {
+  const b = overview.backup;
+  const when = b ? new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' }).format(b.at) : null;
+  const offsite = b?.offsite ? (b.offsite.ok ? '، ونسخة برّه السيرفر' : '، والرفع برّه السيرفر فشل') : '';
+  $('backup-line').textContent = b
+    ? `آخر نسخة احتياطية ${when}، ${b.branches} فرع${offsite}. بتتعمل كل يوم 3:30 الفجر وبتفضل 7 أيام.`
+    : 'لسه مفيش نسخة احتياطية. بتتعمل لوحدها كل يوم 3:30 الفجر.';
+}
+
 function renderAttention() {
+  renderBackupLine();
   const items = attentionItems();
   $('attention').innerHTML = items.length
     ? items.map((it) => `
@@ -212,6 +229,18 @@ async function done(message) {
 }
 
 // ---------- actions ----------
+
+async function backupNow(button) {
+  button.disabled = true;
+  try {
+    const status = await api('/api/super/backup', { method: 'POST', body: {} });
+    await done(status.ok ? `النسخة الاحتياطية اتعملت (${status.branches} فرع)` : 'النسخة اتعملت بس فيه أخطاء');
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
 
 // Super enters any branch directly: a 1h staff session (audited), then the page opens.
 // The tab is opened inside the click, before the request, so popup blockers allow it.
@@ -389,6 +418,7 @@ function onAction(el) {
   else if (act === 'menu') branchMenu(id);
   else if (act === 'branch') newBranch(id);
   else if (act === 'owner') ownerAccount(id);
+  else if (act === 'backup') backupNow(el);
   else if (act === 'payment' || act === 'resume') {
     const b = findBranch(id);
     if (b) branchAction(act, b);
@@ -417,6 +447,7 @@ async function boot() {
     await api('/api/super/logout', { method: 'POST' });
     location.reload();
   });
+  $('backup-now').addEventListener('click', (e) => backupNow(e.currentTarget));
   for (const id of ['brands', 'attention']) {
     $(id).addEventListener('click', (e) => {
       const el = e.target.closest('[data-act]');

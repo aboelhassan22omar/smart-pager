@@ -1,5 +1,6 @@
 import { hashPin, PIN_RE, verifyPin } from '../auth.js';
 import { superOverview } from '../aggregate.js';
+import { backupStatus, runBackup } from '../backup.js';
 import { HttpError } from '../errors.js';
 import { DAY_MS, FEATURES, planView } from '../plans.js';
 import { branchUrls, provisionBrand, provisionBranch } from '../provision.js';
@@ -71,7 +72,14 @@ export default async function superRoutes(app, deps) {
       return ctx;
     }
 
-    s.get('/overview', async () => superOverview(deps));
+    s.get('/overview', async () => ({ ...superOverview(deps), backup: backupStatus(config) }));
+
+    // "Back up now" (the nightly job runs by itself at 03:30).
+    s.post('/backup', async (req) => {
+      const status = await runBackup({ ...deps, log: req.log });
+      audit(req, 'backup.run', { detail: { day: status.day, ok: status.ok } });
+      return status;
+    });
 
     s.get('/audit', async (req) => ({ entries: control.auditLog(Math.min(500, Number(req.query.limit) || 100)) }));
 
