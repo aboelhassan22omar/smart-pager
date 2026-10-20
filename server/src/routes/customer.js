@@ -1,4 +1,5 @@
 import { HttpError } from '../errors.js';
+import { channels } from '../bus.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { OPEN_STATUSES } from '../store.js';
@@ -44,76 +45,79 @@ export function validateLiveActivity(payload) {
   return { token, app };
 }
 
-export default async function customerRoutes(app, { config, store, bus, notifier, service }) {
+export default async function customerRoutes(app, { config, control, tenants, bus, notifier, service }) {
   const claimLimiter = createRateLimiter({ limit: config.claimRatePerMin });
   app.addHook('onClose', async () => claimLimiter.close());
 
-  function loadOrder(id) {
-    const order = store.getOrder(id);
-    const shop = order && store.getShop(order.shop_id);
-    if (!order || !shop) throw new HttpError(404, 'الطلب ده مش موجود');
-    return { order, shop };
-  }
-
-  app.get('/health', async () => ({ ok: store.ping() }));
+  app.get('/health', async () => ({ ok: control.ping() }));
 
   app.get('/api/vapid-key', async () => ({ key: config.vapid.publicKey }));
 
-  app.get('/api/shops/:id', async (req) => {
-    const shop = store.getShop(req.params.id);
-    if (!shop) throw new HttpError(404, 'المحل ده مش موجود');
-    return publicShop(shop);
-  });
+  // Everything a customer does is scoped to one branch: the branch is resolved once,
+  // and order ids are only looked up in that branch's own database.
+  await app.register(async (b) => {
+    b.addHook('onRequest', async (req) => {
+      req.ctx = tenants.resolve(req.params.branch);
+    });
 
-  app.post('/api/claim', async (req, reply) => {
-    const limit = claimLimiter.take(req.ip);
-    if (!limit.ok) {
-      reply.header('retry-after', String(limit.retryAfter));
-      throw new HttpError(429, 'محاولات كتير. استنى دقيقة وجرّب تاني');
+    function loadOrder(req, id) {
+      const order = req.ctx.store.getOrder(id);
+      if (!order) throw new HttpError(404, 'الطلب ده مش موجود');
+      return { order, shop: req.ctx.store.getShop() };
     }
-    const { shopId, n, k } = req.body ?? {};
-    if (!store.getShop(shopId)) throw new HttpError(404, 'المحل ده مش موجود');
-    const { order, shop } = service.claim(shopId, { n, k });
-    return publicOrder(order, shop);
-  });
 
-  app.get('/api/orders/:id', async (req) => {
-    const { order, shop } = loadOrder(req.params.id);
-    return publicOrder(order, shop);
-  });
+    b.get('/', async (req) => publicShop(req.ctx.store.getShop()));
 
-  app.get('/api/orders/:id/events', async (req, reply) => {
-    const { order, shop } = loadOrder(req.params.id);
-    const sse = openSse(req, reply);
-    sse.send('order', publicOrder(order, shop));
-    const channel = `order:${order.id}`;
-    const listener = (event, data) => sse.send(event, data);
-    bus.on(channel, listener);
-    sse.onClose(() => bus.off(channel, listener));
-  });
+    b.post('/claim', async (req, reply) => {
+      const limit = claimLimiter.take(`${req.ctx.branch.id}|${req.ip}`);
+      if (!limit.ok) {
+        reply.header('retry-after', String(limit.retryAfter));
+        throw new HttpError(429, 'محاولات كتير. استنى دقيقة وجرّب تاني');
+      }
+      const { n, k } = req.body ?? {};
+      const { order, shop } = service.claim(req.ctx, { n, k });
+      return publicOrder(order, shop);
+    });
 
-  // Sent (via sendBeacon) when a customer taps "rate us on Google" after pickup.
-  app.post('/api/orders/:id/review-click', async (req) => {
-    const { order, shop } = loadOrder(req.params.id);
-    if (order.status !== 'picked' || !shop.google_review_url) throw new HttpError(409, 'التقييم مش متاح للطلب ده');
-    return { ok: true, counted: store.recordReviewClick(order) };
-  });
+    b.get('/orders/:id', async (req) => {
+      const { order, shop } = loadOrder(req, req.params.id);
+      return publicOrder(order, shop);
+    });
 
-  app.post('/api/subscribe', async (req) => {
-    const { orderId, kind, payload } = req.body ?? {};
-    const { order, shop } = loadOrder(orderId);
-    if (!OPEN_STATUSES.includes(order.status)) throw new HttpError(409, 'الطلب ده اتقفل خلاص');
+    b.get('/orders/:id/events', async (req, reply) => {
+      const { order, shop } = loadOrder(req, req.params.id);
+      const sse = openSse(req, reply);
+      sse.send('order', publicOrder(order, shop));
+      const channel = channels(req.ctx.branch.id).order(order.id);
+      const listener = (event, data) => sse.send(event, data);
+      bus.on(channel, listener);
+      sse.onClose(() => bus.off(channel, listener));
+    });
 
-    let normalized;
-    if (kind === 'webpush') normalized = validateWebPush(payload, config.pushHosts);
-    else if (kind === 'live_activity') normalized = validateLiveActivity(payload);
-    else throw new HttpError(400, 'نوع الاشتراك مش معروف', { field: 'kind' });
+    // Sent (via sendBeacon) when a customer taps "rate us on Google" after pickup.
+    b.post('/orders/:id/review-click', async (req) => {
+      const { order, shop } = loadOrder(req, req.params.id);
+      if (order.status !== 'picked' || !shop.google_review_url) throw new HttpError(409, 'التقييم مش متاح للطلب ده');
+      return { ok: true, counted: req.ctx.store.recordReviewClick(order) };
+    });
 
-    if (store.countSubscriptions(order.id) >= MAX_SUBSCRIPTIONS) {
-      throw new HttpError(429, 'اشتراكات كتير على الطلب ده');
-    }
-    const sub = store.addSubscription(order.id, kind, normalized);
-    if (sub) notifier.subscribed(sub, order, shop);
-    return { ok: true };
-  });
+    b.post('/subscribe', async (req) => {
+      const { orderId, kind, payload } = req.body ?? {};
+      const { order, shop } = loadOrder(req, orderId);
+      if (!OPEN_STATUSES.includes(order.status)) throw new HttpError(409, 'الطلب ده اتقفل خلاص');
+
+      let normalized;
+      if (kind === 'webpush') normalized = validateWebPush(payload, config.pushHosts);
+      else if (kind === 'live_activity') normalized = validateLiveActivity(payload);
+      else throw new HttpError(400, 'نوع الاشتراك مش معروف', { field: 'kind' });
+
+      const { store } = req.ctx;
+      if (store.countSubscriptions(order.id) >= MAX_SUBSCRIPTIONS) {
+        throw new HttpError(429, 'اشتراكات كتير على الطلب ده');
+      }
+      const sub = store.addSubscription(order.id, kind, normalized);
+      if (sub) notifier.subscribed(sub, order, shop);
+      return { ok: true };
+    });
+  }, { prefix: '/api/b/:branch' });
 }

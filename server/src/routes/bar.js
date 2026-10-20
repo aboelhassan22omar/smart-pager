@@ -1,7 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
-import { cookieName, hashPin, PIN_RE, pinFingerprint, SESSION_MAX_AGE, verifyPin } from '../auth.js';
+import { hashPin, PIN_RE, pinFingerprint, SESSION_MAX_AGE, verifyPin } from '../auth.js';
+import { channels } from '../bus.js';
+import { signValue, staffCookieName, staffKeyInfo, verifyValue } from '../cookies.js';
 import { HttpError } from '../errors.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
@@ -27,7 +29,7 @@ export function parseGoogleReviewUrl(value) {
   }
   return url.href;
 }
-const LOGO_FILE_RE = /^[a-z0-9-]+-\d+\.(png|jpg|webp)$/;
+const MEDIA_FILE_RE = /^logo-\d+\.(png|jpg|webp)$/;
 
 export function sniffImage(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 12) return null;
@@ -51,14 +53,18 @@ function integer(body, key, min, max) {
   return value;
 }
 
-export default async function barRoutes(app, { config, store, bus, notifier, service }) {
+export default async function barRoutes(app, { config, tenants, bus, notifier, service, screens }) {
   const loginLimiter = createRateLimiter({ limit: config.loginRatePerMin });
   app.addHook('onClose', async () => loginLimiter.close());
-  const logosDir = path.join(config.dataDir, 'logos');
 
+  // Staff cookie: signed with a key derived for this branch only (cookies.js).
   function setSession(reply, shop) {
-    reply.setCookie(cookieName(shop.id), `${shop.id}.${Date.now()}.${pinFingerprint(shop.pin_hash)}`, {
-      signed: true,
+    const value = signValue(config.cookieSecret, staffKeyInfo(shop.id), {
+      b: shop.id,
+      iat: Date.now(),
+      fp: pinFingerprint(shop.pin_hash),
+    });
+    reply.setCookie(staffCookieName(shop.id), value, {
       httpOnly: true,
       sameSite: 'strict',
       secure: config.secureCookies,
@@ -68,32 +74,32 @@ export default async function barRoutes(app, { config, store, bus, notifier, ser
   }
 
   function requireBar(req) {
-    const shop = store.getShop(req.params.shop);
-    if (!shop) throw new HttpError(404, 'المحل ده مش موجود');
-    const raw = req.cookies[cookieName(shop.id)];
-    const unsigned = raw ? req.unsignCookie(raw) : { valid: false };
-    const [sid, issued, fp] = unsigned.valid ? unsigned.value.split('.') : [];
-    const fresh = Date.now() - Number(issued) < SESSION_MAX_AGE * 1000;
-    if (sid !== shop.id || !fresh || fp !== pinFingerprint(shop.pin_hash)) {
+    const ctx = tenants.resolve(req.params.shop);
+    const shop = ctx.store.getShop();
+    const session = verifyValue(config.cookieSecret, staffKeyInfo(shop.id), req.cookies[staffCookieName(shop.id)]);
+    const fresh = session && Date.now() - Number(session.iat) < SESSION_MAX_AGE * 1000;
+    if (!fresh || session.b !== shop.id || session.fp !== pinFingerprint(shop.pin_hash)) {
       throw new HttpError(401, 'سجّل دخول الأول');
     }
+    req.ctx = ctx;
     req.shop = shop;
   }
 
+  // Order ids are looked up in this branch's database only.
   function shopOrder(req) {
-    const order = store.getOrder(req.params.id);
-    if (!order || order.shop_id !== req.shop.id) throw new HttpError(404, 'الطلب ده مش موجود');
+    const order = req.ctx.store.getOrder(req.params.id);
+    if (!order) throw new HttpError(404, 'الطلب ده مش موجود');
     return order;
   }
 
   app.post('/api/bar/login', async (req, reply) => {
     const { shopId, pin } = req.body ?? {};
-    const limit = loginLimiter.take(`${req.ip}|${shopId}`);
+    const limit = loginLimiter.take(`${shopId}|${req.ip}`);
     if (!limit.ok) {
       reply.header('retry-after', String(limit.retryAfter));
       throw new HttpError(429, 'محاولات كتير. استنى دقيقة وجرّب تاني');
     }
-    const shop = store.getShop(shopId);
+    const shop = tenants.get(shopId)?.store.getShop();
     if (!shop || !(await verifyPin(String(pin ?? ''), shop.pin_hash))) {
       throw new HttpError(401, 'الرقم السري غلط');
     }
@@ -102,7 +108,7 @@ export default async function barRoutes(app, { config, store, bus, notifier, ser
   });
 
   app.post('/api/bar/:shop/logout', async (req, reply) => {
-    reply.clearCookie(cookieName(req.params.shop), { path: '/' });
+    reply.clearCookie(staffCookieName(req.params.shop), { path: '/' });
     return { ok: true };
   });
 
@@ -119,7 +125,7 @@ export default async function barRoutes(app, { config, store, bus, notifier, ser
       const shop = req.shop;
       return {
         shop: barShop(shop),
-        orders: store.openOrders(shop.id).map((o) => publicOrder(o, shop)),
+        orders: req.ctx.store.openOrders().map((o) => publicOrder(o, shop)),
         qr: qrInfo(shop, config),
         apple: appleStatus(config, notifier.apnsReady),
         serverNow: Date.now(),
@@ -129,10 +135,15 @@ export default async function barRoutes(app, { config, store, bus, notifier, ser
     bar.get('/events', async (req, reply) => {
       const sse = openSse(req, reply);
       sse.send('hello', { serverNow: Date.now() });
-      const channel = `shop:${req.shop.id}`;
+      const branchId = req.ctx.branch.id;
+      const channel = channels(branchId).bar;
       const listener = (event, data) => sse.send(event, data);
       bus.on(channel, listener);
-      sse.onClose(() => bus.off(channel, listener));
+      screens.add(branchId);
+      sse.onClose(() => {
+        bus.off(channel, listener);
+        screens.remove(branchId);
+      });
     });
 
     bar.get('/qr.svg', async (req, reply) => {
@@ -154,15 +165,15 @@ export default async function barRoutes(app, { config, store, bus, notifier, ser
       return svg;
     });
 
-    bar.post('/orders/:id/advance', async (req) => publicOrder(service.advance(req.shop, shopOrder(req)), req.shop));
+    bar.post('/orders/:id/advance', async (req) => publicOrder(service.advance(req.ctx, req.shop, shopOrder(req)), req.shop));
 
     bar.post('/orders/:id/status', async (req) => {
       const status = req.body?.status;
       if (!STATUS_TARGETS.includes(status)) throw invalid('status', 'الحالة دي مش معروفة');
-      return publicOrder(service.setStatus(req.shop, shopOrder(req), status), req.shop);
+      return publicOrder(service.setStatus(req.ctx, req.shop, shopOrder(req), status), req.shop);
     });
 
-    bar.post('/orders/:id/renotify', async (req) => publicOrder(service.renotify(req.shop, shopOrder(req)), req.shop));
+    bar.post('/orders/:id/renotify', async (req) => publicOrder(service.renotify(req.ctx, req.shop, shopOrder(req)), req.shop));
 
     bar.post('/settings', async (req, reply) => {
       const body = req.body ?? {};
@@ -197,40 +208,44 @@ export default async function barRoutes(app, { config, store, bus, notifier, ser
       }
       if (!Object.keys(fields).length) throw invalid(null, 'مفيش تغييرات تتحفظ');
 
-      const updated = store.updateShop(shop.id, fields);
+      const updated = req.ctx.store.updateShop(fields);
       if (fields.pin_hash) setSession(reply, updated);
-      service.publishShop(updated);
-      if (fields.qr_mode || fields.static_key) service.publishNonce(updated);
+      service.publishShop(req.ctx, updated);
+      if (fields.qr_mode || fields.static_key) service.publishNonce(req.ctx, updated);
       return { shop: barShop(updated), qr: qrInfo(updated, config) };
     });
 
     bar.post('/logo', async (req) => {
       const ext = sniffImage(req.body);
       if (!ext) throw new HttpError(400, 'الصورة لازم تكون PNG أو JPG أو WEBP', { field: 'logo' });
-      const shop = req.shop;
-      const file = `${shop.id}-${Date.now()}.${ext}`;
-      await fs.promises.writeFile(path.join(logosDir, file), req.body);
-      if (shop.logo) await fs.promises.rm(path.join(logosDir, shop.logo), { force: true });
-      const updated = store.updateShop(shop.id, { logo: file });
-      service.publishShop(updated);
+      const { shop, ctx } = req;
+      const file = `logo-${Date.now()}.${ext}`;
+      await fs.promises.writeFile(path.join(ctx.mediaDir, file), req.body);
+      if (shop.logo) await fs.promises.rm(path.join(ctx.mediaDir, shop.logo), { force: true });
+      const updated = ctx.store.updateShop({ logo: file });
+      service.publishShop(ctx, updated);
       return { shop: barShop(updated) };
     });
 
     bar.delete('/logo', async (req) => {
-      const shop = req.shop;
-      if (shop.logo) await fs.promises.rm(path.join(logosDir, shop.logo), { force: true });
-      const updated = store.updateShop(shop.id, { logo: null });
-      service.publishShop(updated);
+      const { shop, ctx } = req;
+      if (shop.logo) await fs.promises.rm(path.join(ctx.mediaDir, shop.logo), { force: true });
+      const updated = ctx.store.updateShop({ logo: null });
+      service.publishShop(ctx, updated);
       return { shop: barShop(updated) };
     });
   }, { prefix: '/api/bar/:shop' });
 
-  app.get('/media/logos/:file', async (req, reply) => {
+  // Media is served only from the requested branch's own folder.
+  app.get('/media/b/:branch/:file', async (req, reply) => {
     const { file } = req.params;
-    if (!LOGO_FILE_RE.test(file)) throw new HttpError(404, 'مش موجود');
+    const ctx = tenants.get(req.params.branch);
+    if (!ctx || !MEDIA_FILE_RE.test(file)) throw new HttpError(404, 'مش موجود');
+    const full = path.join(ctx.mediaDir, file);
+    if (!full.startsWith(ctx.mediaDir + path.sep)) throw new HttpError(404, 'مش موجود');
     let data;
     try {
-      data = await fs.promises.readFile(path.join(logosDir, file));
+      data = await fs.promises.readFile(full);
     } catch {
       throw new HttpError(404, 'مش موجود');
     }

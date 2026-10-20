@@ -66,7 +66,7 @@ export async function loadStaffState(shopId, root) {
       if (err.status !== 401) throw err;
       let name = '';
       try {
-        name = (await api(`/api/shops/${encodeURIComponent(shopId)}`)).name;
+        name = (await api(`/api/b/${encodeURIComponent(shopId)}`)).name;
       } catch {
         name = '';
       }

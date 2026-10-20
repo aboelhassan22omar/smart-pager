@@ -7,7 +7,6 @@ const KEYLEN = 32;
 
 export const PIN_RE = /^\d{4,8}$/;
 export const SESSION_MAX_AGE = 30 * 24 * 3600;
-export const cookieName = (shopId) => `sp_bar_${shopId}`;
 
 export async function hashPin(pin) {
   const salt = crypto.randomBytes(16);
