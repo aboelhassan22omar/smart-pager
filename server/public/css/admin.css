@@ -435,3 +435,237 @@
   display: block;
   color: var(--muted);
 }
+
+/* ---------- analytics (brand) ---------- */
+
+.analytics {
+  display: grid;
+  gap: 14px;
+}
+
+/* Grid items default to min-width:auto and would grow to the widest table/heatmap;
+   0 lets their own overflow-x scroll instead of widening the page. */
+.dash > *,
+.analytics > *,
+.chart-card > * {
+  min-width: 0;
+}
+
+@media (max-width: 560px) {
+  .heat-hour[data-minor] {
+    visibility: hidden;
+  }
+
+  .heat-grid {
+    grid-template-columns: 44px repeat(24, minmax(9px, 1fr));
+    gap: 1px;
+  }
+}
+
+.filters {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 10px;
+}
+
+.presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.presets .btn.is-active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.field.inline {
+  min-width: 140px;
+}
+
+.field.inline .input {
+  min-height: 40px;
+  padding: 6px 10px;
+}
+
+.stat-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 10px;
+}
+
+.stat-tile {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--surface);
+}
+
+.stat-tile p {
+  margin: 0;
+}
+
+.stat-label {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.stat-value {
+  margin-top: 4px !important;
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  line-height: 1.2;
+  text-align: right;
+}
+
+.stat-note {
+  margin-top: 4px !important;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.chart-card {
+  display: grid;
+  gap: 10px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.chart-card h3 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.columns svg {
+  display: block;
+  max-width: 100%;
+  /* Coordinates are laid out RTL by hand; text inside must not be flipped again. */
+  direction: ltr;
+}
+
+.columns .bar {
+  fill: var(--accent);
+}
+
+.columns .hit {
+  fill: transparent;
+}
+
+.columns .hit:hover {
+  fill: rgb(236 234 230 / 0.04);
+}
+
+.columns .grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.columns .axis {
+  stroke: var(--line-strong);
+  stroke-width: 1;
+}
+
+.columns .tick {
+  fill: var(--muted);
+  font-family: var(--font);
+  font-size: 11px;
+}
+
+.heat-grid {
+  display: grid;
+  grid-template-columns: 56px repeat(24, minmax(10px, 1fr));
+  gap: 2px;
+  overflow-x: auto;
+}
+
+.heat-day,
+.heat-hour {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.heat-day {
+  align-self: center;
+}
+
+.heat-hour {
+  text-align: start;
+}
+
+.heat-cell,
+.heat-legend i {
+  aspect-ratio: 1;
+  min-height: 12px;
+  border-radius: 3px;
+  background: var(--surface-2);
+}
+
+/* Sequential, one hue: surface -> latte (lighter = more orders on the dark surface). */
+:is(.heat-cell, .heat-legend i)[data-step='1'] { background: color-mix(in srgb, var(--accent) 22%, var(--surface-2)); }
+:is(.heat-cell, .heat-legend i)[data-step='2'] { background: color-mix(in srgb, var(--accent) 40%, var(--surface-2)); }
+:is(.heat-cell, .heat-legend i)[data-step='3'] { background: color-mix(in srgb, var(--accent) 58%, var(--surface-2)); }
+:is(.heat-cell, .heat-legend i)[data-step='4'] { background: color-mix(in srgb, var(--accent) 78%, var(--surface-2)); }
+:is(.heat-cell, .heat-legend i)[data-step='5'] { background: var(--accent); }
+
+.heat-legend {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.heat-legend i {
+  width: 14px;
+  min-height: 14px;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.data-table th,
+.data-table td {
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: start;
+  white-space: nowrap;
+}
+
+.data-table thead th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.data-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.table-card {
+  overflow-x: auto;
+}
+
+.chart-tip {
+  position: fixed;
+  z-index: 1200;
+  max-width: 260px;
+  padding: 6px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--text);
+  font-size: var(--fs-xs);
+  pointer-events: none;
+}
+
+.small {
+  margin: 0;
+  font-size: var(--fs-sm);
+}

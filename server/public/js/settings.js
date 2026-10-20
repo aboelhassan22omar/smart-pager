@@ -193,6 +193,7 @@ function renderShop() {
   const numbers = $('form-numbers').elements;
   numbers.maxNumber.value = shop.maxNumber;
   numbers.expireHours.value = shop.expireHours;
+  numbers.lateAfterMinutes.value = shop.lateAfterMinutes;
   for (const radio of document.querySelectorAll('input[name="qrMode"]')) radio.checked = radio.value === shop.qrMode;
   const review = $('form-review').elements;
   review.googleReviewUrl.value = shop.googleReviewUrl ?? '';
@@ -226,7 +227,11 @@ function bindForms() {
   $('form-numbers').addEventListener('submit', async (e) => {
     e.preventDefault();
     const f = e.target.elements;
-    const ok = await save({ maxNumber: Number(f.maxNumber.value), expireHours: Number(f.expireHours.value) }, e.target);
+    const ok = await save({
+      maxNumber: Number(f.maxNumber.value),
+      expireHours: Number(f.expireHours.value),
+      lateAfterMinutes: Number(f.lateAfterMinutes.value),
+    }, e.target);
     if (ok) toast('الأرقام اتحفظت');
   });
 

@@ -421,6 +421,23 @@ Each phase is one branch and one PR, with CI green, tests, and README + DESIGN u
 - **"Late today"** on the dashboards uses a fixed 10-minute threshold until phase 3 adds `late_after_minutes`.
 - **"Average rating"** shows "—" until phase 5.
 
+**Phase 3 is done.**
+- **Branch migration 2:** adds `late_after_minutes`, an index on `orders.created_at`, `hourly_stats`, and a `meta` table that holds the rollup cursor.
+- **Control migration 3:** adds `brands.last_summary_week`.
+- **Retention:** closed orders are kept 90 days, subscriptions are deleted 24h after their order closes, and `hourly_stats` rows are kept forever.
+- **`src/rollups.js`:** runs every 5 minutes, round-robin, and again right before every analytics read. Durations are measured in local hours via `hourStartIn`, which is DST- and :30-offset safe.
+- **`brandAnalytics` / `analyticsCsv`** live in `aggregate.js`.
+- **Medians:**
+  - Exact from `orders` when the range starts within retention.
+  - Otherwise a count-weighted median of the hourly medians, flagged `exact: false`.
+  - The CSV carries per-day averages, so rows can be summed in a spreadsheet. It starts with a BOM, and formula-looking cells are prefixed with `'` (CSV injection).
+- **Late alerts** are computed client-side on the bar every 15s, with a per-screen chime toggle in `localStorage` (Q7).
+- **SMTP client** is in-house (`src/mail.js`, Q8):
+  - It supports implicit TLS, STARTTLS and none.
+  - It authenticates with AUTH PLAIN.
+  - It sends base64 UTF-8 bodies, encodes headers per RFC 2047, and strips CR/LF from headers.
+  - Weekly summaries go out once per brand per week, on Mondays at 09:00 local time.
+
 ## 24. Open questions
 
 These are places where the brief conflicts with the current code, or needs a decision. Each one has my proposal.

@@ -39,6 +39,16 @@ export function loadConfig(env = process.env) {
     // scrypt hash (node src/cli.js hash-password) for /super; empty = super dashboard disabled
     superPasswordHash: str(env.SUPER_PASSWORD_HASH, ''),
     trialDays: int(env.TRIAL_DAYS, 3, 0, 365),
+    // Optional weekly owner summary. Off unless SMTP_HOST is set.
+    smtp: {
+      host: str(env.SMTP_HOST, ''),
+      port: int(env.SMTP_PORT, 587, 1, 65535),
+      tls: ['implicit', 'starttls', 'none'].includes(env.SMTP_TLS) ? env.SMTP_TLS
+        : int(env.SMTP_PORT, 587, 1, 65535) === 465 ? 'implicit' : 'starttls',
+      user: str(env.SMTP_USER, ''),
+      pass: str(env.SMTP_PASS, ''),
+      from: str(env.SMTP_FROM, 'Smart Pager <no-reply@aurexis.cc>'),
+    },
     cookieSecret: str(env.COOKIE_SECRET, ''),
     pushHosts: str(env.PUSH_ENDPOINT_HOSTS, DEFAULT_PUSH_HOSTS.join(','))
       .split(',')

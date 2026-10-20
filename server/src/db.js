@@ -48,6 +48,26 @@ export const BRANCH_MIGRATIONS = [
     UNIQUE (order_id, kind, payload)
   );
   `,
+  // 2: late threshold, hourly rollups (kept forever; closed orders now kept 90 days).
+  `
+  ALTER TABLE branch_settings ADD COLUMN late_after_minutes INTEGER NOT NULL DEFAULT 10;
+  CREATE INDEX orders_created_at ON orders (created_at);
+  CREATE TABLE hourly_stats (
+    hour_start INTEGER PRIMARY KEY,
+    orders INTEGER NOT NULL DEFAULT 0,
+    picked INTEGER NOT NULL DEFAULT 0,
+    cancelled INTEGER NOT NULL DEFAULT 0,
+    expired INTEGER NOT NULL DEFAULT 0,
+    late INTEGER NOT NULL DEFAULT 0,
+    prep_count INTEGER NOT NULL DEFAULT 0,
+    prep_sum_s INTEGER NOT NULL DEFAULT 0,
+    prep_median_s INTEGER,
+    wait_count INTEGER NOT NULL DEFAULT 0,
+    wait_sum_s INTEGER NOT NULL DEFAULT 0,
+    wait_median_s INTEGER
+  );
+  CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

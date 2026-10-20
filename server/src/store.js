@@ -11,9 +11,12 @@ export const ORDER_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 // Branch settings columns staff may change. The display name lives in the control DB.
 const SETTING_COLUMNS = new Set([
   'logo', 'pin_hash', 'qr_mode', 'static_key', 'max_number', 'expire_hours',
-  'preparing_message', 'ready_message', 'accent_color', 'google_review_url',
+  'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
 ]);
-const PURGE_AFTER_MS = 24 * 3600 * 1000;
+// Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
+// (device endpoints / tokens) still go 24h after their order closed.
+const ORDER_RETENTION_MS = 90 * 24 * 3600 * 1000;
+const SUBSCRIPTION_RETENTION_MS = 24 * 3600 * 1000;
 
 export const newNonce = () => randomId(12);
 export const newStaticKey = () => randomId(18);
@@ -51,6 +54,8 @@ export class BranchStore {
       deleteSub: p('DELETE FROM subscriptions WHERE id = ?'),
       dueExpire: p(`SELECT * FROM orders WHERE status IN ('preparing', 'ready') AND created_at <= ?`),
       purge: p('DELETE FROM orders WHERE closed_at IS NOT NULL AND closed_at <= ?'),
+      purgeSubs: p(`DELETE FROM subscriptions WHERE order_id IN
+                    (SELECT id FROM orders WHERE closed_at IS NOT NULL AND closed_at <= ?)`),
     };
   }
 
@@ -175,8 +180,11 @@ export class BranchStore {
     return shop ? this.sql.dueExpire.all(now - shop.expire_hours * 3600_000) : [];
   }
 
+  /** Returns { orders, subscriptions } removed. */
   purgeClosed(now = Date.now()) {
-    return Number(this.sql.purge.run(now - PURGE_AFTER_MS).changes);
+    const subscriptions = Number(this.sql.purgeSubs.run(now - SUBSCRIPTION_RETENTION_MS).changes);
+    const orders = Number(this.sql.purge.run(now - ORDER_RETENTION_MS).changes);
+    return { orders, subscriptions };
   }
 
   // ---- subscriptions ----

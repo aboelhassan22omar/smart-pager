@@ -9,6 +9,7 @@ import { createNotifier } from './notify/index.js';
 import { PUBLIC_DIR } from './paths.js';
 import { ensureSecrets } from './secrets.js';
 import { createService } from './service.js';
+import { runWeeklySummaries } from './summary.js';
 import adminRoutes from './routes/admin.js';
 import barRoutes from './routes/bar.js';
 import brandRoutes from './routes/brand.js';
@@ -103,6 +104,10 @@ export async function buildApp(config) {
   const jobs = setInterval(() => service.runJobs(), config.jobIntervalSeconds * 1000);
   // Stored plan_status is a dashboard cache; requests always recompute the plan.
   const plans = setInterval(() => control.refreshPlanStatuses(), 3600_000);
+  const rollups = setInterval(() => service.runRollups(), 300_000);
+  const summaries = setInterval(() => {
+    runWeeklySummaries({ config, control, tenants, screens, log: app.log }).catch((err) => app.log.error({ err }, 'weekly summary job failed'));
+  }, 3600_000);
   app.addHook('onReady', async () => {
     service.runJobs();
     control.refreshPlanStatuses();
@@ -111,6 +116,8 @@ export async function buildApp(config) {
     clearInterval(rotation);
     clearInterval(jobs);
     clearInterval(plans);
+    clearInterval(rollups);
+    clearInterval(summaries);
     notifier.close();
     tenants.closeAll();
     control.close();
