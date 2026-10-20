@@ -36,6 +36,9 @@ export function loadConfig(env = process.env) {
     jobBatch: int(env.JOB_BATCH, 100, 1, 100000),
     tenantDbCache: int(env.TENANT_DB_CACHE, 200, 1, 100000),
     adminToken: str(env.ADMIN_TOKEN, ''),
+    // scrypt hash (node src/cli.js hash-password) for /super; empty = super dashboard disabled
+    superPasswordHash: str(env.SUPER_PASSWORD_HASH, ''),
+    trialDays: int(env.TRIAL_DAYS, 3, 0, 365),
     cookieSecret: str(env.COOKIE_SECRET, ''),
     pushHosts: str(env.PUSH_ENDPOINT_HOSTS, DEFAULT_PUSH_HOSTS.join(','))
       .split(',')

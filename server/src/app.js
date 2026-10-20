@@ -11,8 +11,10 @@ import { ensureSecrets } from './secrets.js';
 import { createService } from './service.js';
 import adminRoutes from './routes/admin.js';
 import barRoutes from './routes/bar.js';
+import brandRoutes from './routes/brand.js';
 import customerRoutes from './routes/customer.js';
 import pageRoutes from './routes/pages.js';
+import superRoutes from './routes/super.js';
 
 export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
 export const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
@@ -93,14 +95,22 @@ export async function buildApp(config) {
   await app.register(customerRoutes, ctx);
   await app.register(barRoutes, ctx);
   await app.register(adminRoutes, ctx);
+  await app.register(superRoutes, ctx);
+  await app.register(brandRoutes, ctx);
   await app.register(pageRoutes, ctx);
 
   const rotation = setInterval(() => service.rotateDue(), 1000);
   const jobs = setInterval(() => service.runJobs(), config.jobIntervalSeconds * 1000);
-  app.addHook('onReady', async () => service.runJobs());
+  // Stored plan_status is a dashboard cache; requests always recompute the plan.
+  const plans = setInterval(() => control.refreshPlanStatuses(), 3600_000);
+  app.addHook('onReady', async () => {
+    service.runJobs();
+    control.refreshPlanStatuses();
+  });
   app.addHook('onClose', async () => {
     clearInterval(rotation);
     clearInterval(jobs);
+    clearInterval(plans);
     notifier.close();
     tenants.closeAll();
     control.close();

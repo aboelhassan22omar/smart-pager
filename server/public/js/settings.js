@@ -188,7 +188,6 @@ function bindLogo() {
 
 function renderShop() {
   const info = $('form-info').elements;
-  info.name.value = shop.name;
   info.preparingMessage.value = shop.preparingMessage;
   info.readyMessage.value = shop.readyMessage;
   const numbers = $('form-numbers').elements;
@@ -211,11 +210,10 @@ function bindForms() {
     e.preventDefault();
     const f = e.target.elements;
     const ok = await save({
-      name: f.name.value,
       preparingMessage: f.preparingMessage.value,
       readyMessage: f.readyMessage.value,
     }, e.target);
-    if (ok) toast('البيانات اتحفظت');
+    if (ok) toast('الرسايل اتحفظت');
   });
 
   $('form-review').addEventListener('submit', async (e) => {

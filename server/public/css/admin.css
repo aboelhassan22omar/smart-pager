@@ -1,0 +1,333 @@
+/* Dashboards (/super, /brand/:brand): same tokens as the rest, denser layout. */
+
+.dash {
+  display: grid;
+  gap: 28px;
+  width: min(100% - 2 * var(--gutter), 1180px);
+  margin: 20px auto 32px;
+}
+
+.dash-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.dash-head h2 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.dash-head .sub {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.dash-head .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.btn-sm {
+  min-height: 38px;
+  padding: 0 14px;
+  font-size: var(--fs-sm);
+}
+
+.btn-danger-solid {
+  border-color: transparent;
+  background: var(--danger);
+  color: #fff;
+  font-weight: 600;
+}
+
+#brands {
+  display: grid;
+  gap: 40px;
+}
+
+.brand-section {
+  display: grid;
+  gap: 14px;
+}
+
+.branch-plan {
+  margin: -4px 0 0;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 12px;
+}
+
+.branch-card {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.branch-card[data-plan='suspended'] {
+  border-color: rgb(200 87 79 / 0.55);
+}
+
+.branch-top {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.branch-logo {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 13px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.branch-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.branch-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.branch-name strong {
+  display: block;
+  overflow: hidden;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.branch-name span {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.branch-name .branch-id {
+  white-space: nowrap;
+  margin-inline-start: 6px;
+  font-size: var(--fs-xs);
+  opacity: 0.8;
+}
+
+.pill {
+  display: inline-block;
+  flex: none;
+  padding: 4px 10px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  white-space: nowrap;
+}
+
+.pill[data-plan='active'] {
+  border-color: rgb(63 143 96 / 0.6);
+  color: var(--ready);
+}
+
+.pill[data-plan='trial'] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.pill[data-plan='past_due'] {
+  border-color: var(--accent);
+  background: rgb(205 187 151 / 0.12);
+  color: var(--accent);
+}
+
+.pill[data-plan='suspended'] {
+  border-color: transparent;
+  background: var(--danger);
+  color: #fff;
+}
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
+  overflow: hidden;
+  border-radius: var(--r-control);
+  background: var(--line);
+}
+
+.stats div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  background: var(--surface);
+}
+
+.stats dt {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.stats dd {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.stats dd.is-alert {
+  color: var(--danger);
+}
+
+.stats dd small {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+  font-weight: 400;
+}
+
+.card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.empty-note {
+  margin: 0;
+  padding: 20px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--r-card);
+  color: var(--muted);
+  text-align: center;
+}
+
+/* ---------- sheets (shared with bar.css visuals) ---------- */
+
+.sheet-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: grid;
+  align-items: end;
+  background: rgb(0 0 0 / 0.5);
+}
+
+.sheet {
+  display: grid;
+  gap: 14px;
+  width: min(100%, 520px);
+  max-height: 92dvh;
+  margin-inline: auto;
+  overflow-y: auto;
+  padding: 20px var(--gutter) calc(16px + env(safe-area-inset-bottom));
+  border-radius: var(--r-card) var(--r-card) 0 0;
+  background: var(--surface);
+}
+
+.sheet h2 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.sheet > p {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.stack {
+  display: grid;
+  gap: 12px;
+}
+
+.sheet-actions {
+  display: grid;
+  gap: 8px;
+}
+
+.menu-list .btn {
+  justify-content: flex-start;
+}
+
+.result-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.result-list div {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--bg);
+}
+
+.result-list dt {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.result-list dd {
+  margin: 0;
+  font-weight: 600;
+  text-align: start;
+  word-break: break-all;
+}
+
+/* ---------- audit log ---------- */
+
+.audit {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--fs-sm);
+}
+
+.audit th,
+.audit td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--line);
+  text-align: start;
+  vertical-align: top;
+}
+
+.audit th {
+  color: var(--muted);
+  font-weight: 500;
+}
+
+.audit-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--bg);
+}
+
+.toggle-row small {
+  display: block;
+  color: var(--muted);
+}

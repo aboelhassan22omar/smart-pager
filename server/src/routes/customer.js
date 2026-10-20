@@ -1,5 +1,6 @@
 import { HttpError } from '../errors.js';
 import { channels } from '../bus.js';
+import { canClaim } from '../plans.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { OPEN_STATUSES } from '../store.js';
@@ -74,6 +75,8 @@ export default async function customerRoutes(app, { config, control, tenants, bu
         reply.header('retry-after', String(limit.retryAfter));
         throw new HttpError(429, 'محاولات كتير. استنى دقيقة وجرّب تاني');
       }
+      // Suspended or trial over: no new orders (open ones finish normally).
+      if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الخدمة متوقفة مؤقتًا، اسأل الكاشير');
       const { n, k } = req.body ?? {};
       const { order, shop } = service.claim(req.ctx, { n, k });
       return publicOrder(order, shop);

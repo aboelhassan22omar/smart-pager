@@ -269,7 +269,7 @@ describe('settings', () => {
   const settings = (body) => bar.post(`/api/bar/${SHOP}/settings`, body);
 
   test('validates every field', async () => {
-    assert.equal((await settings({ name: '   ' })).data.field, 'name');
+    assert.equal((await settings({ name: 'Renamed by staff' })).status, 400, 'staff can no longer rename (owner/super do)');
     assert.equal((await settings({ preparingMessage: 'x'.repeat(141) })).data.field, 'preparingMessage');
     assert.equal((await settings({ readyMessage: '' })).data.field, 'readyMessage');
     assert.equal((await settings({ qrMode: 'sometimes' })).data.field, 'qrMode');
@@ -285,19 +285,18 @@ describe('settings', () => {
 
   test('saves fields and customers see new messages', async () => {
     const res = await settings({
-      name: '  Test Café Two ',
       preparingMessage: 'بنعمل طلبك',
       readyMessage: 'تعالى خده',
       maxNumber: 50,
       expireHours: 2,
     });
     assert.equal(res.status, 200);
-    assert.equal(res.data.shop.name, 'Test Café Two');
+    assert.equal(res.data.shop.name, 'Test Café', 'name unchanged by staff settings');
     assert.equal(res.data.shop.maxNumber, 50);
     assert.equal(res.data.shop.expireHours, 2);
     const order = await claimDynamic();
     assert.equal(order.message, 'بنعمل طلبك');
-    assert.equal(order.shopName, 'Test Café Two');
+    assert.equal(order.shopName, 'Test Café');
   });
 
   test('changing the PIN keeps this session and signs out the others', async () => {

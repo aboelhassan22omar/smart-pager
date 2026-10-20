@@ -414,6 +414,13 @@ Each phase is one branch and one PR, with CI green, tests, and README + DESIGN u
 - **v1 migration and logo files:** a missing v1 logo file logs a warning, and the branch starts without a logo. It doesn't abort, because there is nothing to lose. Row-count mismatches and any error do abort.
 - **Dry run:** the migration was run against a snapshot of the production database before release. Settings, nonce, static key, PIN hash, and all orders came out identical, and the logo moved byte for byte.
 
+**Phase 2 is done.**
+- **Control migration 2:** adds the plan columns, the feature flags and `forced_off` to `branches`, plus the `owners`, `payments` and `audit_log` tables.
+- **New modules:** `src/plans.js` (`effectivePlan`, `planView`, `featureFlags`), `src/sessions.js` (staff/owner/super cookies), `src/aggregate.js` (the only cross-branch reader), `src/routes/super.js`, `src/routes/brand.js`, and the `/super` and `/brand/:brand` pages.
+- **Q6 now applies:** staff settings no longer rename the branch; owners and super do.
+- **"Late today"** on the dashboards uses a fixed 10-minute threshold until phase 3 adds `late_after_minutes`.
+- **"Average rating"** shows "—" until phase 5.
+
 ## 24. Open questions
 
 These are places where the brief conflicts with the current code, or needs a decision. Each one has my proposal.

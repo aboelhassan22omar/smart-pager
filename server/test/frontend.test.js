@@ -10,7 +10,10 @@ import { esc, SPLASH_MIN_MS } from '../public/js/util.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
-const PAGES = ['public/s.html', 'public/bar.html', 'public/qr.html', 'public/settings.html', 'public/index.html'];
+const PAGES = [
+  'public/s.html', 'public/bar.html', 'public/qr.html', 'public/settings.html', 'public/index.html',
+  'public/super.html', 'public/brand.html',
+];
 
 // Tiny DOM stand-in, enough for powered.js.
 function fakeDocument() {

@@ -204,7 +204,24 @@ async function refreshState() {
   }
 }
 
+const PLAN_MESSAGE = {
+  suspended: () => 'الخدمة متوقفة مؤقتًا: العملاء مش هيقدروا ياخدوا أرقام جديدة. الطلبات المفتوحة بتكمل عادي. كلّم Aurexis.',
+  past_due: (p) => `الاشتراك متأخر. الخدمة هتتوقف بعد ${p.daysLeft} يوم لو ما اتجددتش.`,
+  trial: (p) => `فترة تجريبية: فاضل ${p.daysLeft} يوم.`,
+};
+
+function renderPlan(plan) {
+  const banner = $('plan-banner');
+  const message = plan && PLAN_MESSAGE[plan.status];
+  banner.hidden = !message;
+  if (message) {
+    banner.dataset.plan = plan.status;
+    banner.textContent = message(plan);
+  }
+}
+
 function applyState(state) {
+  renderPlan(state.plan);
   $('shop-name').textContent = state.shop.name;
   document.title = `الطلبات — ${state.shop.name}`;
   orders.clear();

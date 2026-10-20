@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1f21">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>لوحة الإدارة — Smart Pager</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <script type="module" src="/js/powered.js"></script>
+  <script type="module" src="/js/super.js"></script>
+</head>
+<body>
+  <div id="login-root"></div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <h1>لوحة الإدارة</h1>
+      <nav>
+        <button class="btn btn-primary btn-sm" id="new-brand" type="button">براند جديد</button>
+        <button class="icon-link" id="logout" type="button" aria-label="خروج" title="خروج"></button>
+      </nav>
+    </header>
+
+    <main class="dash">
+      <p class="muted" id="updated"></p>
+      <div id="brands"></div>
+
+      <section class="brand-section" aria-labelledby="h-audit">
+        <div class="dash-head">
+          <h2 id="h-audit">سجل العمليات</h2>
+          <button class="btn btn-sm" id="audit-refresh" type="button">تحديث</button>
+        </div>
+        <div class="audit-wrap">
+          <table class="audit">
+            <thead><tr><th>الوقت</th><th>مين</th><th>العملية</th><th>البراند / الفرع</th><th>تفاصيل</th></tr></thead>
+            <tbody id="audit"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

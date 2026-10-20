@@ -15,6 +15,11 @@ export default async function pageRoutes(app, { config }) {
     app.get(`/${prefix}/:shop`, (_req, reply) => sendHtml(reply, html));
   }
 
+  const superPage = read('super.html');
+  app.get('/super', (_req, reply) => sendHtml(reply, superPage));
+  const brandPage = read('brand.html');
+  app.get('/brand/:brand', (_req, reply) => sendHtml(reply, brandPage));
+
   const index = read('index.html');
   app.get('/', (_req, reply) => sendHtml(reply, index));
 

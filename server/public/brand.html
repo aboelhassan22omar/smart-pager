@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1f21">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>فروعي — Smart Pager</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/admin.css">
+  <script type="module" src="/js/powered.js"></script>
+  <script type="module" src="/js/brand.js"></script>
+</head>
+<body>
+  <div id="login-root"></div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <h1 id="brand-name"></h1>
+      <nav>
+        <button class="icon-link" id="logout" type="button" aria-label="خروج" title="خروج"></button>
+      </nav>
+    </header>
+
+    <main class="dash">
+      <div class="dash-head">
+        <div><h2>الفروع</h2><p class="sub" id="owner-line"></p></div>
+      </div>
+      <div id="branches"></div>
+    </main>
+  </div>
+</body>
+</html>
