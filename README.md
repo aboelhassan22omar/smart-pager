@@ -184,7 +184,8 @@ curl -X POST https://pager.example.com/api/admin/shops \
 - فعّل **Require branches to be up to date** و **Block force pushes**.
 
 ### المراحل
-- **`ci.yml`** بيشتغل على أي push لفرع غير `main`، وعلى كل PR، ولما `cd.yml` يستدعيه. فيه: الاعتماديات، والفحص، والـ lint (ومعاه actionlint)، والاختبارات، و `npm audit`، والتحقق من Compose و Caddy، وبناء الصورة لـ amd64 و arm64 ومعاه smoke test، وبناء iOS على macOS لو `ios/` اتغير.
+- **`ci.yml`** بيشتغل **مرة واحدة على الـ PR**، وده شرط الـ merge. بعد الـ merge، `cd.yml` بيتأكد إن الـ commit جاي من PR كل الـ checks الإجبارية بتاعته نجحت. لو آه، مش بيعيد الـ CI. ولو لأ (تشغيل يدوي، أو merge من غير checks)، بيشغّله كامل.
+  الحماية بتطلب إن الـ branch يكون up to date، فاللي اتجرّب في الـ PR هو نفسه بالظبط اللي بيتنشر. فيه: الاعتماديات، والفحص، والـ lint (ومعاه actionlint)، والاختبارات، و `npm audit`، والتحقق من Compose و Caddy، وبناء الصورة لـ amd64 و arm64 ومعاه smoke test، وبناء iOS على macOS لو `ios/` اتغير.
 - **`cd.yml`** بيشتغل على `main`. بيعيد الـ CI، وبعدين يشوف إيه اللي اتغير، ويبني وينشر الصورة على `ghcr.io/<owner>/<repo>` بالـ tags `sha-<sha>` و `latest`، وبعدها يستنى موافقتك وينشر على السيرفر.
   لو `/health` فشل بعد النشر، `APP_IMAGE` بيرجع للصورة القديمة تلقائي.
 

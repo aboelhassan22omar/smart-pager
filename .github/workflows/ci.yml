@@ -1,10 +1,11 @@
 name: CI
 
+# Runs once per change: on the pull request (the merge gate), and from cd.yml only
+# when main gets a commit that did not come through a checked PR.
 on:
-  push:
-    branches-ignore: [main]
   pull_request:
   workflow_call:
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -179,7 +180,9 @@ jobs:
           push: false
           load: ${{ matrix.platform == 'linux/amd64' }}
           tags: smart-pager:ci
-          cache-from: type=gha,scope=${{ steps.scope.outputs.name }}
+          cache-from: |
+            type=gha,scope=${{ steps.scope.outputs.name }}
+            type=gha,scope=app-release
           cache-to: type=gha,mode=max,scope=${{ steps.scope.outputs.name }}
       - name: Smoke test
         if: matrix.platform == 'linux/amd64'

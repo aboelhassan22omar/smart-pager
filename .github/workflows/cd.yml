@@ -13,8 +13,57 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # A squash merge of an up-to-date PR has exactly the tree CI already tested on the PR,
+  # so CI is not repeated. Anything else (manual run, admin bypass, failed or missing
+  # checks) runs the full CI below.
+  verify:
+    name: Stage 1 - CI passed on the PR?
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+      checks: read
+    outputs:
+      verified: ${{ steps.pr.outputs.verified }}
+    steps:
+      - name: Look up the merged PR and its checks
+        id: pr
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.sha }}
+          REQUIRED: >-
+            CI - Syntax check|CI - Lint|CI - Backend tests|CI - Frontend tests|CI - Asset audit|CI - Docker Compose validation|CI - Image build (linux/amd64)|CI - Image build (linux/arm64)
+        run: |
+          verified=false
+          if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+            pr="$(gh api "repos/$GITHUB_REPOSITORY/commits/$SHA/pulls" \
+              --jq '[.[] | select(.merged_at != null and .base.ref == "main")][0] | "\(.number) \(.head.sha)"' 2>/dev/null || true)"
+            if [ -n "$pr" ] && [ "$pr" != "null null" ]; then
+              number="${pr%% *}"
+              head="${pr##* }"
+              missing=0
+              IFS='|' read -ra names <<< "$REQUIRED"
+              for name in "${names[@]}"; do
+                ok="$(gh api "repos/$GITHUB_REPOSITORY/commits/$head/check-runs?per_page=100" \
+                  --jq "[.check_runs[] | select(.name == \"$name\" and .conclusion == \"success\")] | length")"
+                if [ "${ok:-0}" -lt 1 ]; then
+                  echo "::notice::#$number has no successful \"$name\""
+                  missing=1
+                fi
+              done
+              if [ "$missing" = 0 ]; then
+                verified=true
+                echo "Merged from #$number; all required checks passed on $head. Skipping CI re-run."
+              fi
+            fi
+          fi
+          echo "verified=$verified" >> "$GITHUB_OUTPUT"
+
   ci:
     name: Stage 1 - CI
+    needs: verify
+    if: needs.verify.outputs.verified != 'true'
     uses: ./.github/workflows/ci.yml
     permissions:
       contents: read
@@ -22,7 +71,11 @@ jobs:
 
   changes:
     name: Stage 2 - Detect changed services
-    needs: ci
+    needs: [verify, ci]
+    if: >-
+      always()
+      && needs.verify.result == 'success'
+      && (needs.ci.result == 'success' || needs.ci.result == 'skipped')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     outputs:
@@ -102,6 +155,7 @@ jobs:
           labels: |
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
             org.opencontainers.image.revision=${{ github.sha }}
+          # Saved on main; PR image builds read it too (PR caches are not readable from main).
           cache-from: type=gha,scope=app-release
           cache-to: type=gha,mode=max,scope=app-release
 
