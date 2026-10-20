@@ -196,7 +196,7 @@ jobs:
           curl -fsS -X POST http://localhost:3000/api/admin/shops \
             -H 'x-admin-token: ci-token' -H 'content-type: application/json' \
             -d '{"id":"smoke-cafe","name":"Smoke Cafe","pin":"1234"}'
-          curl -fsS http://localhost:3000/api/shops/smoke-cafe | grep -q '"id":"smoke-cafe"'
+          curl -fsS http://localhost:3000/api/b/smoke-cafe | grep -q '"id":"smoke-cafe"'
           curl -fsS http://localhost:3000/s/smoke-cafe | grep -q 'dir="rtl"'
           docker exec pager id -u | grep -qv '^0$'
           echo "smoke test passed"

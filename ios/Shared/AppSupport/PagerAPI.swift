@@ -13,28 +13,32 @@ struct PagerAPI {
 
     var base: URL = PagerAPI.baseURL
 
+    // Every customer call is scoped to the branch from /s/{branch}: an order id is only
+    // valid under the branch that issued it.
+    private func branch(_ id: String) -> String { "api/b/\(id)" }
+
     func shop(_ id: String) async throws -> Shop {
-        try await send("api/shops/\(id)", method: "GET", body: nil)
+        try await send(branch(id), method: "GET", body: nil)
     }
 
-    func order(_ id: String) async throws -> Order {
-        try await send("api/orders/\(id)", method: "GET", body: nil)
+    func order(shopId: String, id: String) async throws -> Order {
+        try await send("\(branch(shopId))/orders/\(id)", method: "GET", body: nil)
     }
 
     func claim(shopId: String, n: String?, k: String?) async throws -> Order {
-        var body: [String: String] = ["shopId": shopId]
+        var body: [String: String] = [:]
         if let n { body["n"] = n }
         if let k { body["k"] = k }
-        return try await send("api/claim", method: "POST", body: try JSONEncoder().encode(body))
+        return try await send("\(branch(shopId))/claim", method: "POST", body: try JSONEncoder().encode(body))
     }
 
-    func subscribeLiveActivity(orderId: String, token: String, app: String) async throws {
+    func subscribeLiveActivity(shopId: String, orderId: String, token: String, app: String) async throws {
         let body = SubscribeBody(orderId: orderId, payload: .init(token: token, app: app))
-        let _: OK = try await send("api/subscribe", method: "POST", body: try JSONEncoder().encode(body))
+        let _: OK = try await send("\(branch(shopId))/subscribe", method: "POST", body: try JSONEncoder().encode(body))
     }
 
-    func reviewClick(orderId: String) async throws {
-        let _: OK = try await send("api/orders/\(orderId)/review-click", method: "POST", body: nil)
+    func reviewClick(shopId: String, orderId: String) async throws {
+        let _: OK = try await send("\(branch(shopId))/orders/\(orderId)/review-click", method: "POST", body: nil)
     }
 
     private struct OK: Decodable {

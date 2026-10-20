@@ -406,6 +406,14 @@ Each phase is one branch and one PR, with CI green, tests, and README + DESIGN u
 | 7 | Promo | Upload validation (≤500 KB, magic bytes), shown only while preparing, dates |
 | 8 | Nightly backups, retention 7 days, optional S3, restore runbook + restore test | Restore → boot → data present |
 
+## 23a. Implementation status
+
+**Phase 1 is done.** All proposals in §24 were accepted when this design PR was merged. Notes from the implementation:
+- `src/migrations.js` (user_version runner + `VACUUM INTO`), `src/control.js`, `src/db.js` (branch schema), `src/store.js` (`BranchStore`, bound to one file), `src/tenants.js` (LRU), `src/cookies.js` (HKDF), `src/migrate-v1.js`, `src/provision.js`, `src/bootstrap.js`.
+- **Staff can still rename the branch.** The name is written to the control DB. This follows Q6 only after phase 2, which adds the owner dashboard, so that someone can still rename a branch.
+- **v1 migration and logo files:** a missing v1 logo file logs a warning, and the branch starts without a logo. It doesn't abort, because there is nothing to lose. Row-count mismatches and any error do abort.
+- **Dry run:** the migration was run against a snapshot of the production database before release. Settings, nonce, static key, PIN hash, and all orders came out identical, and the logo moved byte for byte.
+
 ## 24. Open questions
 
 These are places where the brief conflicts with the current code, or needs a decision. Each one has my proposal.

@@ -1,16 +1,14 @@
 import fs from 'node:fs';
-import path from 'node:path';
 import Fastify from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
-import { createBus } from './bus.js';
-import { openDb } from './db.js';
+import { openStorage } from './bootstrap.js';
+import { createBus, createScreens } from './bus.js';
 import { HttpError } from './errors.js';
 import { createNotifier } from './notify/index.js';
 import { PUBLIC_DIR } from './paths.js';
 import { ensureSecrets } from './secrets.js';
 import { createService } from './service.js';
-import { Store } from './store.js';
 import adminRoutes from './routes/admin.js';
 import barRoutes from './routes/bar.js';
 import customerRoutes from './routes/customer.js';
@@ -33,7 +31,7 @@ const CSP = [
 ].join('; ');
 
 export async function buildApp(config) {
-  fs.mkdirSync(path.join(config.dataDir, 'logos'), { recursive: true });
+  fs.mkdirSync(config.dataDir, { recursive: true });
   ensureSecrets(config);
 
   const app = Fastify({
@@ -43,12 +41,12 @@ export async function buildApp(config) {
     forceCloseConnections: true,
   });
 
-  const db = openDb(path.join(config.dataDir, 'pager.db'));
-  const store = new Store(db, config);
+  const { control, tenants } = openStorage(config, app.log);
   const bus = createBus();
-  const notifier = createNotifier({ store, config, log: app.log });
-  const service = createService({ store, bus, notifier, config, log: app.log });
-  const ctx = { config, store, bus, notifier, service };
+  const screens = createScreens();
+  const notifier = createNotifier({ tenants, config, log: app.log });
+  const service = createService({ control, tenants, bus, notifier, screens, config, log: app.log });
+  const ctx = { config, control, tenants, bus, screens, notifier, service };
 
   app.addContentTypeParser(LOGO_TYPES, { parseAs: 'buffer', bodyLimit: LOGO_MAX_BYTES }, (_req, body, done) => {
     done(null, body);
@@ -77,7 +75,8 @@ export async function buildApp(config) {
     reply.code(404).send({ error: 'مش موجود' });
   });
 
-  await app.register(fastifyCookie, { secret: config.cookieSecret });
+  // Cookie values are signed in-house with per-branch keys (cookies.js); this only parses/sets.
+  await app.register(fastifyCookie);
   await app.register(fastifyStatic, {
     root: PUBLIC_DIR,
     prefix: '/',
@@ -103,7 +102,8 @@ export async function buildApp(config) {
     clearInterval(rotation);
     clearInterval(jobs);
     notifier.close();
-    db.close();
+    tenants.closeAll();
+    control.close();
   });
 
   return app;

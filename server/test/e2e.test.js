@@ -16,7 +16,7 @@ const barState = async () => (await bar.get(`/api/bar/${SHOP}/state`)).data;
 const cookieHeader = (c) => [...c.jar].map(([k, v]) => `${k}=${v}`).join('; ');
 
 async function claimDynamic() {
-  const res = await api.post('/api/claim', { shopId: SHOP, n: nonceOf(await barState()) });
+  const res = await api.post(`/api/b/${SHOP}/claim`, { n: nonceOf(await barState()) });
   assert.equal(res.status, 200, JSON.stringify(res.data));
   return res.data;
 }
@@ -55,11 +55,11 @@ describe('admin API', () => {
     assert.equal((await api.post('/api/admin/shops', { id: SHOP, name: 'Again', pin: '1234' }, h)).status, 409);
     assert.equal((await api.post('/api/admin/shops', { id: OTHER, name: 'Other', pin: '5678' }, h)).status, 201);
 
-    const pub = await api.get(`/api/shops/${SHOP}`);
+    const pub = await api.get(`/api/b/${SHOP}`);
     assert.equal(pub.status, 200);
     assert.equal(pub.data.name, 'Test Café');
     assert.equal(pub.data.pin_hash, undefined);
-    assert.equal((await api.get('/api/shops/missing-shop')).status, 404);
+    assert.equal((await api.get('/api/b/missing-shop')).status, 404);
   });
 });
 
@@ -110,14 +110,14 @@ describe('PIN auth', () => {
 
 describe('dynamic QR claim', () => {
   test('forged nonce is rejected', async () => {
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, n: 'forged-nonce-123' })).status, 403);
-    assert.equal((await api.post('/api/claim', { shopId: SHOP })).status, 403);
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, n: '' })).status, 403);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { n: 'forged-nonce-123' })).status, 403);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, {})).status, 403);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { n: '' })).status, 403);
   });
 
   test('claim rotates the nonce; previous nonce has a grace window', async () => {
     const n0 = nonceOf(await barState());
-    const first = await api.post('/api/claim', { shopId: SHOP, n: n0 });
+    const first = await api.post(`/api/b/${SHOP}/claim`, { n: n0 });
     assert.equal(first.status, 200);
     assert.equal(first.data.number, 1);
     assert.equal(first.data.status, 'preparing');
@@ -126,18 +126,18 @@ describe('dynamic QR claim', () => {
     const n1 = nonceOf(await barState());
     assert.notEqual(n1, n0);
 
-    const grace = await api.post('/api/claim', { shopId: SHOP, n: n0 });
+    const grace = await api.post(`/api/b/${SHOP}/claim`, { n: n0 });
     assert.equal(grace.status, 200, 'previous nonce still valid once');
     assert.equal(grace.data.number, 2);
 
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, n: n0 })).status, 403, 'two rotations old');
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { n: n0 })).status, 403, 'two rotations old');
   });
 
   test('static key is not accepted in dynamic mode', async () => {
     const shopKey = (await bar.post(`/api/bar/${SHOP}/settings`, { qrMode: 'both' })).data.qr;
     const k = new URL(shopKey.staticUrl).searchParams.get('k');
     await bar.post(`/api/bar/${SHOP}/settings`, { qrMode: 'dynamic' });
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, k })).status, 403);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { k })).status, 403);
   });
 
   test('bar SSE receives created orders and nonce events', async () => {
@@ -154,7 +154,7 @@ describe('dynamic QR claim', () => {
   test('claim is rate limited per IP', async () => {
     const ip = '10.88.88.88';
     let last;
-    for (let i = 0; i < 7; i++) last = await api.post('/api/claim', { shopId: SHOP, n: 'x' }, { ip });
+    for (let i = 0; i < 7; i++) last = await api.post(`/api/b/${SHOP}/claim`, { n: 'x' }, { ip });
     assert.equal(last.status, 429);
     assert.ok(last.headers.get('retry-after'));
   });
@@ -163,7 +163,7 @@ describe('dynamic QR claim', () => {
 describe('order lifecycle', () => {
   test('SSE ready event, re-notify, picked', async () => {
     const order = await claimDynamic();
-    const stream = await sse(`${server.url}/api/orders/${order.id}/events`);
+    const stream = await sse(`${server.url}/api/b/${SHOP}/orders/${order.id}/events`);
     assert.equal(stream.status, 200);
     assert.equal((await stream.next('order')).data.status, 'preparing');
 
@@ -185,7 +185,7 @@ describe('order lifecycle', () => {
     assert.equal((await stream.next('order', (d) => d.status === 'picked')).data.message, 'بالهنا والشفا');
     stream.close();
 
-    const fetched = await api.get(`/api/orders/${order.id}`);
+    const fetched = await api.get(`/api/b/${SHOP}/orders/${order.id}`);
     assert.equal(fetched.data.status, 'picked');
     assert.ok(fetched.data.closedAt);
     assert.equal((await bar.post(`/api/bar/${SHOP}/orders/${order.id}/advance`)).status, 409);
@@ -221,8 +221,8 @@ describe('order lifecycle', () => {
   });
 
   test('unknown order ids 404', async () => {
-    assert.equal((await api.get('/api/orders/does-not-exist-000000')).status, 404);
-    assert.equal((await api.get('/api/orders/does-not-exist-000000/events')).status, 404);
+    assert.equal((await api.get(`/api/b/${SHOP}/orders/does-not-exist-000000`)).status, 404);
+    assert.equal((await api.get(`/api/b/${SHOP}/orders/does-not-exist-000000/events`)).status, 404);
   });
 });
 
@@ -234,16 +234,16 @@ describe('static QR mode', () => {
     assert.equal(state.qr.dynamicUrl, null);
     const k0 = keyOf(state);
 
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, n: 'anything' })).status, 403);
-    const claimed = await api.post('/api/claim', { shopId: SHOP, k: k0 });
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { n: 'anything' })).status, 403);
+    const claimed = await api.post(`/api/b/${SHOP}/claim`, { k: k0 });
     assert.equal(claimed.status, 200);
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, k: k0 })).status, 200, 'static key is reusable');
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { k: k0 })).status, 200, 'static key is reusable');
 
     await bar.post(`/api/bar/${SHOP}/settings`, { rotateStaticKey: true });
     const k1 = keyOf(await barState());
     assert.notEqual(k1, k0);
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, k: k0 })).status, 403);
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, k: k1 })).status, 200);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { k: k0 })).status, 403);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { k: k1 })).status, 200);
   });
 
   test('QR SVGs per kind, with download disposition', async () => {
@@ -259,8 +259,8 @@ describe('static QR mode', () => {
   test('both mode accepts either code', async () => {
     await bar.post(`/api/bar/${SHOP}/settings`, { qrMode: 'both' });
     const state = await barState();
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, k: keyOf(state) })).status, 200);
-    assert.equal((await api.post('/api/claim', { shopId: SHOP, n: nonceOf(state) })).status, 200);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { k: keyOf(state) })).status, 200);
+    assert.equal((await api.post(`/api/b/${SHOP}/claim`, { n: nonceOf(state) })).status, 200);
     await bar.post(`/api/bar/${SHOP}/settings`, { qrMode: 'dynamic' });
   });
 });
@@ -316,7 +316,7 @@ describe('settings', () => {
 
 describe('shop accent + Google review', () => {
   const settings = (body) => bar.post(`/api/bar/${SHOP}/settings`, body);
-  const publicShop = async () => (await api.get(`/api/shops/${SHOP}`)).data;
+  const publicShop = async () => (await api.get(`/api/b/${SHOP}`)).data;
 
   test('accent color is validated, made readable, and can be cleared', async () => {
     assert.equal((await settings({ accentColor: 'blue' })).data.field, 'accentColor');
@@ -352,7 +352,7 @@ describe('shop accent + Google review', () => {
 
   test('review taps are counted once per picked-up order', async () => {
     const order = await claimDynamic();
-    const click = () => api.request('POST', `/api/orders/${order.id}/review-click`, {
+    const click = () => api.request('POST', `/api/b/${SHOP}/orders/${order.id}/review-click`, {
       body: '',
       headers: { 'content-type': 'text/plain;charset=UTF-8' },
     });
@@ -370,35 +370,6 @@ describe('shop accent + Google review', () => {
   });
 });
 
-describe('database upgrade', () => {
-  test('adds the new columns to a database created by the first release', async () => {
-    const { DatabaseSync } = await import('node:sqlite');
-    const { openDb } = await import('../src/db.js');
-    const os = await import('node:os');
-    const path = await import('node:path');
-    const fs = await import('node:fs');
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pager-migrate-'));
-    const file = path.join(dir, 'old.db');
-    const old = new DatabaseSync(file);
-    old.exec(`CREATE TABLE shops (id TEXT PRIMARY KEY, name TEXT NOT NULL, logo TEXT, pin_hash TEXT NOT NULL,
-      qr_mode TEXT NOT NULL DEFAULT 'dynamic', qr_nonce TEXT NOT NULL, qr_prev_nonce TEXT, qr_rotated_at INTEGER NOT NULL,
-      static_key TEXT NOT NULL, next_number INTEGER NOT NULL DEFAULT 1, number_day TEXT, max_number INTEGER NOT NULL DEFAULT 999,
-      expire_hours INTEGER NOT NULL DEFAULT 3, preparing_message TEXT NOT NULL DEFAULT 'x', ready_message TEXT NOT NULL DEFAULT 'y',
-      created_at INTEGER NOT NULL);
-      INSERT INTO shops (id, name, pin_hash, qr_nonce, qr_rotated_at, static_key, created_at) VALUES ('old-shop', 'Old', 'h', 'n', 0, 'k', 0);`);
-    old.close();
-
-    const db = openDb(file);
-    const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
-    for (const c of ['accent_color', 'google_review_url', 'review_clicks']) assert.ok(cols('shops').includes(c), c);
-    assert.ok(cols('orders').includes('review_clicked_at'));
-    assert.equal(db.prepare("SELECT review_clicks FROM shops WHERE id = 'old-shop'").get().review_clicks, 0);
-    db.close();
-    openDb(file).close(); // idempotent
-    fs.rmSync(dir, { recursive: true, force: true });
-  });
-});
-
 describe('logo upload', () => {
   const upload = (body, type) =>
     bar.request('POST', `/api/bar/${SHOP}/logo`, { body, headers: { 'content-type': type } });
@@ -407,12 +378,12 @@ describe('logo upload', () => {
     const res = await upload(PNG_1X1, 'image/png');
     assert.equal(res.status, 200);
     const { logoUrl } = res.data.shop;
-    assert.match(logoUrl, /^\/media\/logos\/test-cafe-\d+\.png$/);
+    assert.match(logoUrl, /^\/media\/b\/test-cafe\/logo-\d+\.png$/);
     const file = await fetch(server.url + logoUrl);
     assert.equal(file.status, 200);
     assert.equal(file.headers.get('content-type'), 'image/png');
     assert.deepEqual(Buffer.from(await file.arrayBuffer()), PNG_1X1);
-    assert.equal((await api.get(`/api/shops/${SHOP}`)).data.logoUrl, logoUrl);
+    assert.equal((await api.get(`/api/b/${SHOP}`)).data.logoUrl, logoUrl);
   });
 
   test('rejects SVG, spoofed content and oversize files', async () => {
@@ -427,7 +398,7 @@ describe('logo upload', () => {
   });
 
   test('replacing and removing the logo', async () => {
-    const first = (await api.get(`/api/shops/${SHOP}`)).data.logoUrl;
+    const first = (await api.get(`/api/b/${SHOP}`)).data.logoUrl;
     const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.alloc(16)]);
     const replaced = await upload(jpeg, 'image/jpeg');
     assert.match(replaced.data.shop.logoUrl, /\.jpg$/);
@@ -447,7 +418,7 @@ describe('subscribe', () => {
 
   test('validates web push subscriptions', async () => {
     const order = await claimDynamic();
-    const sub = (payload) => api.post('/api/subscribe', { orderId: order.id, kind: 'webpush', payload });
+    const sub = (payload) => api.post(`/api/b/${SHOP}/subscribe`, { orderId: order.id, kind: 'webpush', payload });
     assert.equal((await sub(webpush('http://push.test.invalid/abc'))).status, 400, 'https only');
     assert.equal((await sub(webpush('https://evil.example.com/abc'))).status, 400, 'push host allow-list');
     assert.equal((await sub(webpush('not a url'))).status, 400);
@@ -458,18 +429,18 @@ describe('subscribe', () => {
 
   test('validates Live Activity tokens', async () => {
     const order = await claimDynamic();
-    const sub = (payload) => api.post('/api/subscribe', { orderId: order.id, kind: 'live_activity', payload });
+    const sub = (payload) => api.post(`/api/b/${SHOP}/subscribe`, { orderId: order.id, kind: 'live_activity', payload });
     assert.equal((await sub({ token: 'not-hex-zz' })).status, 400);
     assert.equal((await sub({ token: 'abcd' })).status, 400, 'too short');
     assert.equal((await sub({ token: crypto.randomBytes(40).toString('hex'), app: 'clip' })).status, 200);
-    assert.equal((await api.post('/api/subscribe', { orderId: order.id, kind: 'sms', payload: {} })).status, 400);
+    assert.equal((await api.post(`/api/b/${SHOP}/subscribe`, { orderId: order.id, kind: 'sms', payload: {} })).status, 400);
   });
 
   test('rejects unknown and closed orders', async () => {
-    assert.equal((await api.post('/api/subscribe', { orderId: 'nope-nope-nope-nope', kind: 'live_activity', payload: {} })).status, 404);
+    assert.equal((await api.post(`/api/b/${SHOP}/subscribe`, { orderId: 'nope-nope-nope-nope', kind: 'live_activity', payload: {} })).status, 404);
     const order = await claimDynamic();
     await bar.post(`/api/bar/${SHOP}/orders/${order.id}/status`, { status: 'cancelled' });
-    const res = await api.post('/api/subscribe', {
+    const res = await api.post(`/api/b/${SHOP}/subscribe`, {
       orderId: order.id,
       kind: 'live_activity',
       payload: { token: crypto.randomBytes(40).toString('hex') },
@@ -507,14 +478,14 @@ describe('misc', () => {
     const numbers = [];
     const ids = [];
     for (let i = 0; i < 10; i++) {
-      const o = (await api.post('/api/claim', { shopId: shop, k })).data;
+      const o = (await api.post(`/api/b/${shop}/claim`, { k })).data;
       numbers.push(o.number);
       ids.push(o.id);
     }
     assert.deepEqual(numbers, [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
-    assert.equal((await api.post('/api/claim', { shopId: shop, k })).status, 503, 'all numbers open');
+    assert.equal((await api.post(`/api/b/${shop}/claim`, { k })).status, 503, 'all numbers open');
     await staff.post(`/api/bar/${shop}/orders/${ids[2]}/status`, { status: 'picked' });
-    assert.equal((await api.post('/api/claim', { shopId: shop, k })).data.number, 3, 'wraps and reuses the freed number');
+    assert.equal((await api.post(`/api/b/${shop}/claim`, { k })).data.number, 3, 'wraps and reuses the freed number');
   });
 });
 

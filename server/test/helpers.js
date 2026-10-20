@@ -22,9 +22,10 @@ function freePort() {
   });
 }
 
-// Spawns the real server on a temp DATA_DIR and waits for /health.
-export async function startServer(env = {}) {
-  const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), 'smart-pager-'));
+// Spawns the real server on a temp DATA_DIR (or a pre-seeded one) and waits for /health.
+// With `expectExit`, waits for the process to exit instead and resolves {code, output}.
+export async function startServer(env = {}, { dataDir: seeded, expectExit = false } = {}) {
+  const dataDir = seeded ?? fs.mkdtempSync(path.join(os.tmpdir(), 'smart-pager-'));
   const port = await freePort();
   const url = `http://127.0.0.1:${port}`;
   const proc = spawn(process.execPath, ['--disable-warning=ExperimentalWarning', SERVER], {
@@ -51,6 +52,20 @@ export async function startServer(env = {}) {
   let output = '';
   proc.stdout.on('data', (d) => (output += d));
   proc.stderr.on('data', (d) => (output += d));
+
+  if (expectExit) {
+    const code = await new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        proc.kill('SIGKILL');
+        resolve('timeout');
+      }, 15_000);
+      proc.once('exit', (c) => {
+        clearTimeout(timer);
+        resolve(c);
+      });
+    });
+    return { code, output, dataDir };
+  }
 
   const deadline = Date.now() + 15_000;
   for (;;) {

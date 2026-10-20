@@ -33,6 +33,8 @@ export function loadConfig(env = process.env) {
     claimRatePerMin: int(env.CLAIM_RATE_PER_MIN, 6, 1, 100000),
     loginRatePerMin: int(env.LOGIN_RATE_PER_MIN, 5, 1, 100000),
     jobIntervalSeconds: int(env.JOB_INTERVAL_SECONDS, 60, 1, 3600),
+    jobBatch: int(env.JOB_BATCH, 100, 1, 100000),
+    tenantDbCache: int(env.TENANT_DB_CACHE, 200, 1, 100000),
     adminToken: str(env.ADMIN_TOKEN, ''),
     cookieSecret: str(env.COOKIE_SECRET, ''),
     pushHosts: str(env.PUSH_ENDPOINT_HOSTS, DEFAULT_PUSH_HOSTS.join(','))

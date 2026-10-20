@@ -14,7 +14,7 @@ export function statusMessage(order, shop) {
   return DONE_MESSAGES[order.status] ?? '';
 }
 
-export const logoUrl = (shop) => (shop.logo ? `/media/logos/${shop.logo}` : null);
+export const logoUrl = (shop) => (shop.logo ? `/media/b/${shop.id}/${shop.logo}` : null);
 
 export const publicShop = (shop) => ({
   id: shop.id,
@@ -29,7 +29,7 @@ export const publicShop = (shop) => ({
 
 export const publicOrder = (order, shop) => ({
   id: order.id,
-  shopId: order.shop_id,
+  shopId: shop.id,
   shopName: shop.name,
   number: order.number,
   status: order.status,

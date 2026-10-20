@@ -160,7 +160,7 @@ describe('Google review prompt', () => {
   test('shows after pickup only, for every customer, and counts the tap', () => {
     const js = read('public/js/customer.js');
     assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.googleReviewUrl\)/);
-    assert.match(js, /sendBeacon\?\.\(`\/api\/orders\/\$\{encodeURIComponent\(order\.id\)\}\/review-click`/);
+    assert.match(js, /sendBeacon\?\.\(`\$\{branchApi\}\/orders\/\$\{encodeURIComponent\(order\.id\)\}\/review-click`/);
     const html = read('public/s.html');
     assert.match(html, /id="review-link"[^>]*target="_blank"[^>]*rel="noopener"/);
   });

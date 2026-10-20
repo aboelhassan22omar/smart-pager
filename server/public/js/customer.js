@@ -13,6 +13,8 @@ const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
 const params = new URLSearchParams(location.search);
 const storageKey = `sp:order:${shopId}`;
+// Every customer call is scoped to this branch; an order id is only valid under its own branch.
+const branchApi = `/api/b/${encodeURIComponent(shopId)}`;
 const chime = new Chime();
 const startedAt = performance.now();
 
@@ -109,7 +111,7 @@ function renderReview() {
   const link = $('review-link');
   link.href = shop.googleReviewUrl;
   link.addEventListener('click', () => {
-    navigator.sendBeacon?.(`/api/orders/${encodeURIComponent(order.id)}/review-click`, '');
+    navigator.sendBeacon?.(`${branchApi}/orders/${encodeURIComponent(order.id)}/review-click`, '');
   }, { once: true });
   box.hidden = false;
 }
@@ -197,7 +199,7 @@ function stopPolling() {
 
 async function refresh() {
   try {
-    apply(await api(`/api/orders/${encodeURIComponent(order.id)}`));
+    apply(await api(`${branchApi}/orders/${encodeURIComponent(order.id)}`));
   } catch {
     /* keep polling */
   }
@@ -206,7 +208,7 @@ async function refresh() {
 function connect() {
   if (!order || CLOSED.includes(order.status)) return;
   events?.close();
-  events = new EventSource(`/api/orders/${encodeURIComponent(order.id)}/events`);
+  events = new EventSource(`${branchApi}/orders/${encodeURIComponent(order.id)}/events`);
   events.addEventListener('open', () => setOnline(true));
   events.addEventListener('error', () => {
     setOnline(false);
@@ -238,7 +240,7 @@ async function subscribePush(permission) {
     await (await registration.pushManager.getSubscription())?.unsubscribe();
     subscription = await registration.pushManager.subscribe(options);
   }
-  await api('/api/subscribe', {
+  await api(`${branchApi}/subscribe`, {
     method: 'POST',
     body: { orderId: order.id, kind: 'webpush', payload: subscription.toJSON() },
   });
@@ -273,7 +275,7 @@ async function resolveOrder() {
   let current = null;
   if (savedId) {
     try {
-      current = await api(`/api/orders/${encodeURIComponent(savedId)}`);
+      current = await api(`${branchApi}/orders/${encodeURIComponent(savedId)}`);
       if (current.shopId !== shopId) current = null;
     } catch {
       current = null;
@@ -282,14 +284,14 @@ async function resolveOrder() {
   const n = params.get('n');
   const k = params.get('k');
   if ((!current || CLOSED.includes(current.status)) && (n || k)) {
-    current = await api('/api/claim', { method: 'POST', body: { shopId, n: n ?? undefined, k: k ?? undefined } });
+    current = await api(`${branchApi}/claim`, { method: 'POST', body: { n: n ?? undefined, k: k ?? undefined } });
   }
   return current;
 }
 
 async function boot() {
   try {
-    shop = await api(`/api/shops/${encodeURIComponent(shopId)}`);
+    shop = await api(branchApi);
   } catch (err) {
     await holdSplash();
     fatal(err.status === 404 ? 'المحل ده مش موجود. اتأكد من الكود' : err.message);

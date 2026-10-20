@@ -5,9 +5,12 @@ import { createApns } from './apns.js';
 
 const DISMISS_AFTER_S = 15 * 60;
 
-export function createNotifier({ store, config, log }) {
+// Push sends finish after the request, when the branch DB handle may have been evicted from
+// the LRU, so cleanups re-resolve the branch instead of keeping a store reference.
+export function createNotifier({ tenants, config, log }) {
   webpush.setVapidDetails(config.vapid.subject, config.vapid.publicKey, config.vapid.privateKey);
   const apns = createApns(config.apple, log);
+  const dropSubscription = (branchId, id) => tenants.get(branchId)?.store.deleteSubscription(id);
 
   function webPushPayload(order, shop, renotify) {
     return {
@@ -32,7 +35,7 @@ export function createNotifier({ store, config, log }) {
       });
     } catch (err) {
       if (err.statusCode === 404 || err.statusCode === 410) {
-        store.deleteSubscription(sub.id);
+        dropSubscription(shop.id, sub.id);
         log.info({ orderId: order.id }, 'web push subscription gone; removed');
       } else {
         log.warn({ orderId: order.id, status: err.statusCode, err: err.message }, 'web push failed');
@@ -68,7 +71,7 @@ export function createNotifier({ store, config, log }) {
       payload: liveActivityPayload(order, shop),
     });
     if (res.status === 410 || res.reason === 'BadDeviceToken' || res.reason === 'Unregistered') {
-      store.deleteSubscription(sub.id);
+      dropSubscription(shop.id, sub.id);
       log.info({ orderId: order.id, reason: res.reason }, 'live activity token gone; removed');
     } else if (res.status !== 200) {
       log.warn({ orderId: order.id, status: res.status, reason: res.reason }, 'APNs push failed');
@@ -84,8 +87,8 @@ export function createNotifier({ store, config, log }) {
 
   return {
     apnsReady: Boolean(apns),
-    orderChanged(order, shop, { renotify = false } = {}) {
-      for (const sub of store.subscriptions(order.id)) dispatch(sub, order, shop, renotify);
+    orderChanged(ctx, order, shop, { renotify = false } = {}) {
+      for (const sub of ctx.store.subscriptions(order.id)) dispatch(sub, order, shop, renotify);
     },
     // A new web push subscriber immediately gets the silent "preparing" notification
     // (or the ready one if it subscribed late).

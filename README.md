@@ -85,8 +85,8 @@ npm run test:frontend  # اختبارات الواجهة (RTL و Powered by وا
 ### أوامر الـ CLI
 
 ```bash
-node src/cli.js create <id> <name> <pin> [dynamic|static|both]
-node src/cli.js pin <id> <newPin>
+node src/cli.js create <id> <name> <pin> [dynamic|static|both]   # براند + فرع بنفس المعرّف
+node src/cli.js pin <branch> <newPin>
 node src/cli.js list
 ```
 
@@ -151,6 +151,51 @@ curl -X POST https://pager.example.com/api/admin/shops \
 - **الرقم السري:** من 4 لـ 8 أرقام.
 
 بعد كده سلّم المحل الرابطين `/bar/{id}` و `/qr/{id}`.
+
+### براند عنده أكتر من فرع
+
+`/api/admin/shops` بيعمل براند وفرع بنفس المعرّف. لو البراند فيه أكتر من فرع، اعمل البراند الأول وبعدين الفروع. معرّف الفرع لازم يبدأ بمعرّف البراند وبعده `-`، زي `cafex-korba`:
+
+```bash
+curl -X POST https://pager.example.com/api/admin/brands -H "x-admin-token: $ADMIN_TOKEN" \
+  -H "content-type: application/json" -d '{"id":"cafex","name":"كافيه إكس"}'
+curl -X POST https://pager.example.com/api/admin/branches -H "x-admin-token: $ADMIN_TOKEN" \
+  -H "content-type: application/json" \
+  -d '{"brandId":"cafex","id":"cafex-korba","name":"كافيه إكس - الكوربة","area":"الكوربة","pin":"4821"}'
+```
+
+## تخزين البيانات والعزل بين الفروع
+
+```
+/data/control.db                          سجل البراندات والفروع بس (من غير طلبات)
+/data/tenants/<brand>/<branch>/pager.db   كل بيانات الفرع: الطلبات والاشتراكات والإعدادات
+/data/tenants/<brand>/<branch>/media/     الشعار
+/data/backups/                            نسخ احتياطية قبل أي migration
+```
+
+- **قاعدة بيانات لكل فرع:** كل فرع ليه ملف لوحده. الطلب بيتدوّر عليه في قاعدة بيانات الفرع بتاعه بس، فرقم طلب من فرع تاني بيرجع 404.
+- **الـ routes:** routes العميل تحت `/api/b/<branch>/…`، وroutes الموظفين تحت `/api/bar/<branch>/…`.
+- **الكوكيز:** كوكي الموظفين بتتوقّع بمفتاح خاص بكل فرع (HKDF من `COOKIE_SECRET`)، فكوكي فرع مينفعش يفتح فرع تاني.
+- **الأحداث وحدود الطلبات:** قنوات SSE وحدود الطلبات كلها متقسمة بالفرع.
+- **قواعد البيانات المفتوحة:** بتتفتح وقت الحاجة، وأقصى عدد مفتوح في نفس الوقت `TENANT_DB_CACHE` (الافتراضي 200).
+
+### النقل من النسخة الأولى (بيحصل مرة واحدة لوحده)
+
+أول ما النسخة الجديدة تقوم، لو لقت `/data/pager.db` ومفيش `control.db`، بتعمل الآتي:
+1. تاخد نسخة احتياطية في `/data/backups/pre-v2-<وقت>/pager.db`.
+2. تبني كل حاجة في مجلد مؤقت، وتطابق عدد الطلبات والاشتراكات لكل محل.
+3. بعدين بس تنقل الملفات لمكانها، وتغيّر اسم الملف القديم لـ `pager.db.migrated`.
+
+لو حصل أي اختلاف في العدد، النقل بيتلغي، و `pager.db` بيفضل زي ما هو، والسيرفر مش بيقوم. وساعتها النشر بيرجع للصورة القديمة لوحده.
+
+بعد النقل، **الموظفين محتاجين يسجّلوا دخول مرة واحدة** بنفس الرقم السري، لأن شكل الكوكي اتغيّر.
+
+**الرجوع للنسخة الأولى يدوي:** بيبقى محتاج لو النقل نجح، وبعدين احتجت ترجع للصورة القديمة.
+1. وقّف الـ app.
+2. داخل `/data`: رجّع اسم `pager.db.migrated` لـ `pager.db`، وانقل `control.db` و `tenants/` لمكان تاني.
+3. رجّع `APP_IMAGE` القديم، وشغّل `docker compose up -d app`.
+
+خد بالك إن أي طلبات اتعملت بعد النقل مش هتبقى في النسخة القديمة.
 
 ### أنواع الكود
 

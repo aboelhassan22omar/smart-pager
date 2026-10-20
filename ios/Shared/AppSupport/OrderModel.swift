@@ -61,9 +61,9 @@ final class OrderModel: ObservableObject {
 
     /// Counts the "rate us on Google" tap (once per order, server side).
     func recordReviewClick() {
-        guard let id = order?.id else { return }
+        guard let current = order else { return }
         let api = self.api
-        Task { try? await api.reviewClick(orderId: id) }
+        Task { try? await api.reviewClick(shopId: current.shopId, orderId: current.id) }
     }
 
     func setForeground(_ active: Bool) {
@@ -124,7 +124,7 @@ final class OrderModel: ObservableObject {
             shop = try await api.shop(shopId)
             var current: Order?
             if let savedId = query["o"] ?? UserDefaults.standard.string(forKey: savedKey(shopId)) {
-                current = try? await api.order(savedId)
+                current = try? await api.order(shopId: shopId, id: savedId)
             }
             if let found = current, found.shopId != shopId { current = nil }
             let canClaim = query["n"] != nil || query["k"] != nil
@@ -160,7 +160,7 @@ final class OrderModel: ObservableObject {
 
     func refresh() async {
         guard let current = order, !current.isClosed,
-              let fresh = try? await api.order(current.id) else { return }
+              let fresh = try? await api.order(shopId: current.shopId, id: current.id) else { return }
         guard fresh != current else { return }
         order = fresh
         await updateActivity(fresh)
@@ -207,12 +207,13 @@ final class OrderModel: ObservableObject {
     private func observePushToken(_ activity: Activity<PagerAttributes>) {
         tokenTask?.cancel()
         let orderId = activity.attributes.orderId
+        let shopId = activity.attributes.shopId
         let kind = appKind
         let api = self.api
         tokenTask = Task {
             for await data in activity.pushTokenUpdates {
                 let token = data.map { String(format: "%02x", $0) }.joined()
-                try? await api.subscribeLiveActivity(orderId: orderId, token: token, app: kind)
+                try? await api.subscribeLiveActivity(shopId: shopId, orderId: orderId, token: token, app: kind)
             }
         }
     }
