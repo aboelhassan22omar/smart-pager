@@ -206,18 +206,6 @@ function bindForms() {
   });
 }
 
-function renderApple(apple) {
-  const rows = [
-    ['إشعارات Live Activity', apple.liveActivity ? 'شغّالة' : 'مش متظبطة', apple.liveActivity],
-    ['بانر الـ App Clip في سفاري', apple.appClipBanner ? 'شغّال' : 'مش متظبط', apple.appClipBanner],
-    ['ربط الدومين بالتطبيق', apple.associatedDomains ? 'شغّال' : 'مش متظبط', apple.associatedDomains],
-    ['بيئة APNs', apple.apnsEnv === 'sandbox' ? 'تجريبية' : 'إنتاج', false],
-  ];
-  $('apple-status').innerHTML = rows
-    .map(([k, v, on]) => `<div><dt>${esc(k)}</dt><dd data-on="${on}">${esc(v)}</dd></div>`)
-    .join('');
-}
-
 async function boot() {
   let state;
   try {
@@ -234,7 +222,6 @@ async function boot() {
   $('download-static').innerHTML = `${icons.download()}<span>نزّل الكود الثابت (SVG)</span>`;
   $('logout').innerHTML = `${icons.logout()}<span>خروج من الجهاز ده</span>`;
   renderShop();
-  renderApple(state.apple);
   bindLogo();
   bindForms();
 }
