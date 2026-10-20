@@ -41,10 +41,27 @@ CREATE TABLE IF NOT EXISTS subscriptions (
 );
 `;
 
+// Columns added after the first release. Each is added once if missing, so existing
+// databases upgrade in place on boot.
+const ADDED_COLUMNS = [
+  ['shops', 'accent_color', 'TEXT'],
+  ['shops', 'google_review_url', 'TEXT'],
+  ['shops', 'review_clicks', 'INTEGER NOT NULL DEFAULT 0'],
+  ['orders', 'review_clicked_at', 'INTEGER'],
+];
+
+function migrate(db) {
+  for (const [table, column, type] of ADDED_COLUMNS) {
+    const exists = db.prepare(`PRAGMA table_info(${table})`).all().some((c) => c.name === column);
+    if (!exists) db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${type}`);
+  }
+}
+
 export function openDb(file) {
   const db = new DatabaseSync(file);
   db.exec('PRAGMA busy_timeout = 5000; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;');
   db.exec(SCHEMA);
+  migrate(db);
   return db;
 }
 

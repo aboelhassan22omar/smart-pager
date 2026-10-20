@@ -59,6 +59,13 @@ final class OrderModel: ObservableObject {
         Task { await load(url) }
     }
 
+    /// Counts the "rate us on Google" tap (once per order, server side).
+    func recordReviewClick() {
+        guard let id = order?.id else { return }
+        let api = self.api
+        Task { try? await api.reviewClick(orderId: id) }
+    }
+
     func setForeground(_ active: Bool) {
         isForeground = active
         if active {

@@ -92,6 +92,13 @@ export default async function customerRoutes(app, { config, store, bus, notifier
     sse.onClose(() => bus.off(channel, listener));
   });
 
+  // Sent (via sendBeacon) when a customer taps "rate us on Google" after pickup.
+  app.post('/api/orders/:id/review-click', async (req) => {
+    const { order, shop } = loadOrder(req.params.id);
+    if (order.status !== 'picked' || !shop.google_review_url) throw new HttpError(409, 'التقييم مش متاح للطلب ده');
+    return { ok: true, counted: store.recordReviewClick(order) };
+  });
+
   app.post('/api/subscribe', async (req) => {
     const { orderId, kind, payload } = req.body ?? {};
     const { order, shop } = loadOrder(orderId);

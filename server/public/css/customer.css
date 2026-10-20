@@ -22,13 +22,13 @@
 .splash-logo {
   display: grid;
   place-items: center;
-  width: 112px;
-  height: 112px;
+  width: 136px;
+  height: 136px;
   overflow: hidden;
-  border-radius: 30px;
+  border-radius: 36px;
   background: var(--surface);
   color: var(--accent);
-  font-size: 2.75rem;
+  font-size: 3.25rem;
   font-weight: 600;
 }
 
@@ -103,18 +103,6 @@
   font-size: var(--fs-xs);
 }
 
-.card-logo {
-  display: grid;
-  place-items: center;
-  width: 26px;
-  height: 26px;
-  overflow: hidden;
-  border-radius: 8px;
-  background: var(--surface-2);
-  color: var(--accent);
-  font-weight: 600;
-}
-
 .card-app {
   flex: 1;
   letter-spacing: 0.08em;
@@ -122,11 +110,34 @@
   text-align: right;
 }
 
-.card-shop {
-  margin: 14px 0 0;
-  font-size: var(--fs-lg);
+/* Shop identity: a real logo size, beside the name. */
+.card-brand {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 14px;
+}
+
+.card-logo {
+  display: grid;
+  place-items: center;
+  width: 56px;
+  height: 56px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 16px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-size: var(--fs-xl);
   font-weight: 600;
-  line-height: 1.35;
+}
+
+.card-shop {
+  margin: 0;
+  min-width: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  line-height: 1.3;
 }
 
 .card-label {
@@ -220,6 +231,45 @@
   color: var(--muted);
   font-size: var(--fs-md);
   font-weight: 500;
+}
+
+/* ---------- after pickup: Google review ---------- */
+
+.review {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  padding: 22px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  text-align: center;
+  animation: rise 520ms var(--ease) 120ms both;
+}
+
+.review-stars {
+  display: flex;
+  gap: 4px;
+  color: var(--accent);
+}
+
+.review-stars .icon {
+  width: 26px;
+  height: 26px;
+  fill: currentColor;
+  stroke-width: 1.5;
+}
+
+.review-title {
+  margin: 8px 0 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.review-sub {
+  margin: 0 0 12px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
 }
 
 .hint {

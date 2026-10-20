@@ -4,6 +4,7 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
+import { BG, contrast, extractAccent, hexToRgb, readableAccent, rgbToHsl } from '../public/js/color.js';
 import { mountPoweredBy, AUREXIS_LOGO, AUREXIS_URL } from '../public/js/powered.js';
 import { esc, SPLASH_MIN_MS } from '../public/js/util.js';
 
@@ -111,6 +112,57 @@ describe('splash', () => {
     const swift = fs.readFileSync(path.join(root, '..', 'ios', 'Shared', 'AppSupport', 'OrderModel.swift'), 'utf8');
     const seconds = Number(swift.match(/splashMinimum: TimeInterval = ([\d.]+)/)[1]);
     assert.ok(seconds >= 1.0, `splashMinimum = ${seconds}`);
+  });
+});
+
+describe('shop accent from the logo', () => {
+  const pixels = (...groups) => {
+    const out = [];
+    for (const [hex, count, alpha = 255] of groups) {
+      const [r, g, b] = hexToRgb(hex);
+      for (let i = 0; i < count; i++) out.push(r, g, b, alpha);
+    }
+    return Uint8ClampedArray.from(out);
+  };
+  const hueOf = (hex) => rgbToHsl(...hexToRgb(hex))[0];
+
+  test('picks the dominant saturated color', () => {
+    const color = extractAccent(pixels(['#1a73e8', 300], ['#ffffff', 600], ['#000000', 200]));
+    assert.ok(Math.abs(hueOf(color) - hueOf('#1a73e8')) < 8, color);
+  });
+
+  test('monochrome or transparent logos give no accent', () => {
+    assert.equal(extractAccent(pixels(['#000000', 300], ['#ffffff', 300], ['#808080', 300])), null);
+    assert.equal(extractAccent(pixels(['#1a73e8', 300, 0])), null);
+  });
+
+  test('skips green and red, which mean "ready" and "cancel"', () => {
+    const color = extractAccent(pixels(['#2e9e44', 500], ['#d93025', 400], ['#7b3fe4', 150]));
+    assert.ok(Math.abs(hueOf(color) - hueOf('#7b3fe4')) < 8, color);
+    assert.equal(extractAccent(pixels(['#2e9e44', 500])), null);
+  });
+
+  test('readableAccent lifts dark colors and picks a legible ink', () => {
+    const dark = readableAccent('#0b1f4b');
+    assert.ok(contrast(dark.color, BG) >= 3, `${dark.color} vs graphite`);
+    const light = readableAccent('#ffd54f');
+    assert.equal(light.ink, '#1e1f21');
+    assert.ok(contrast(light.color, light.ink) >= 4.5);
+  });
+
+  test('customer page and QR screen apply the shop accent', () => {
+    assert.match(read('public/js/customer.js'), /applyAccent\(document\.documentElement, shop\.accent\)/);
+    assert.match(read('public/js/qr.js'), /applyAccent\(document\.documentElement, state\.shop\.accent\)/);
+  });
+});
+
+describe('Google review prompt', () => {
+  test('shows after pickup only, for every customer, and counts the tap', () => {
+    const js = read('public/js/customer.js');
+    assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.googleReviewUrl\)/);
+    assert.match(js, /sendBeacon\?\.\(`\/api\/orders\/\$\{encodeURIComponent\(order\.id\)\}\/review-click`/);
+    const html = read('public/s.html');
+    assert.match(html, /id="review-link"[^>]*target="_blank"[^>]*rel="noopener"/);
   });
 });
 

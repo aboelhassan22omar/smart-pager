@@ -9,6 +9,24 @@ import { newStaticKey, QR_MODES } from '../store.js';
 import { appleStatus, barShop, publicOrder, qrInfo } from '../views.js';
 
 const STATUS_TARGETS = ['preparing', 'ready', 'picked', 'cancelled'];
+const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
+// g.page/r/…/review, maps.app.goo.gl/…, search.google.com/local/writereview?placeid=…, google.com.eg/…
+const GOOGLE_HOST_RE = /(^|\.)(google\.[a-z]{2,3}(\.[a-z]{2})?|g\.page|goo\.gl)$/i;
+
+export function parseGoogleReviewUrl(value) {
+  const raw = typeof value === 'string' ? value.trim() : '';
+  if (!raw) return null;
+  let url;
+  try {
+    url = new URL(raw);
+  } catch {
+    url = null;
+  }
+  if (!url || url.protocol !== 'https:' || raw.length > 500 || !GOOGLE_HOST_RE.test(url.hostname)) {
+    throw new HttpError(400, 'لازم يكون رابط تقييم من جوجل ويبدأ بـ https://', { field: 'googleReviewUrl' });
+  }
+  return url.href;
+}
 const LOGO_FILE_RE = /^[a-z0-9-]+-\d+\.(png|jpg|webp)$/;
 
 export function sniffImage(buf) {
@@ -160,6 +178,13 @@ export default async function barRoutes(app, { config, store, bus, notifier, ser
       }
       if ('maxNumber' in body) fields.max_number = integer(body, 'maxNumber', 10, 9999);
       if ('expireHours' in body) fields.expire_hours = integer(body, 'expireHours', 1, 24);
+      if ('accentColor' in body) {
+        const v = body.accentColor;
+        if (v === null || v === '') fields.accent_color = null;
+        else if (typeof v === 'string' && HEX_COLOR_RE.test(v)) fields.accent_color = v.toLowerCase();
+        else throw invalid('accentColor', 'اللون ده مش مظبوط');
+      }
+      if ('googleReviewUrl' in body) fields.google_review_url = parseGoogleReviewUrl(body.googleReviewUrl);
       if (body.rotateStaticKey === true) fields.static_key = newStaticKey();
       if ('newPin' in body) {
         if (typeof body.newPin !== 'string' || !PIN_RE.test(body.newPin)) {

@@ -1,28 +1,32 @@
 import SwiftUI
 
 /// The notification-style order card, used by the app, the App Clip and the lock screen.
+/// `badge` is the shop logo in the app (shown large beside the name) and the cup icon
+/// on the lock screen (shown small in the header).
 struct TrackingCardView<Badge: View>: View {
     let shopName: String
     let number: Int
     let status: String
     let message: String
     var compact = false
+    var accent: Color = Theme.accent
     let badge: Badge
 
     init(shopName: String, number: Int, status: String, message: String, compact: Bool = false,
-         @ViewBuilder badge: () -> Badge) {
+         accent: Color = Theme.accent, @ViewBuilder badge: () -> Badge) {
         self.shopName = shopName
         self.number = number
         self.status = status
         self.message = message
         self.compact = compact
+        self.accent = accent
         self.badge = badge()
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: compact ? 6 : 12) {
             HStack(spacing: 10) {
-                badge
+                if compact { badge }
                 Text(verbatim: "ORDER TRACKER")
                     .font(.caption2.weight(.medium))
                     .tracking(1.2)
@@ -37,9 +41,13 @@ struct TrackingCardView<Badge: View>: View {
             }
 
             if !compact {
-                Text(shopName)
-                    .font(.title3.weight(.semibold))
-                    .foregroundStyle(Theme.text)
+                HStack(spacing: 14) {
+                    badge
+                    Text(shopName)
+                        .font(.title2.weight(.semibold))
+                        .foregroundStyle(Theme.text)
+                        .lineLimit(2)
+                }
             }
 
             HStack(alignment: .lastTextBaseline) {
@@ -66,7 +74,7 @@ struct TrackingCardView<Badge: View>: View {
                     .lineLimit(2)
             }
 
-            ProgressBar(progress: OrderStatus.progress(status))
+            ProgressBar(progress: OrderStatus.progress(status), tint: accent)
         }
         .padding(compact ? 16 : 20)
         .background {
@@ -84,13 +92,14 @@ struct TrackingCardView<Badge: View>: View {
 
 struct ProgressBar: View {
     let progress: Double
+    var tint: Color = Theme.accent
 
     var body: some View {
         GeometryReader { geo in
             ZStack(alignment: .leading) {
                 Capsule().fill(Theme.surface2)
                 Capsule()
-                    .fill(Theme.accent)
+                    .fill(tint)
                     .frame(width: max(6, geo.size.width * progress))
             }
         }

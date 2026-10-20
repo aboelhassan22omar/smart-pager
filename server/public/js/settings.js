@@ -1,9 +1,11 @@
+import { accentFromImage, readableAccent } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, toast } from './staff.js';
 import { api, esc, shopIdFromPath } from './util.js';
 
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const LOGO_MAX = 2 * 1024 * 1024;
+const DEFAULT_ACCENT = '#cdbb97';
 
 const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
@@ -74,7 +76,11 @@ async function uploadLogo(file) {
   $('logo-preview').innerHTML = `<img src="${localUrl}" alt="">`;
   try {
     shop = (await api(`${base}/logo`, { method: 'POST', raw: file, contentType: file.type })).shop;
-    toast('الشعار اتحفظ');
+    // A new logo brings its own color.
+    const color = await accentFromFile(file);
+    if (await save({ accentColor: color })) {
+      toast(color ? 'الشعار اتحفظ، ولون المحل اتظبط منه' : 'الشعار اتحفظ. ملوش لون واضح، فهنستخدم اللون الافتراضي');
+    }
   } catch (err) {
     toast(err.message, 'error');
   } finally {
@@ -83,6 +89,61 @@ async function uploadLogo(file) {
     renderLogo();
   }
   return undefined;
+}
+
+// ---------- shop accent ----------
+
+async function accentFromFile(file) {
+  try {
+    const bitmap = await createImageBitmap(file);
+    return accentFromImage(bitmap);
+  } catch {
+    return null;
+  }
+}
+
+function accentFromLogoUrl(url) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.addEventListener('load', () => resolve(accentFromImage(img)));
+    img.addEventListener('error', () => resolve(null));
+    img.src = url;
+  });
+}
+
+function previewAccent(hex) {
+  const box = document.querySelector('.accent');
+  const accent = hex ? readableAccent(hex) : null;
+  box.style.setProperty('--shop-accent', accent ? accent.color : DEFAULT_ACCENT);
+  box.style.setProperty('--shop-ink', accent ? accent.ink : '#1e1f21');
+}
+
+function renderAccent() {
+  previewAccent(shop.accentColor);
+  $('accent-input').value = shop.accentColor ?? DEFAULT_ACCENT;
+  $('accent-note').textContent = shop.accentColor
+    ? 'بيظهر للعميل في الأزرار وشريط التقدم وشاشة الكود'
+    : 'اللون الافتراضي. ارفع شعار أو اختار لون';
+  $('accent-reset').hidden = !shop.accentColor;
+}
+
+function bindAccent() {
+  const input = $('accent-input');
+  input.addEventListener('input', () => previewAccent(input.value));
+  input.addEventListener('change', async () => {
+    if (await save({ accentColor: input.value })) toast('لون المحل اتحفظ');
+  });
+  $('accent-auto').addEventListener('click', async () => {
+    if (!shop.logoUrl) return toast('ارفع شعار الأول', 'error');
+    const color = await accentFromLogoUrl(shop.logoUrl);
+    if (await save({ accentColor: color })) {
+      toast(color ? 'لون المحل اتاخد من الشعار' : 'الشعار ملوش لون واضح، فهنستخدم اللون الافتراضي');
+    }
+    return undefined;
+  });
+  $('accent-reset').addEventListener('click', async () => {
+    if (await save({ accentColor: null })) toast('رجعنا للون الافتراضي');
+  });
 }
 
 function bindLogo() {
@@ -134,10 +195,15 @@ function renderShop() {
   numbers.maxNumber.value = shop.maxNumber;
   numbers.expireHours.value = shop.expireHours;
   for (const radio of document.querySelectorAll('input[name="qrMode"]')) radio.checked = radio.value === shop.qrMode;
+  const review = $('form-review').elements;
+  review.googleReviewUrl.value = shop.googleReviewUrl ?? '';
+  $('review-stats').hidden = !shop.googleReviewUrl;
+  $('review-stats').textContent = `${shop.reviewClicks} عميل فتح صفحة التقييم لحد دلوقتي`;
   const printable = shop.qrMode !== 'dynamic';
   $('static-actions').hidden = !printable;
   $('rotate-help').hidden = !printable;
   renderLogo();
+  renderAccent();
 }
 
 function bindForms() {
@@ -150,6 +216,13 @@ function bindForms() {
       readyMessage: f.readyMessage.value,
     }, e.target);
     if (ok) toast('البيانات اتحفظت');
+  });
+
+  $('form-review').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const value = e.target.elements.googleReviewUrl.value;
+    const ok = await save({ googleReviewUrl: value }, e.target);
+    if (ok) toast(value.trim() ? 'رابط التقييم اتحفظ' : 'زرار التقييم اتشال');
   });
 
   $('form-numbers').addEventListener('submit', async (e) => {
@@ -223,6 +296,7 @@ async function boot() {
   $('logout').innerHTML = `${icons.logout()}<span>خروج من الجهاز ده</span>`;
   renderShop();
   bindLogo();
+  bindAccent();
   bindForms();
 }
 
