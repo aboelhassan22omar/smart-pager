@@ -120,7 +120,12 @@ jobs:
   publish-app:
     name: CD - Publish app image
     needs: changes
-    if: needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch'
+    # always(): Stage 1 - CI is skipped on verified merges, and a skipped ancestor would
+    # otherwise skip this job transitively even though changes succeeded.
+    if: >-
+      always()
+      && needs.changes.result == 'success'
+      && (needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
