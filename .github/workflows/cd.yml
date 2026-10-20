@@ -34,15 +34,19 @@ jobs:
       - uses: dorny/paths-filter@v3
         id: filter
         with:
+          # Only what ships matters: tests, lint config, docs and workflow edits never redeploy.
           filters: |
             app:
-              - 'server/**'
+              - 'server/src/**'
+              - 'server/public/**'
+              - 'server/package.json'
+              - 'server/package-lock.json'
+              - 'server/Dockerfile'
+              - 'server/.dockerignore'
             infra:
               - 'docker-compose.yml'
               - 'Caddyfile'
-              - '.env.example'
               - 'deploy/**'
-              - '.github/workflows/cd.yml'
             ios:
               - 'ios/**'
       - name: Summary
@@ -169,25 +173,31 @@ jobs:
             echo "  ServerAliveInterval 30"
           } > ~/.ssh/config
 
-      - name: Copy compose files
+      - name: Copy deploy script
         run: |
           # Variables are meant to expand on the runner side.
           # shellcheck disable=SC2029
           ssh prod "mkdir -p '$DEPLOY_PATH/secrets'"
-          scp docker-compose.yml Caddyfile .env.example deploy/remote-deploy.sh "prod:$DEPLOY_PATH/"
+          scp deploy/remote-deploy.sh "prod:$DEPLOY_PATH/"
 
-      - name: Pull and start
+      # Compose files only travel when they changed (or on a manual full deploy).
+      - name: Copy compose files
+        if: needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch'
+        run: scp docker-compose.yml Caddyfile .env.example "prod:$DEPLOY_PATH/"
+
+      - name: Update changed services
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APP_CHANGED: ${{ needs.publish-app.result == 'success' }}
           NEW_IMAGE: ${{ needs.publish-app.outputs.image }}
+          INFRA_CHANGED: ${{ needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch' }}
         run: |
           image="-"
           if [ "$APP_CHANGED" = "true" ]; then image="$NEW_IMAGE"; fi
           # The token goes over stdin, never on a command line.
           # shellcheck disable=SC2029
           printf '%s' "$GHCR_TOKEN" | ssh prod \
-            "bash '$DEPLOY_PATH/remote-deploy.sh' '$DEPLOY_PATH' '$GITHUB_ACTOR' '$image' 20"
+            "bash '$DEPLOY_PATH/remote-deploy.sh' '$DEPLOY_PATH' '$GITHUB_ACTOR' '$image' 20 '$INFRA_CHANGED'"
 
       - name: Public health check
         env:

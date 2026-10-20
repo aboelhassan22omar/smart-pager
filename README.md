@@ -188,6 +188,20 @@ curl -X POST https://pager.example.com/api/admin/shops \
 - **`cd.yml`** بيشتغل على `main`. بيعيد الـ CI، وبعدين يشوف إيه اللي اتغير، ويبني وينشر الصورة على `ghcr.io/<owner>/<repo>` بالـ tags `sha-<sha>` و `latest`، وبعدها يستنى موافقتك وينشر على السيرفر.
   لو `/health` فشل بعد النشر، `APP_IMAGE` بيرجع للصورة القديمة تلقائي.
 
+### النشر بيحدّث اللي اتغير بس
+
+| اللي اتغير | اللي بيحصل في البرودكشن |
+|---|---|
+| كود التطبيق (`server/src` و `server/public` و `package*.json` و `Dockerfile`) | صورة جديدة، وبعدين `pull` و `up -d --no-deps app`. container الـ app بس اللي بيتعاد تشغيله |
+| `docker-compose.yml` أو `Caddyfile` أو `deploy/` | الملفات دي بس بتتنسخ، و compose بيعيد تشغيل الخدمات اللي إعداداتها اتغيرت بس |
+| الاختبارات أو lint أو الـ README أو iOS أو ملفات الـ workflows | الـ CI بيشتغل، ومفيش بناء صورة ولا نشر |
+| تشغيل يدوي (Run workflow) | نشر كامل للصورة والملفات |
+
+### Dependabot
+- بيفتح PRs كل أسبوع لـ npm والـ actions، وكل شهر لصورة Docker.
+- الترقيات الكبيرة (major) لـ Node و ESLint متجاهلة عن قصد. المشروع مبني على Node 22 و ESLint 9، والترقية دي بتتعمل يدوي في الـ CI والصورة مع بعض.
+- أي PR لازم الـ CI بتاعه يعدّي قبل الـ merge، لأن `main` محمي.
+
 ## Apple (App Clip و Live Activity)
 
 كل حاجة جاهزة للبناء. ناقص بس حساب Apple Developer.
