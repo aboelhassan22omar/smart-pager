@@ -1,9 +1,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
-import { hashPin, PIN_RE, pinFingerprint, SESSION_MAX_AGE, verifyPin } from '../auth.js';
+import { hashPin, PIN_RE, verifyPin } from '../auth.js';
 import { channels } from '../bus.js';
-import { signValue, staffCookieName, staffKeyInfo, verifyValue } from '../cookies.js';
+import { staffCookieName } from '../cookies.js';
+import { planView } from '../plans.js';
+import { setStaffSession, verifyStaffSession } from '../sessions.js';
 import { HttpError } from '../errors.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
@@ -57,30 +59,13 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
   const loginLimiter = createRateLimiter({ limit: config.loginRatePerMin });
   app.addHook('onClose', async () => loginLimiter.close());
 
-  // Staff cookie: signed with a key derived for this branch only (cookies.js).
-  function setSession(reply, shop) {
-    const value = signValue(config.cookieSecret, staffKeyInfo(shop.id), {
-      b: shop.id,
-      iat: Date.now(),
-      fp: pinFingerprint(shop.pin_hash),
-    });
-    reply.setCookie(staffCookieName(shop.id), value, {
-      httpOnly: true,
-      sameSite: 'strict',
-      secure: config.secureCookies,
-      path: '/',
-      maxAge: SESSION_MAX_AGE,
-    });
-  }
+  // Staff cookie: signed with a key derived for this branch only (sessions.js).
+  const setSession = (reply, shop) => setStaffSession(reply, config, shop);
 
   function requireBar(req) {
     const ctx = tenants.resolve(req.params.shop);
     const shop = ctx.store.getShop();
-    const session = verifyValue(config.cookieSecret, staffKeyInfo(shop.id), req.cookies[staffCookieName(shop.id)]);
-    const fresh = session && Date.now() - Number(session.iat) < SESSION_MAX_AGE * 1000;
-    if (!fresh || session.b !== shop.id || session.fp !== pinFingerprint(shop.pin_hash)) {
-      throw new HttpError(401, 'سجّل دخول الأول');
-    }
+    if (!verifyStaffSession(req, config, shop)) throw new HttpError(401, 'سجّل دخول الأول');
     req.ctx = ctx;
     req.shop = shop;
   }
@@ -128,6 +113,7 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
         orders: req.ctx.store.openOrders().map((o) => publicOrder(o, shop)),
         qr: qrInfo(shop, config),
         apple: appleStatus(config, notifier.apnsReady),
+        plan: planView(req.ctx.branch),
         serverNow: Date.now(),
       };
     });
@@ -180,7 +166,6 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
       const shop = req.shop;
       const fields = {};
 
-      if ('name' in body) fields.name = text(body, 'name', 'name', 60);
       if ('preparingMessage' in body) fields.preparing_message = text(body, 'preparingMessage', 'preparingMessage', 140);
       if ('readyMessage' in body) fields.ready_message = text(body, 'readyMessage', 'readyMessage', 140);
       if ('qrMode' in body) {

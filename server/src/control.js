@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
-import { PRAGMAS, runMigrations } from './migrations.js';
+import { PRAGMAS, runMigrations, tx } from './migrations.js';
+import { effectivePlan } from './plans.js';
 
 // Control database: the registry only (brands, branches). No order or customer data.
 export const CONTROL_MIGRATIONS = [
@@ -20,6 +21,49 @@ export const CONTROL_MIGRATIONS = [
   );
   CREATE INDEX branches_brand ON branches (brand_id);
   `,
+  // 2: plans, feature flags, brand owners, payments, audit log (phase 2).
+  // Existing branches keep plan_status 'active' with no dates: no expiry until a first payment.
+  `
+  ALTER TABLE branches ADD COLUMN plan_status TEXT NOT NULL DEFAULT 'active';
+  ALTER TABLE branches ADD COLUMN trial_ends_at INTEGER;
+  ALTER TABLE branches ADD COLUMN paid_until INTEGER;
+  ALTER TABLE branches ADD COLUMN suspended_manual INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE branches ADD COLUMN ff_review INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE branches ADD COLUMN ff_loyalty INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE branches ADD COLUMN ff_promo INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE branches ADD COLUMN forced_off TEXT NOT NULL DEFAULT '[]';
+  CREATE TABLE owners (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    brand_id TEXT NOT NULL REFERENCES brands (id),
+    username TEXT NOT NULL UNIQUE,
+    email TEXT,
+    password_hash TEXT NOT NULL,
+    pw_version INTEGER NOT NULL DEFAULT 1,
+    created_at INTEGER NOT NULL,
+    last_login_at INTEGER
+  );
+  CREATE TABLE payments (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    branch_id TEXT NOT NULL REFERENCES branches (id),
+    amount_egp INTEGER NOT NULL,
+    period_start INTEGER NOT NULL,
+    period_end INTEGER NOT NULL,
+    note TEXT,
+    actor TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE TABLE audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    at INTEGER NOT NULL,
+    actor TEXT NOT NULL,
+    action TEXT NOT NULL,
+    brand_id TEXT,
+    branch_id TEXT,
+    detail TEXT,
+    ip TEXT
+  );
+  CREATE INDEX audit_at ON audit_log (at);
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -35,9 +79,27 @@ export class ControlStore {
       branch: p('SELECT * FROM branches WHERE id = ?'),
       branches: p('SELECT * FROM branches ORDER BY brand_id, created_at'),
       branchIds: p('SELECT id FROM branches ORDER BY id'),
-      insertBranch: p(`INSERT INTO branches (id, brand_id, name, area, db_path, created_at) VALUES (?, ?, ?, ?, ?, ?)`),
+      brandBranches: p('SELECT * FROM branches WHERE brand_id = ? ORDER BY created_at'),
+      insertBranch: p(`INSERT INTO branches (id, brand_id, name, area, db_path, created_at, plan_status, trial_ends_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`),
       rename: p('UPDATE branches SET name = ? WHERE id = ?'),
       touch: p('UPDATE branches SET last_activity_at = ? WHERE id = ?'),
+      setTrial: p('UPDATE branches SET trial_ends_at = ? WHERE id = ?'),
+      setPaidUntil: p('UPDATE branches SET paid_until = ? WHERE id = ?'),
+      setSuspended: p('UPDATE branches SET suspended_manual = ? WHERE id = ?'),
+      setForcedOff: p('UPDATE branches SET forced_off = ? WHERE id = ?'),
+      setPlanStatus: p('UPDATE branches SET plan_status = ? WHERE id = ?'),
+      owner: p('SELECT * FROM owners WHERE id = ?'),
+      ownerByName: p('SELECT * FROM owners WHERE username = ?'),
+      brandOwners: p('SELECT id, brand_id, username, email, created_at, last_login_at FROM owners WHERE brand_id = ? ORDER BY id'),
+      insertOwner: p('INSERT INTO owners (brand_id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'),
+      resetOwner: p('UPDATE owners SET password_hash = ?, pw_version = pw_version + 1 WHERE id = ?'),
+      ownerLogin: p('UPDATE owners SET last_login_at = ? WHERE id = ?'),
+      insertPayment: p(`INSERT INTO payments (branch_id, amount_egp, period_start, period_end, note, actor, created_at)
+                        VALUES (?, ?, ?, ?, ?, ?, ?)`),
+      payments: p('SELECT * FROM payments WHERE branch_id = ? ORDER BY period_end DESC'),
+      insertAudit: p('INSERT INTO audit_log (at, actor, action, brand_id, branch_id, detail, ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+      audit: p('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?'),
     };
   }
 
@@ -70,9 +132,90 @@ export class ControlStore {
     return this.sql.branchIds.all().map((r) => r.id);
   }
 
-  createBranch({ id, brandId, name, area = null, createdAt = Date.now() }) {
-    this.sql.insertBranch.run(id, brandId, name, area, branchDbPath(brandId, id), createdAt);
+  branchesOfBrand(brandId) {
+    return this.sql.brandBranches.all(brandId);
+  }
+
+  /** `trialEndsAt` null = no trial (used for branches migrated from v1). */
+  createBranch({ id, brandId, name, area = null, createdAt = Date.now(), trialEndsAt = null }) {
+    const status = trialEndsAt == null ? 'active' : 'trial';
+    this.sql.insertBranch.run(id, brandId, name, area, branchDbPath(brandId, id), createdAt, status, trialEndsAt);
     return this.getBranch(id);
+  }
+
+  // ---- plans ----
+
+  setTrialEnd(id, at) {
+    this.sql.setTrial.run(at, id);
+  }
+
+  setSuspended(id, suspended) {
+    this.sql.setSuspended.run(suspended ? 1 : 0, id);
+  }
+
+  setForcedOff(id, features) {
+    this.sql.setForcedOff.run(JSON.stringify([...new Set(features)].sort()), id);
+  }
+
+  /** Records a manual payment and moves paid_until forward to the period end (never back). */
+  recordPayment(branchId, { amountEgp, periodStart, periodEnd, note = null, actor }) {
+    return tx(this.db, () => {
+      this.sql.insertPayment.run(branchId, amountEgp, periodStart, periodEnd, note, actor, Date.now());
+      const branch = this.getBranch(branchId);
+      if (branch.paid_until == null || periodEnd > branch.paid_until) this.sql.setPaidUntil.run(periodEnd, branchId);
+      return this.getBranch(branchId);
+    });
+  }
+
+  payments(branchId) {
+    return this.sql.payments.all(branchId);
+  }
+
+  /** Stores the computed status for dashboards (requests always recompute it). */
+  refreshPlanStatuses(now = Date.now()) {
+    for (const branch of this.listBranches()) {
+      const status = effectivePlan(branch, now).status;
+      if (status !== branch.plan_status) this.sql.setPlanStatus.run(status, branch.id);
+    }
+  }
+
+  // ---- owners ----
+
+  getOwner(id) {
+    return this.sql.owner.get(id);
+  }
+
+  ownerByUsername(username) {
+    return this.sql.ownerByName.get(username);
+  }
+
+  ownersOfBrand(brandId) {
+    return this.sql.brandOwners.all(brandId);
+  }
+
+  createOwner({ brandId, username, email = null, passwordHash }) {
+    const res = this.sql.insertOwner.run(brandId, username, email, passwordHash, Date.now());
+    return this.getOwner(Number(res.lastInsertRowid));
+  }
+
+  /** New password; bumping pw_version signs every existing owner session out. */
+  resetOwnerPassword(id, passwordHash) {
+    this.sql.resetOwner.run(passwordHash, id);
+    return this.getOwner(id);
+  }
+
+  markOwnerLogin(id) {
+    this.sql.ownerLogin.run(Date.now(), id);
+  }
+
+  // ---- audit ----
+
+  audit({ actor, action, brandId = null, branchId = null, detail = null, ip = null }) {
+    this.sql.insertAudit.run(Date.now(), actor, action, brandId, branchId, detail == null ? null : JSON.stringify(detail), ip);
+  }
+
+  auditLog(limit = 100) {
+    return this.sql.audit.all(limit).map((row) => ({ ...row, detail: row.detail ? JSON.parse(row.detail) : null }));
   }
 
   renameBranch(id, name) {

@@ -277,6 +277,11 @@ describe('migration from the v1 database', () => {
       assert.equal(st.shop.reviewClicks, 3);
       assert.equal(new URL(st.qr.staticUrl).searchParams.get('k'), 'static-old', 'printed QR codes keep working');
 
+      const ctl = new DatabaseSync(path.join(dataDir, 'control.db'));
+      const migrated = ctl.prepare("SELECT plan_status, trial_ends_at, paid_until FROM branches WHERE id = 'old-cafe'").get();
+      assert.deepEqual({ ...migrated }, { plan_status: 'active', trial_ends_at: null, paid_until: null }, 'no trial for migrated shops');
+      ctl.close();
+
       const branchDb = new DatabaseSync(path.join(dataDir, 'tenants', 'old-cafe', 'old-cafe', 'pager.db'));
       assert.equal(Number(branchDb.prepare('SELECT COUNT(*) AS c FROM subscriptions').get().c), 1);
       branchDb.close();

@@ -21,16 +21,19 @@ export default async function adminRoutes(app, deps) {
       if (control.getBranch(id)) throw new HttpError(409, 'فيه محل بنفس المعرّف ده', { field: 'id' });
       if (!control.getBrand(id)) provisionBrand(deps, { id, name });
       const shop = await provisionBranch(deps, { brandId: id, id, name, pin, qrMode });
+      control.audit({ actor: 'admin-token', action: 'branch.create', brandId: id, branchId: id, ip: req.ip });
       return reply.code(201).send({ shop: barShop(shop), urls: branchUrls(config, id) });
     });
 
     admin.post('/brands', async (req, reply) => {
       const brand = provisionBrand(deps, req.body ?? {});
+      control.audit({ actor: 'admin-token', action: 'brand.create', brandId: brand.id, ip: req.ip });
       return reply.code(201).send({ brand });
     });
 
     admin.post('/branches', async (req, reply) => {
       const shop = await provisionBranch(deps, req.body ?? {});
+      control.audit({ actor: 'admin-token', action: 'branch.create', brandId: shop.brand_id, branchId: shop.id, ip: req.ip });
       return reply.code(201).send({ shop: barShop(shop), urls: branchUrls(config, shop.id) });
     });
   }, { prefix: '/api/admin' });

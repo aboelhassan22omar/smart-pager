@@ -1,5 +1,6 @@
 import { hashPin, PIN_RE } from './auth.js';
 import { HttpError } from './errors.js';
+import { DAY_MS } from './plans.js';
 import { QR_MODES, SHOP_ID_RE } from './store.js';
 
 const bad = (field, message) => new HttpError(400, message, { field });
@@ -28,7 +29,7 @@ export function provisionBrand({ control }, { id, name }) {
  * Creates a branch (control row + its own database). New branch ids are `<brand>-<area>`;
  * a branch whose id equals its brand id is allowed for single-branch shops.
  */
-export async function provisionBranch({ control, tenants }, { brandId, id, name, area = null, pin, qrMode = 'dynamic' }) {
+export async function provisionBranch({ control, tenants, config }, { brandId, id, name, area = null, pin, qrMode = 'dynamic' }) {
   checkId(brandId, 'brandId');
   checkId(id, 'id');
   if (!control.getBrand(brandId)) throw new HttpError(404, 'البراند ده مش موجود', { field: 'brandId' });
@@ -42,7 +43,9 @@ export async function provisionBranch({ control, tenants }, { brandId, id, name,
   if (control.getBranch(id)) throw new HttpError(409, 'فيه فرع بنفس المعرّف ده', { field: 'id' });
 
   const pinHash = await hashPin(pin);
-  control.createBranch({ id, brandId, name: branchName, area: cleanArea });
+  // New branches start on a trial (TRIAL_DAYS, default 3).
+  const trialEndsAt = Date.now() + (config?.trialDays ?? 3) * DAY_MS;
+  control.createBranch({ id, brandId, name: branchName, area: cleanArea, trialEndsAt });
   return tenants.get(id).store.initSettings({ pinHash, qrMode });
 }
 
