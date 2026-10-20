@@ -227,7 +227,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/pager.example.com/privkey.pem;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:3100;   # = APP_PORT
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $remote_addr;
@@ -237,11 +237,12 @@ server {
         proxy_buffering off;
         proxy_cache off;
         proxy_read_timeout 1h;
+        client_max_body_size 3M;
     }
 }
 ```
 
-لو هتستخدم Nginx، شيل خدمة `caddy` من `docker-compose.yml`، وافتح البورت للـ app على `127.0.0.1:3000:3000`.
+لو السيرفر عليه Nginx شغّال أصلاً على 80/443، احذف السطر `COMPOSE_PROFILES=caddy` من `.env` على السيرفر، وكده Caddy مش هيشتغل. وحدد `APP_PORT` (مثلاً `3100`)، والتطبيق هيتفتح على `127.0.0.1:$APP_PORT` بس. بعدها خلي `proxy_pass` يشاور على البورت ده، وطلّع الشهادة بـ `certbot --nginx -d pager.example.com`. وزوّد `client_max_body_size 3M;` عشان رفع الشعار.
 لاحظ إن `X-Forwarded-For` هنا بيتحط بـ `$remote_addr` بس، عشان محدش يقدر يزوّر الـ IP ويعدّي حد الطلبات.
 
 ## ملاحظات أمان

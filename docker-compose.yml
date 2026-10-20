@@ -9,11 +9,14 @@ services:
     volumes:
       - pager-data:/data
       - ./secrets:/secrets:ro
-    expose:
-      - "3000"
+    # Loopback only: reached through Caddy (below) or an existing host Nginx.
+    ports:
+      - "127.0.0.1:${APP_PORT:-3000}:3000"
 
+  # Enabled with COMPOSE_PROFILES=caddy in .env. Leave it off when the host already runs Nginx on 80/443.
   caddy:
     image: caddy:2-alpine
+    profiles: [caddy]
     restart: unless-stopped
     depends_on:
       app:
@@ -23,7 +26,7 @@ services:
       - "443:443"
       - "443:443/udp"
     environment:
-      DOMAIN: ${DOMAIN:?set DOMAIN in .env}
+      DOMAIN: ${DOMAIN:-localhost}
     volumes:
       - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy-data:/data
