@@ -4,7 +4,7 @@ import { canClaim } from '../plans.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { OPEN_STATUSES } from '../store.js';
-import { publicOrder, publicShop } from '../views.js';
+import { publicShop } from '../views.js';
 
 const MAX_SUBSCRIPTIONS = 5;
 const B64URL_RE = /^[A-Za-z0-9_-]+={0,2}$/;
@@ -79,18 +79,18 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الخدمة متوقفة مؤقتًا، اسأل الكاشير');
       const { n, k } = req.body ?? {};
       const { order, shop } = service.claim(req.ctx, { n, k });
-      return publicOrder(order, shop);
+      return service.customerView(req.ctx, order, shop);
     });
 
     b.get('/orders/:id', async (req) => {
       const { order, shop } = loadOrder(req, req.params.id);
-      return publicOrder(order, shop);
+      return service.customerView(req.ctx, order, shop);
     });
 
     b.get('/orders/:id/events', async (req, reply) => {
       const { order, shop } = loadOrder(req, req.params.id);
       const sse = openSse(req, reply);
-      sse.send('order', publicOrder(order, shop));
+      sse.send('order', service.customerView(req.ctx, order, shop));
       const channel = channels(req.ctx.branch.id).order(order.id);
       const listener = (event, data) => sse.send(event, data);
       bus.on(channel, listener);

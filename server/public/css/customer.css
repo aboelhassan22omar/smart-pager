@@ -169,6 +169,17 @@
   color: var(--muted);
 }
 
+.card-queue {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.card-queue strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
 .progress {
   position: relative;
   height: 6px;

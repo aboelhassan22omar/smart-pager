@@ -1,7 +1,8 @@
 import { Chime } from './chime.js';
 import { applyAccent } from './color.js';
 import { icons } from './icons.js';
-import { api, base64UrlToBytes, elapsedLabel, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
+import { aheadText, etaText } from './queue-text.js';
+import { api, base64UrlToBytes, elapsedLabel, esc, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
 import { keepAwake, releaseAwake } from './wakelock.js';
 
 const CLOSED = ['picked', 'expired', 'cancelled'];
@@ -79,6 +80,15 @@ function fatal(message) {
 
 // ---------- rendering ----------
 
+function renderQueue() {
+  const el = $('card-queue');
+  const q = order?.status === 'preparing' ? order.queue : null;
+  el.hidden = !q;
+  if (!q) return;
+  const eta = etaText(q.eta);
+  el.innerHTML = `<strong>${esc(aheadText(q.ahead))}</strong>${eta ? `، ${esc(eta)}` : ''}`;
+}
+
 function render() {
   const card = $('card');
   card.dataset.status = order.status;
@@ -93,6 +103,7 @@ function render() {
   $('enable').hidden = closed || order.status === 'ready';
   $('ios-hint').hidden = closed || order.status === 'ready' || !isIOS(navigator) || isStandalone();
   renderReview();
+  renderQueue();
 
   if (order.status === 'ready') showReady();
   else hideReady();
@@ -215,6 +226,11 @@ function connect() {
     if (events?.readyState === EventSource.CLOSED) setTimeout(connect, 4000);
   });
   events.addEventListener('order', (e) => apply(JSON.parse(e.data)));
+  events.addEventListener('queue', (e) => {
+    if (!order) return;
+    order.queue = JSON.parse(e.data);
+    renderQueue();
+  });
   events.addEventListener('renotify', (e) => {
     const next = JSON.parse(e.data);
     apply(next);
@@ -323,7 +339,9 @@ async function boot() {
 
   $('enable').addEventListener('click', onEnable);
   setInterval(() => {
-    if (order) $('card-when').textContent = elapsedLabel(order.createdAt);
+    if (!order) return;
+    $('card-when').textContent = elapsedLabel(order.createdAt);
+    renderQueue();
   }, 30_000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && order && !CLOSED.includes(order.status)) refresh();
