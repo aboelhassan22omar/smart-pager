@@ -64,6 +64,10 @@ export const CONTROL_MIGRATIONS = [
   );
   CREATE INDEX audit_at ON audit_log (at);
   `,
+  // 3: weekly owner summary bookkeeping (phase 3).
+  `
+  ALTER TABLE brands ADD COLUMN last_summary_week TEXT;
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -100,6 +104,7 @@ export class ControlStore {
       payments: p('SELECT * FROM payments WHERE branch_id = ? ORDER BY period_end DESC'),
       insertAudit: p('INSERT INTO audit_log (at, actor, action, brand_id, branch_id, detail, ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
       audit: p('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?'),
+      markSummary: p('UPDATE brands SET last_summary_week = ? WHERE id = ?'),
     };
   }
 
@@ -206,6 +211,10 @@ export class ControlStore {
 
   markOwnerLogin(id) {
     this.sql.ownerLogin.run(Date.now(), id);
+  }
+
+  markSummarySent(brandId, week) {
+    this.sql.markSummary.run(week, brandId);
   }
 
   // ---- audit ----

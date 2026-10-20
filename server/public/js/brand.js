@@ -1,3 +1,4 @@
+import { mountAnalytics } from './analytics.js';
 import { branchCardHtml } from './dashboard.js';
 import { openForm } from './forms.js';
 import { icons } from './icons.js';
@@ -81,6 +82,7 @@ async function boot() {
   $('app').hidden = false;
   $('logout').innerHTML = icons.logout(22);
   render();
+  mountAnalytics($('analytics'), { base, branches: data.branches });
   setInterval(refresh, POLL_MS);
 
   $('logout').addEventListener('click', async () => {

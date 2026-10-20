@@ -1,5 +1,6 @@
 import { channels } from './bus.js';
 import { HttpError } from './errors.js';
+import { rollupBranch } from './rollups.js';
 import { OPEN_STATUSES } from './store.js';
 import { barShop, publicOrder, qrInfo } from './views.js';
 
@@ -72,7 +73,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
         if (!shop) continue;
         for (const order of ctx.store.dueForExpiry()) publishOrder(ctx, ctx.store.setStatus(order, 'expired'), shop);
         const purged = ctx.store.purgeClosed();
-        if (purged) log.info({ branch: id, purged }, 'purged closed orders');
+        if (purged.orders || purged.subscriptions) log.info({ branch: id, ...purged }, 'purged old orders / subscriptions');
       } catch (err) {
         log.error({ branch: id, err }, 'branch job failed');
       }
@@ -80,5 +81,22 @@ export function createService({ control, tenants, bus, notifier, screens, config
     jobCursor = ids.length ? (jobCursor + count) % ids.length : 0;
   }
 
-  return { claim, setStatus, advance, renotify, publishNonce, publishShop, rotateDue, runJobs };
+  // Hourly rollups (every 5 min), same round-robin batching.
+  let rollupCursor = 0;
+  function runRollups(now = Date.now()) {
+    const ids = control.branchIds();
+    const count = Math.min(ids.length, config.jobBatch);
+    for (let i = 0; i < count; i++) {
+      const id = ids[(rollupCursor + i) % ids.length];
+      try {
+        const ctx = tenants.get(id);
+        if (ctx?.store.getShop()) rollupBranch(ctx.store, { tz: config.tz, now });
+      } catch (err) {
+        log.error({ branch: id, err }, 'rollup failed');
+      }
+    }
+    rollupCursor = ids.length ? (rollupCursor + count) % ids.length : 0;
+  }
+
+  return { claim, setStatus, advance, renotify, publishNonce, publishShop, rotateDue, runJobs, runRollups };
 }

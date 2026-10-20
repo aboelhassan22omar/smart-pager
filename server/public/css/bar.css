@@ -95,6 +95,31 @@
   color: rgb(255 255 255 / 0.82);
 }
 
+/* Late: red is reserved for this (and cancel), so it reads instantly. */
+.tile.is-late {
+  border-color: var(--danger);
+  background: rgb(200 87 79 / 0.14);
+}
+
+.tile.is-late .tile-foot {
+  color: #f0b4ae;
+}
+
+.late-chime {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.late-chime input {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
 .tile.is-new {
   animation: arrive 700ms var(--ease);
 }

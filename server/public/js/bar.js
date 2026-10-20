@@ -6,6 +6,7 @@ import { api, elapsedLabel, esc, shopIdFromPath } from './util.js';
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 10;
 const STATUS_LABEL = { preparing: 'بيتحضّر', ready: 'جاهز' };
+const LATE_CHIME_KEY = 'sp:late-chime';
 
 const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
@@ -14,6 +15,17 @@ const chime = new Chime();
 const orders = new Map();
 const fresh = new Set();
 let sheetOrderId = null;
+let lateAfterMs = 10 * 60_000;
+const lateAlerted = new Set();
+
+const lateChimeOn = () => {
+  try {
+    return localStorage.getItem(LATE_CHIME_KEY) === '1';
+  } catch {
+    return false;
+  }
+};
+const isLate = (o, now = Date.now()) => o.status === 'preparing' && now - o.createdAt > lateAfterMs;
 
 // ---------- render ----------
 
@@ -22,22 +34,35 @@ function sorted() {
 }
 
 function tileHtml(o) {
+  const late = isLate(o);
   const icon = o.status === 'ready' ? icons.bell(14) : icons.clock(14);
   const rings = o.status === 'ready' && o.notifyCount > 1 ? ` ×${o.notifyCount}` : '';
+  const label = late ? 'متأخر' : STATUS_LABEL[o.status];
   return `
-    <button class="tile${fresh.has(o.id) ? ' is-new' : ''}" role="listitem" type="button"
+    <button class="tile${fresh.has(o.id) ? ' is-new' : ''}${late ? ' is-late' : ''}" role="listitem" type="button"
             data-id="${esc(o.id)}" data-status="${esc(o.status)}"
-            aria-label="طلب ${esc(o.number)}، ${esc(STATUS_LABEL[o.status])}">
+            aria-label="طلب ${esc(o.number)}، ${esc(label)}">
       <span class="tile-num num">${esc(o.number)}</span>
       <span class="tile-foot">
-        <span class="tile-status">${icon}${esc(STATUS_LABEL[o.status])}${esc(rings)}</span>
+        <span class="tile-status">${icon}${esc(label)}${esc(rings)}</span>
         <span>${esc(elapsedLabel(o.createdAt))}</span>
       </span>
     </button>`;
 }
 
+// One chime per order when it crosses the late threshold (only if this screen opted in).
+function checkLate() {
+  for (const o of orders.values()) {
+    if (isLate(o) && !lateAlerted.has(o.id)) {
+      lateAlerted.add(o.id);
+      if (lateChimeOn()) chime.play('order');
+    }
+  }
+}
+
 function renderGrid() {
   const list = sorted();
+  checkLate();
   $('grid').innerHTML = list.map(tileHtml).join('');
   $('empty').hidden = list.length > 0;
   const ready = list.filter((o) => o.status === 'ready').length;
@@ -222,6 +247,7 @@ function renderPlan(plan) {
 
 function applyState(state) {
   renderPlan(state.plan);
+  lateAfterMs = (state.shop.lateAfterMinutes ?? 10) * 60_000;
   $('shop-name').textContent = state.shop.name;
   document.title = `الطلبات — ${state.shop.name}`;
   orders.clear();
@@ -273,6 +299,8 @@ async function boot() {
       },
       shop: (shop) => {
         $('shop-name').textContent = shop.name;
+        lateAfterMs = (shop.lateAfterMinutes ?? 10) * 60_000;
+        renderGrid();
       },
     },
     (online) => {
@@ -282,7 +310,18 @@ async function boot() {
     },
   );
 
-  setInterval(renderGrid, 30_000);
+  // Late tiles must turn red on time, so the grid re-renders every 15s.
+  setInterval(renderGrid, 15_000);
+  const lateToggle = $('late-chime');
+  lateToggle.checked = lateChimeOn();
+  lateToggle.addEventListener('change', () => {
+    try {
+      localStorage.setItem(LATE_CHIME_KEY, lateToggle.checked ? '1' : '0');
+    } catch {
+      /* private mode */
+    }
+    if (lateToggle.checked) unlockSound();
+  });
 }
 
 boot();

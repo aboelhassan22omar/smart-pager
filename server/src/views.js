@@ -46,6 +46,7 @@ export const barShop = (shop) => ({
   qrMode: shop.qr_mode,
   maxNumber: shop.max_number,
   expireHours: shop.expire_hours,
+  lateAfterMinutes: shop.late_after_minutes ?? 10,
   reviewClicks: shop.review_clicks ?? 0,
 });
 

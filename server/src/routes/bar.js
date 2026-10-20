@@ -174,6 +174,7 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
       }
       if ('maxNumber' in body) fields.max_number = integer(body, 'maxNumber', 10, 9999);
       if ('expireHours' in body) fields.expire_hours = integer(body, 'expireHours', 1, 24);
+      if ('lateAfterMinutes' in body) fields.late_after_minutes = integer(body, 'lateAfterMinutes', 1, 120);
       if ('accentColor' in body) {
         const v = body.accentColor;
         if (v === null || v === '') fields.accent_color = null;
