@@ -171,7 +171,9 @@ curl -X POST https://pager.example.com/api/admin/shops \
   | `PUBLIC_URL` | `https://pager.example.com` |
   | `DEPLOY_PATH` | `/opt/smart-pager` |
 
-> لو `DEPLOY_PATH` مش متحدد، مرحلة النشر بتتعدّى من غير ما تفشل. ده مقصود عشان أول تشغيل يعدّي قبل ما السيرفر يبقى جاهز.
+- **Repository variable** (من **Settings ← Secrets and variables ← Actions ← Variables**): لازم تحط `DEPLOY_PATH` هنا كمان بنفس القيمة. ده عشان شرط تشغيل مرحلة النشر بيتقيّم قبل ما الـ job يدخل الـ environment، فمش بيشوف متغيرات الـ environment.
+
+> لو `DEPLOY_PATH` مش متحدد على مستوى المستودع، مرحلة النشر بتتعدّى من غير ما تفشل. ده مقصود عشان أول تشغيل يعدّي قبل ما السيرفر يبقى جاهز.
 
 ### 3. حماية الفرع `main`
 **Settings ← Branches ← Add rule** (أو Rulesets) للفرع `main`:
