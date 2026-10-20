@@ -25,20 +25,20 @@
     </header>
 
     <main class="dash">
-      <p class="muted" id="updated"></p>
+      <section class="attention" aria-labelledby="h-attention">
+        <h2 id="h-attention">محتاج منك</h2>
+        <ul id="attention"></ul>
+      </section>
+
       <div id="brands"></div>
 
-      <section class="brand-section" aria-labelledby="h-audit">
+      <section class="activity" aria-labelledby="h-activity">
         <div class="dash-head">
-          <h2 id="h-audit">سجل العمليات</h2>
-          <button class="btn btn-sm" id="audit-refresh" type="button">تحديث</button>
+          <h2 id="h-activity">آخر العمليات</h2>
+          <label class="check"><input type="checkbox" id="show-logins"> اعرض تسجيلات الدخول</label>
         </div>
-        <div class="audit-wrap">
-          <table class="audit">
-            <thead><tr><th>الوقت</th><th>مين</th><th>العملية</th><th>البراند / الفرع</th><th>تفاصيل</th></tr></thead>
-            <tbody id="audit"></tbody>
-          </table>
-        </div>
+        <ol id="activity"></ol>
+        <button class="btn btn-sm btn-quiet" id="activity-more" type="button" hidden>اعرض أكتر</button>
       </section>
     </main>
   </div>
