@@ -24,6 +24,7 @@ jobs:
     name: Stage 2 - Detect changed services
     needs: ci
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     outputs:
       app: ${{ steps.filter.outputs.app }}
       infra: ${{ steps.filter.outputs.infra }}
@@ -64,6 +65,7 @@ jobs:
     needs: changes
     if: needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read
       packages: write
@@ -104,6 +106,7 @@ jobs:
     needs: [changes, publish-app]
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - name: Check release images
         env:
@@ -126,6 +129,7 @@ jobs:
       && vars.DEPLOY_PATH != ''
       && (needs.changes.outputs.app == 'true' || needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     environment:
       name: production
       url: ${{ vars.PUBLIC_URL }}

@@ -16,6 +16,7 @@ jobs:
   deps:
     name: CI - Dependencies
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
@@ -40,6 +41,7 @@ jobs:
     name: CI - Syntax check
     needs: deps
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
@@ -59,6 +61,7 @@ jobs:
     name: CI - Lint
     needs: deps
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
@@ -83,6 +86,7 @@ jobs:
     name: CI - Backend tests
     needs: deps
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
@@ -102,6 +106,7 @@ jobs:
     name: CI - Frontend tests
     needs: deps
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
@@ -120,6 +125,7 @@ jobs:
   audit:
     name: CI - Asset audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: server
@@ -133,6 +139,7 @@ jobs:
   compose:
     name: CI - Docker Compose validation
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - name: docker compose config
@@ -149,6 +156,7 @@ jobs:
     name: CI - Image build
     needs: [check, lint, backend, frontend]
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -196,6 +204,7 @@ jobs:
   ios-changes:
     name: CI - Detect iOS changes
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read
@@ -216,6 +225,7 @@ jobs:
     needs: ios-changes
     if: needs.ios-changes.outputs.ios == 'true'
     runs-on: macos-15
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: ios

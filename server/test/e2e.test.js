@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
-import { ADMIN_TOKEN, client, PNG_1X1, rawPost, sse, startServer } from './helpers.js';
+import { ADMIN_TOKEN, client, earlyRejectPost, PNG_1X1, sse, startServer } from './helpers.js';
 
 let server;
 let api;
@@ -333,9 +333,7 @@ describe('logo upload', () => {
   test('rejects SVG, spoofed content and oversize files', async () => {
     assert.equal((await upload('<svg xmlns="http://www.w3.org/2000/svg"/>', 'image/svg+xml')).status, 415);
     assert.equal((await upload(Buffer.from('definitely not a png file'), 'image/png')).status, 400);
-    const big = Buffer.alloc(2 * 1024 * 1024 + 10, 0);
-    PNG_1X1.copy(big);
-    const status = await rawPost(`${server.url}/api/bar/${SHOP}/logo`, big, {
+    const status = await earlyRejectPost(`${server.url}/api/bar/${SHOP}/logo`, 2 * 1024 * 1024 + 10, PNG_1X1, {
       'content-type': 'image/png',
       cookie: cookieHeader(bar),
     });

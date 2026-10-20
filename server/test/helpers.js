@@ -188,18 +188,24 @@ export async function sse(url, headers = {}) {
   };
 }
 
-// POST that resolves with the status even when the server answers (e.g. 413) and
-// closes the socket before the whole body was sent — which makes fetch() throw.
-export function rawPost(url, body, headers) {
+// Declares `declaredLength` bytes but only sends `head`, then waits for the server to
+// answer from the Content-Length alone (e.g. 413). Streaming the full body would race
+// the server closing the socket and can stall the client.
+export function earlyRejectPost(url, declaredLength, head, headers, timeoutMs = 5000) {
   return new Promise((resolve, reject) => {
-    const req = http.request(url, { method: 'POST', headers: { ...headers, 'content-length': body.length } }, (res) => {
+    const req = http.request(url, { method: 'POST', headers: { ...headers, 'content-length': declaredLength } }, (res) => {
       res.resume();
       resolve(res.statusCode);
+      req.destroy();
+    });
+    req.setTimeout(timeoutMs, () => {
+      req.destroy();
+      reject(new Error(`no response within ${timeoutMs}ms`));
     });
     req.on('error', (err) => {
-      if (err.code !== 'EPIPE' && err.code !== 'ECONNRESET') reject(err);
+      if (!['EPIPE', 'ECONNRESET', 'ERR_STREAM_DESTROYED'].includes(err.code)) reject(err);
     });
-    req.end(body);
+    req.write(head);
   });
 }
 
