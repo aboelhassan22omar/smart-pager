@@ -197,6 +197,17 @@ describe('Google review prompt', () => {
   });
 });
 
+describe('promo space', () => {
+  test('only while preparing, plain text + image, never HTML or links', () => {
+    const js = read('public/js/customer.js');
+    const body = js.slice(js.indexOf('function renderPromo'), js.indexOf('function render()'));
+    assert.match(body, /order\?\.status === 'preparing' \? shop\?\.promo : null/);
+    assert.match(body, /p\.textContent = promo\.text/);
+    assert.doesNotMatch(body, /innerHTML|createElement\('a'\)|href/);
+    assert.match(read('public/s.html'), /id="card-number"[\s\S]*id="card-promo"/, 'below the number');
+  });
+});
+
 describe('esc()', () => {
   test('escapes HTML special characters', () => {
     assert.equal(esc('<img src=x onerror="alert(1)">'), '&lt;img src=x onerror=&quot;alert(1)&quot;&gt;');

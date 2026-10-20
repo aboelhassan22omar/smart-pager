@@ -85,6 +85,14 @@ function featureFields(b) {
     { name: 'loyaltyRewardText', label: 'الهدية', value: b.loyaltyRewardText, placeholder: 'مثلًا: مشروب ببلاش', maxlength: 60 },
     { type: 'heading', label: 'عرض وقت الانتظار' },
     featureToggle(b, 'promo', 'عرض تحت رقم الطلب', 'بيظهر بس وهو مستني طلبه'),
+    { name: 'promoText', label: 'نص العرض', type: 'textarea', value: b.promoText, maxlength: 120, placeholder: 'مثلًا: جرّب الكرواسون الجديد' },
+    {
+      name: 'promoImage', label: 'صورة العرض', type: 'file', accept: 'image/png,image/jpeg,image/webp',
+      hint: b.promoImageUrl ? 'فيه صورة دلوقتي. اختار صورة تانية عشان تغيّرها' : 'PNG أو JPG أو WEBP، أقل من 500 كيلوبايت',
+    },
+    ...(b.promoImageUrl ? [{ name: 'promoImageRemove', type: 'toggle', label: 'شيل الصورة', value: false }] : []),
+    { name: 'promoStartsAt', label: 'يبدأ من (اختياري)', type: 'date', dir: 'ltr', value: b.promoStartsAt ?? '' },
+    { name: 'promoEndsAt', label: 'لحد (اختياري)', type: 'date', dir: 'ltr', value: b.promoEndsAt ?? '' },
   ];
 }
 
@@ -98,6 +106,9 @@ function featureBody(b, v) {
     googlePlaceId: v.googlePlaceId ?? '',
     loyaltyEvery: Number(v.loyaltyEvery),
     loyaltyRewardText: v.loyaltyRewardText ?? '',
+    promoText: v.promoText ?? '',
+    promoStartsAt: v.promoStartsAt ?? '',
+    promoEndsAt: v.promoEndsAt ?? '',
   };
 }
 
@@ -107,7 +118,14 @@ function openFeatures(b) {
     intro: 'كل خاصية تقدر تشغلها أو تقفلها في أي وقت، والبيانات بتفضل محفوظة.',
     fields: featureFields(b),
     onSubmit: async (v) => {
-      await api(`${base}/branches/${encodeURIComponent(b.id)}/settings`, { method: 'POST', body: featureBody(b, v) });
+      const branchBase = `${base}/branches/${encodeURIComponent(b.id)}`;
+      const image = v.promoImage instanceof File && v.promoImage.size ? v.promoImage : null;
+      if (image && image.size > 500 * 1024) {
+        throw Object.assign(new Error('الصورة لازم تكون أقل من 500 كيلوبايت'), { data: { field: 'promoImage' } });
+      }
+      await api(`${branchBase}/settings`, { method: 'POST', body: featureBody(b, v) });
+      if (image) await api(`${branchBase}/promo-image`, { method: 'POST', raw: image, contentType: image.type });
+      else if (v.promoImageRemove === 'on') await api(`${branchBase}/promo-image`, { method: 'DELETE', body: {} });
       toast('اتحفظ');
       await refresh();
     },

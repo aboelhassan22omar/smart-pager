@@ -180,6 +180,30 @@
   font-weight: 600;
 }
 
+/* Owner promo while preparing: below the number, never over it, no links. */
+.card-promo {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: var(--r-tile);
+  background: var(--bg);
+}
+
+.card-promo img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: var(--r-control);
+}
+
+.card-promo p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
 .progress {
   position: relative;
   height: 6px;

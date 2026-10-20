@@ -77,8 +77,11 @@ export function requireSuper(req, config) {
 }
 
 /** Mutating dashboard calls must be JSON (CSRF, together with SameSite=Strict cookies). */
-export function requireJson(req) {
-  if (req.method !== 'GET' && !(req.headers['content-type'] ?? '').startsWith('application/json')) {
+// CSRF: writes must be JSON (or one of `alsoAllowed`, e.g. raw image types, which also need
+// a CORS preflight and so can't come from another site's form).
+export function requireJson(req, alsoAllowed = []) {
+  const type = (req.headers['content-type'] ?? '').split(';')[0].trim();
+  if (req.method !== 'GET' && type !== 'application/json' && !alsoAllowed.includes(type)) {
     throw new HttpError(415, 'نوع الطلب مش مدعوم');
   }
 }

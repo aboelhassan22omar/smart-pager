@@ -28,7 +28,18 @@ export function statusMessage(order, shop) {
 
 export const logoUrl = (shop) => (shop.logo ? `/media/b/${shop.id}/${shop.logo}` : null);
 
-export const publicShop = (shop) => ({
+export const promoEnabled = (shop) => featureFlags(shop).promo;
+
+/** The promo while the feature is on and `today` (local YYYY-MM-DD) is inside its dates. */
+export function promoView(shop, today) {
+  if (!promoEnabled(shop) || (!shop.promo_text && !shop.promo_image)) return null;
+  if (shop.promo_starts_at && today < shop.promo_starts_at) return null;
+  if (shop.promo_ends_at && today > shop.promo_ends_at) return null;
+  return { text: shop.promo_text ?? '', imageUrl: shop.promo_image ? `/media/b/${shop.id}/${shop.promo_image}` : null };
+}
+
+// `today` (local day) is only passed for the customer page, the one place the promo shows.
+export const publicShop = (shop, { today } = {}) => ({
   id: shop.id,
   name: shop.name,
   logoUrl: logoUrl(shop),
@@ -41,6 +52,7 @@ export const publicShop = (shop) => ({
   googleReviewUrl: reviewEnabled(shop) ? reviewUrl(shop) : null,
   // Stamp card rule (phase 6); the device's own count comes from GET /loyalty.
   loyalty: loyaltyEnabled(shop) ? { every: shop.loyalty_every, rewardText: shop.loyalty_reward_text ?? '' } : null,
+  promo: today ? promoView(shop, today) : null,
 });
 
 /** A loyalty reward attached to this order (shown on the bar and to the customer). */

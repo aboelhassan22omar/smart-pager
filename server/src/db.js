@@ -101,6 +101,13 @@ export const BRANCH_MIGRATIONS = [
   );
   CREATE INDEX loyalty_rewards_open ON loyalty_rewards (token_hash, redeemed_at);
   `,
+  // 5: promo space shown while an order is preparing (phase 7). Dates are local YYYY-MM-DD.
+  `
+  ALTER TABLE branch_settings ADD COLUMN promo_text TEXT;
+  ALTER TABLE branch_settings ADD COLUMN promo_image TEXT;
+  ALTER TABLE branch_settings ADD COLUMN promo_starts_at TEXT;
+  ALTER TABLE branch_settings ADD COLUMN promo_ends_at TEXT;
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

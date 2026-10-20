@@ -13,6 +13,7 @@ const SETTING_COLUMNS = new Set([
   'logo', 'pin_hash', 'qr_mode', 'static_key', 'max_number', 'expire_hours',
   'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
+  'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions

@@ -7,6 +7,7 @@ import { canClaim } from '../plans.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { FEEDBACK_WINDOW_MS, OPEN_STATUSES } from '../store.js';
+import { dayIn } from '../util.js';
 import { publicShop, reviewEnabled, reviewUrl } from '../views.js';
 
 const MAX_SUBSCRIPTIONS = 5;
@@ -74,7 +75,7 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       return { order, shop: req.ctx.store.getShop() };
     }
 
-    b.get('/', async (req) => publicShop(req.ctx.store.getShop()));
+    b.get('/', async (req) => publicShop(req.ctx.store.getShop(), { today: dayIn(config.tz) }));
 
     b.post('/claim', async (req, reply) => {
       const limit = claimLimiter.take(`${req.ctx.branch.id}|${req.ip}`);

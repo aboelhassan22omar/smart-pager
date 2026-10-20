@@ -31,7 +31,7 @@ export function parseGoogleReviewUrl(value) {
   }
   return url.href;
 }
-const MEDIA_FILE_RE = /^logo-\d+\.(png|jpg|webp)$/;
+const MEDIA_FILE_RE = /^(logo|promo)-\d+\.(png|jpg|webp)$/;
 
 export function sniffImage(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 12) return null;

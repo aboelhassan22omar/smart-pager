@@ -1,6 +1,7 @@
 // Bottom-sheet form shared by the super and brand dashboards.
 //   openForm({ title, intro, fields: [{ name, label, type, value, placeholder, options, hint, disabled }], submit, onSubmit })
-//   type: text (default) | number | date | select | textarea | toggle (checkbox: values[name] === 'on') | heading
+//   type: text (default) | number | date | select | textarea | file (values[name] is a File) |
+//         toggle (checkbox: values[name] === 'on') | heading
 // onSubmit(values) may throw an ApiError; its message (and data.field) is shown in the sheet.
 
 import { esc } from './util.js';
@@ -13,6 +14,10 @@ function fieldHtml(f) {
   if (f.type === 'toggle') {
     return `<label class="toggle-row" for="${id}"><span>${esc(f.label)}${hint}</span>
       <input class="switch" type="checkbox" ${common} ${f.value ? 'checked' : ''}></label>`;
+  }
+  if (f.type === 'file') {
+    return `<label class="field" for="${id}"><span>${esc(f.label)}</span>
+      <input class="input" ${common} type="file" accept="${esc(f.accept ?? '')}">${hint}</label>`;
   }
   if (f.type === 'textarea') {
     return `<label class="field" for="${id}"><span>${esc(f.label)}</span>

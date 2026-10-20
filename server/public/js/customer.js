@@ -94,6 +94,28 @@ function renderQueue() {
   el.innerHTML = `<strong>${esc(aheadText(q.ahead))}</strong>${eta ? `، ${esc(eta)}` : ''}`;
 }
 
+// Promo (owner-set): only while preparing, under the number, plain text + image, no links.
+function renderPromo() {
+  const box = $('card-promo');
+  const promo = order?.status === 'preparing' ? shop?.promo : null;
+  box.hidden = !promo;
+  if (!promo || box.dataset.painted === '1') return;
+  box.dataset.painted = '1';
+  box.textContent = '';
+  if (promo.imageUrl) {
+    const img = new Image();
+    img.alt = '';
+    img.decoding = 'async';
+    img.src = promo.imageUrl;
+    box.append(img);
+  }
+  if (promo.text) {
+    const p = document.createElement('p');
+    p.textContent = promo.text;
+    box.append(p);
+  }
+}
+
 function render() {
   const card = $('card');
   card.dataset.status = order.status;
@@ -109,6 +131,7 @@ function render() {
   $('ios-hint').hidden = closed || order.status === 'ready' || !isIOS(navigator) || isStandalone();
   renderReview();
   renderQueue();
+  renderPromo();
   renderLoyalty();
 
   if (order.status === 'ready') showReady();

@@ -13,7 +13,7 @@ import { hashDevice } from '../src/loyalty.js';
 import { provisionBrand, provisionBranch } from '../src/provision.js';
 import { etaStats, percentile, queueFor } from '../src/queue.js';
 import { parsePlaceId, upgradeLegacyReview } from '../src/upgrades.js';
-import { ADMIN_TOKEN, client, sse, startServer } from './helpers.js';
+import { ADMIN_TOKEN, client, PNG_1X1, sse, startServer } from './helpers.js';
 
 const MIN = 60_000;
 const quiet = { info() {}, warn() {}, error() {}, debug() {} };
@@ -480,5 +480,74 @@ describe('loyalty over HTTP', () => {
     const config = { cookieSecret: 'secret' };
     const token = 'a'.repeat(43);
     assert.notEqual(hashDevice(config, 'grow-a', token), hashDevice(config, 'rival-a', token));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 7: promo space
+// ---------------------------------------------------------------------------
+
+describe('promo over HTTP', () => {
+  let g;
+  let anon;
+  before(async () => {
+    g = await growthServer();
+    anon = client(g.server.url);
+  });
+  after(async () => {
+    await g?.server.stop();
+  });
+
+  const promo = async () => (await anon.get(`/api/b/${BR}`)).data.promo;
+  const upload = (body, type, c = g.owner, branch = BR) => c.request('POST', `/api/brand/${BRAND}/branches/${branch}/promo-image`, {
+    body, headers: { 'content-type': type },
+  });
+
+  test('owner fields are validated', async () => {
+    assert.equal((await g.ownerSettings({ promoText: 'x'.repeat(121) })).data.field, 'promoText');
+    assert.equal((await g.ownerSettings({ promoStartsAt: 'soon' })).data.field, 'promoStartsAt');
+    assert.equal((await g.ownerSettings({ promoStartsAt: '2026-05-10', promoEndsAt: '2026-05-01' })).data.field, 'promoEndsAt');
+    assert.equal((await g.ownerSettings({ promoText: 'جرّب الكرواسون <a href="x">هنا</a>' })).status, 200);
+    assert.equal(await promo(), null, 'feature still off');
+  });
+
+  test('image: PNG/JPG/WEBP by magic bytes, at most 500 KB, owner of this brand only', async () => {
+    assert.equal((await upload('<svg xmlns="http://www.w3.org/2000/svg"/>', 'image/svg+xml')).status, 415);
+    assert.equal((await upload(Buffer.from('definitely not a png file'), 'image/png')).status, 400);
+    const big = Buffer.concat([PNG_1X1, Buffer.alloc(500 * 1024)]);
+    assert.equal((await upload(big, 'image/png')).status, 413);
+    assert.equal((await upload(PNG_1X1, 'image/png', g.staff)).status, 401, 'staff cannot');
+    assert.equal((await upload(PNG_1X1, 'image/png', g.owner, 'rival-a')).status, 404, 'other brand');
+
+    const res = await upload(PNG_1X1, 'image/png');
+    assert.equal(res.status, 200);
+    assert.match(res.data.imageUrl, new RegExp(`^/media/b/${BR}/promo-\\d+\\.png$`));
+    const file = await fetch(g.server.url + res.data.imageUrl);
+    assert.equal(file.status, 200);
+    assert.equal(file.headers.get('content-type'), 'image/png');
+    g.promoUrl = res.data.imageUrl;
+  });
+
+  test('shown only while the feature is on and today is inside the dates', async () => {
+    await g.ownerSettings({ features: { promo: true }, promoStartsAt: '', promoEndsAt: '' });
+    assert.deepEqual(await promo(), { text: 'جرّب الكرواسون <a href="x">هنا</a>', imageUrl: g.promoUrl });
+    await g.ownerSettings({ promoStartsAt: '2000-01-01', promoEndsAt: '2999-12-31' });
+    assert.ok(await promo());
+    await g.ownerSettings({ promoStartsAt: '2999-01-01', promoEndsAt: '' });
+    assert.equal(await promo(), null, 'not started');
+    await g.ownerSettings({ promoStartsAt: '', promoEndsAt: '2000-01-02' });
+    assert.equal(await promo(), null, 'ended');
+    await g.ownerSettings({ promoEndsAt: '' });
+    await g.su.post(`/api/super/branches/${BR}/features`, { feature: 'promo', forcedOff: true });
+    assert.equal(await promo(), null, 'forced off by super');
+    await g.su.post(`/api/super/branches/${BR}/features`, { feature: 'promo', forcedOff: false });
+    assert.ok(await promo());
+  });
+
+  test('removing the image deletes the file', async () => {
+    const res = await g.owner.request('DELETE', `/api/brand/${BRAND}/branches/${BR}/promo-image`, { json: {} });
+    assert.equal(res.status, 200);
+    assert.equal((await fetch(g.server.url + g.promoUrl)).status, 404);
+    assert.equal((await promo()).imageUrl, null);
   });
 });
