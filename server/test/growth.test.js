@@ -4,10 +4,12 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { after, before, describe, test } from 'node:test';
+import { loyaltyHtml } from '../public/js/loyalty-card.js';
 import { aheadText, etaText } from '../public/js/queue-text.js';
 import { hashPin } from '../src/auth.js';
 import { openStorage } from '../src/bootstrap.js';
 import { loadConfig } from '../src/config.js';
+import { hashDevice } from '../src/loyalty.js';
 import { provisionBrand, provisionBranch } from '../src/provision.js';
 import { etaStats, percentile, queueFor } from '../src/queue.js';
 import { parsePlaceId, upgradeLegacyReview } from '../src/upgrades.js';
@@ -295,5 +297,188 @@ describe('feedback + Google review over HTTP', () => {
     assert.equal((await feedback(order.id, { rating: 5 })).status, 404);
     await g.su.post(`/api/super/branches/${BR}/features`, { feature: 'review', forcedOff: false });
     assert.equal((await shop()).feedback, true);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Phase 6: loyalty stamp card
+// ---------------------------------------------------------------------------
+
+describe('loyalty card markup', () => {
+  test('shows "N من M", the rule, and the waiting reward', () => {
+    const card = { every: 5, stamps: 3, rewardText: 'قهوة <b>ببلاش</b>', rewards: 0 };
+    const html = loyaltyHtml(card);
+    assert.match(html, /3 من 5/);
+    assert.equal((html.match(/class="stamp is-on"/g) ?? []).length, 3);
+    assert.equal((html.match(/class="stamp( is-on)?"/g) ?? []).length, 5);
+    assert.ok(!html.includes('<b>'), 'reward text is escaped');
+    assert.match(loyaltyHtml(card, { orderReward: { text: 'قهوة', redeemed: false } }), /قولها للكاشير/);
+    assert.match(loyaltyHtml(card, { orderReward: { text: 'قهوة', redeemed: true } }), /استلمت مكافأتك/);
+    assert.match(loyaltyHtml({ ...card, rewards: 1 }), /طلبك الجاي/);
+  });
+});
+
+describe('loyalty store: stamps, stacking rewards, detach on close', () => {
+  test('rewards stack, attach oldest first, and come back when an order closes unredeemed', async () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pager-loyal-'));
+    const config = loadConfig({ DATA_DIR: dir });
+    const { control, tenants } = openStorage(config, quiet);
+    try {
+      const deps = { config, control, tenants };
+      provisionBrand(deps, { id: 'loy', name: 'Loy' });
+      await provisionBranch(deps, { brandId: 'loy', id: 'loy-a', name: 'A', pin: '1234' });
+      const { store } = tenants.get('loy-a');
+      const { static_key: k } = store.getShop();
+      store.updateShop({ qr_mode: 'static' });
+      const claim = (deviceHash) => store.claim({ k }, { deviceHash }).order;
+      const pickAndStamp = (order) => store.stamp(store.setStatus(order, 'picked'), 2);
+
+      for (let i = 0; i < 4; i++) pickAndStamp(claim('dev-a')); // 4 pickups, every 2 -> 2 rewards
+      assert.deepEqual(store.loyaltyCard('dev-a'), { stamps: 0, rewards: 2 });
+
+      const o1 = claim('dev-a');
+      const o2 = claim('dev-a');
+      assert.ok(o1.reward_id && o2.reward_id && o1.reward_id < o2.reward_id, 'oldest reward first, both attach');
+      assert.equal(claim('dev-a').reward_id, null, 'no third reward');
+
+      // Cancelled without redeeming: the reward detaches and goes to the next order.
+      const cancelled = store.setStatus(o1, 'cancelled');
+      assert.equal(cancelled.reward_id, null);
+      assert.equal(claim('dev-a').reward_id, o1.reward_id);
+
+      // Redeemed: gone for good. A picked order is stamped once only.
+      assert.equal(store.redeem(store.getOrder(o2.id)), true);
+      assert.equal(store.redeem(store.getOrder(o2.id)), false);
+      const picked = store.setStatus(store.getOrder(o2.id), 'picked');
+      assert.equal(picked.reward_redeemed_at > 0, true, 'redeemed reward stays on the picked order');
+      assert.equal(store.stamp(picked, 2), false);
+      assert.equal(store.stamp(store.getOrder(o2.id), 2), false, 'already stamped');
+      assert.equal(store.loyaltyCard('dev-a').rewards, 1);
+      assert.equal(store.stamp(store.setStatus(claim(null), 'picked'), 2), false, 'no device, no stamp');
+    } finally {
+      tenants.closeAll();
+      control.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('loyalty over HTTP', () => {
+  let g;
+  let phone;
+  before(async () => {
+    g = await growthServer();
+    phone = client(g.server.url);
+  });
+  after(async () => {
+    await g?.server.stop();
+  });
+
+  const claimBy = (c, headers = {}) => c.post(`/api/b/${BR}/claim`, { k: g.k }, { headers });
+  const loyalty = (c, headers = {}) => c.get(`/api/b/${BR}/loyalty`, { headers });
+  const staffPost = (id, action, body) => g.staff.post(`/api/bar/${BR}/orders/${id}/${action}`, body);
+
+  test('off by default: no device token, no card', async () => {
+    const res = await claimBy(client(g.server.url));
+    assert.equal(res.data.deviceToken, undefined);
+    assert.ok(!res.headers.getSetCookie().join(';').includes('sp_dev_'));
+    assert.equal(res.data.reward, null);
+    assert.deepEqual((await loyalty(phone)).data, { enabled: false });
+    assert.equal((await phone.get(`/api/b/${BR}`)).data.loyalty, null);
+  });
+
+  test('owner rule is validated; a reward text is required to turn it on', async () => {
+    assert.equal((await g.ownerSettings({ loyaltyEvery: 21 })).data.field, 'loyaltyEvery');
+    assert.equal((await g.ownerSettings({ loyaltyEvery: 1 })).data.field, 'loyaltyEvery');
+    assert.equal((await g.ownerSettings({ loyaltyRewardText: 'x'.repeat(61) })).data.field, 'loyaltyRewardText');
+    assert.equal((await g.ownerSettings({ features: { loyalty: true } })).data.field, 'loyaltyRewardText');
+    const res = await g.ownerSettings({ loyaltyEvery: 2, loyaltyRewardText: 'قهوة ببلاش', features: { loyalty: true } });
+    assert.equal(res.status, 200);
+    assert.deepEqual((await phone.get(`/api/b/${BR}`)).data.loyalty, { every: 2, rewardText: 'قهوة ببلاش' });
+  });
+
+  test('device token: httpOnly cookie scoped to the branch API, stored only as a hash', async () => {
+    const res = await claimBy(phone);
+    assert.match(res.data.deviceToken, /^[A-Za-z0-9_-]{43}$/);
+    const cookie = res.headers.getSetCookie().find((c) => c.startsWith(`sp_dev_${BR}=`));
+    assert.ok(cookie, 'device cookie set');
+    assert.match(cookie, /HttpOnly/i);
+    assert.match(cookie, new RegExp(`Path=/api/b/${BR}(;|$)`));
+    assert.match(cookie, /SameSite=Lax/i);
+    assert.match(cookie, /Max-Age=34560000/);
+    phone.token = res.data.deviceToken;
+    phone.firstOrder = res.data.id;
+
+    const db = g.branchDb();
+    const rows = db.prepare('SELECT token_hash FROM loyalty_devices').all();
+    const dump = JSON.stringify(db.prepare('SELECT * FROM orders').all());
+    db.close();
+    assert.equal(rows.length, 1);
+    assert.notEqual(rows[0].token_hash, phone.token);
+    assert.ok(!dump.includes(phone.token), 'raw token never stored');
+  });
+
+  test('a stamp only when staff mark the order picked, once per order', async () => {
+    const id = phone.firstOrder;
+    assert.equal((await loyalty(phone)).data.stamps, 0, 'claiming gives no stamp');
+    await staffPost(id, 'advance'); // ready
+    assert.equal((await loyalty(phone)).data.stamps, 0);
+    const stream = await sse(`${g.server.url}/api/b/${BR}/orders/${id}/events`);
+    await stream.next('order');
+    await staffPost(id, 'advance'); // picked
+    assert.equal((await stream.next('loyalty')).data.stamps, 1, 'pushed to the customer page');
+    stream.close();
+    assert.equal((await staffPost(id, 'status', { status: 'picked' })).status, 409, 'closed: no second stamp');
+    assert.equal((await loyalty(phone)).data.stamps, 1);
+
+    // The localStorage mirror works without the cookie.
+    const sameDevice = client(g.server.url);
+    assert.equal((await loyalty(sameDevice, { 'x-device-token': phone.token })).data.stamps, 1);
+    assert.equal((await loyalty(client(g.server.url))).data.stamps, 0, 'unknown device');
+  });
+
+  test('reaching N earns a reward; the next claim carries it; staff redeem it once', async () => {
+    const second = (await claimBy(phone)).data;
+    await staffPost(second.id, 'status', { status: 'picked' });
+    assert.deepEqual(
+      { stamps: (await loyalty(phone)).data.stamps, rewards: (await loyalty(phone)).data.rewards },
+      { stamps: 0, rewards: 1 },
+    );
+
+    const third = (await claimBy(phone)).data;
+    assert.deepEqual(third.reward, { text: 'قهوة ببلاش', redeemed: false });
+    const bar = (await g.staff.get(`/api/bar/${BR}/state`)).data.orders.find((o) => o.id === third.id);
+    assert.deepEqual(bar.reward, { text: 'قهوة ببلاش', redeemed: false }, 'bar shows the gift');
+    assert.equal((await phone.post(`/api/bar/${BR}/orders/${third.id}/redeem`)).status, 401, 'staff only');
+    const redeemed = await staffPost(third.id, 'redeem');
+    assert.equal(redeemed.status, 200);
+    assert.equal(redeemed.data.reward.redeemed, true);
+    assert.equal((await staffPost(third.id, 'redeem')).status, 409, 'once');
+    assert.equal((await loyalty(phone)).data.rewards, 0);
+  });
+
+  test('3 claims per device per 15 minutes', async () => {
+    const res = await claimBy(phone);
+    assert.equal(res.status, 429);
+    assert.ok(Number(res.headers.get('retry-after')) > 60);
+    assert.equal((await claimBy(client(g.server.url))).status, 200, 'another device is fine');
+  });
+
+  test('turning it off hides everything and keeps the data', async () => {
+    const before = (await loyalty(client(g.server.url), { 'x-device-token': phone.token })).data;
+    await g.ownerSettings({ features: { loyalty: false } });
+    assert.deepEqual((await loyalty(phone)).data, { enabled: false });
+    assert.equal((await phone.get(`/api/b/${BR}`)).data.loyalty, null);
+    const res = await claimBy(client(g.server.url));
+    assert.equal(res.data.deviceToken, undefined);
+    await g.ownerSettings({ features: { loyalty: true } });
+    const after = (await loyalty(client(g.server.url), { 'x-device-token': phone.token })).data;
+    assert.deepEqual(after, before);
+  });
+
+  test('device hashes are per branch', () => {
+    const config = { cookieSecret: 'secret' };
+    const token = 'a'.repeat(43);
+    assert.notEqual(hashDevice(config, 'grow-a', token), hashDevice(config, 'rival-a', token));
   });
 });

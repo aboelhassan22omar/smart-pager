@@ -79,6 +79,28 @@ export const BRANCH_MIGRATIONS = [
   );
   CREATE INDEX feedback_created_at ON feedback (created_at);
   `,
+  // 4: loyalty stamp card (phase 6). Devices are only known by an HMAC of their token.
+  `
+  ALTER TABLE branch_settings ADD COLUMN loyalty_every INTEGER NOT NULL DEFAULT 5;
+  ALTER TABLE branch_settings ADD COLUMN loyalty_reward_text TEXT;
+  ALTER TABLE orders ADD COLUMN device_hash TEXT;
+  ALTER TABLE orders ADD COLUMN stamped INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE orders ADD COLUMN reward_id INTEGER;
+  CREATE TABLE loyalty_devices (
+    token_hash TEXT PRIMARY KEY,
+    stamps INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL
+  );
+  CREATE TABLE loyalty_rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL REFERENCES loyalty_devices (token_hash),
+    earned_at INTEGER NOT NULL,
+    attached_order_id TEXT,
+    redeemed_at INTEGER
+  );
+  CREATE INDEX loyalty_rewards_open ON loyalty_rewards (token_hash, redeemed_at);
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

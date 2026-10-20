@@ -25,8 +25,9 @@ function fieldHtml(f) {
   }
   const dir = f.dir ? `dir="${esc(f.dir)}"` : '';
   const mode = f.inputmode ? `inputmode="${esc(f.inputmode)}"` : '';
+  const max = f.maxlength ? `maxlength="${esc(f.maxlength)}"` : '';
   return `<label class="field" for="${id}"><span>${esc(f.label)}</span>
-    <input class="input" ${common} type="${esc(f.type ?? 'text')}" ${dir} ${mode}
+    <input class="input" ${common} type="${esc(f.type ?? 'text')}" ${dir} ${mode} ${max}
            value="${esc(f.value ?? '')}" placeholder="${esc(f.placeholder ?? '')}" autocomplete="off">${hint}</label>`;
 }
 

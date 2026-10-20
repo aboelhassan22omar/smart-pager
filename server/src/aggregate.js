@@ -52,6 +52,8 @@ function branchSummary({ tenants, screens, config }, branch, now) {
     forcedOff: JSON.parse(branch.forced_off || '[]'),
     googlePlaceId: shop?.google_place_id ?? null,
     legacyReviewUrl: shop?.google_review_url ?? null,
+    loyaltyEvery: shop?.loyalty_every ?? 5,
+    loyaltyRewardText: shop?.loyalty_reward_text ?? '',
     screens: screens.count(branch.id),
     lastActivityAt: branch.last_activity_at ?? stats?.lastOrderAt ?? null,
     avgRating7d: ratings.avg,

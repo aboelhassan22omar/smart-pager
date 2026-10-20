@@ -12,7 +12,7 @@ export const ORDER_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const SETTING_COLUMNS = new Set([
   'logo', 'pin_hash', 'qr_mode', 'static_key', 'max_number', 'expire_hours',
   'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
-  'google_place_id',
+  'google_place_id', 'loyalty_every', 'loyalty_reward_text',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
@@ -44,8 +44,14 @@ export class BranchStore {
       openNumbers: p(`SELECT number FROM orders WHERE status IN ('preparing', 'ready')`),
       setCounter: p('UPDATE branch_settings SET next_number = ?, number_day = ? WHERE id = 1'),
       insertOrder: p(`INSERT INTO orders (id, number, status, created_at) VALUES (?, ?, 'preparing', ?)`),
-      order: p('SELECT * FROM orders WHERE id = ?'),
-      openOrders: p(`SELECT * FROM orders WHERE status IN ('preparing', 'ready') ORDER BY created_at`),
+      // Order reads carry the attached reward's state (loyalty) for the bar and customer views.
+      order: p(`SELECT o.*, r.redeemed_at AS reward_redeemed_at FROM orders o
+                LEFT JOIN loyalty_rewards r ON r.id = o.reward_id WHERE o.id = ?`),
+      openOrders: p(`SELECT o.*, r.redeemed_at AS reward_redeemed_at FROM orders o
+                     LEFT JOIN loyalty_rewards r ON r.id = o.reward_id
+                     WHERE o.status IN ('preparing', 'ready') ORDER BY o.created_at`),
+      detachReward: p('UPDATE loyalty_rewards SET attached_order_id = NULL WHERE attached_order_id = ? AND redeemed_at IS NULL'),
+      clearOrderReward: p('UPDATE orders SET reward_id = NULL WHERE id = ? AND reward_id IN (SELECT id FROM loyalty_rewards WHERE redeemed_at IS NULL)'),
       setStatus: p('UPDATE orders SET status = ?, ready_at = ?, closed_at = ? WHERE id = ?'),
       bumpNotify: p('UPDATE orders SET notify_count = notify_count + 1 WHERE id = ?'),
       markReviewClick: p('UPDATE orders SET review_clicked_at = ? WHERE id = ? AND review_clicked_at IS NULL'),
@@ -112,7 +118,8 @@ export class BranchStore {
 
   // ---- orders ----
 
-  claim({ n, k }) {
+  /** `deviceHash` (loyalty on): the order is tied to the device and takes its oldest free reward. */
+  claim({ n, k }, { deviceHash = null } = {}) {
     return tx(this.db, () => {
       const shop = this.getShop();
       if (!shop) throw new HttpError(404, 'المحل ده مش موجود');
@@ -133,6 +140,7 @@ export class BranchStore {
       const number = this.#allocateNumber(shop);
       const id = randomId(16);
       this.sql.insertOrder.run(id, number, Date.now());
+      if (deviceHash) this.#attachDevice(id, deviceHash);
       if (dynamicOk) this.sql.rotate.run(newNonce(), Date.now());
       return { order: this.sql.order.get(id), shop: this.getShop(), rotated: dynamicOk };
     });
@@ -155,6 +163,16 @@ export class BranchStore {
     throw new HttpError(503, 'كل الأرقام مشغولة دلوقتي. كلّم الكاشير');
   }
 
+  #attachDevice(orderId, deviceHash) {
+    const now = Date.now();
+    this.db.prepare(`INSERT INTO loyalty_devices (token_hash, created_at, last_seen_at) VALUES (?, ?, ?)
+                     ON CONFLICT (token_hash) DO UPDATE SET last_seen_at = excluded.last_seen_at`).run(deviceHash, now, now);
+    const reward = this.db.prepare(`SELECT id FROM loyalty_rewards
+      WHERE token_hash = ? AND redeemed_at IS NULL AND attached_order_id IS NULL ORDER BY earned_at, id LIMIT 1`).get(deviceHash);
+    if (reward) this.db.prepare('UPDATE loyalty_rewards SET attached_order_id = ? WHERE id = ?').run(orderId, reward.id);
+    this.db.prepare('UPDATE orders SET device_hash = ?, reward_id = ? WHERE id = ?').run(deviceHash, reward?.id ?? null, orderId);
+  }
+
   getOrder(id) {
     return typeof id === 'string' && ORDER_ID_RE.test(id) ? this.sql.order.get(id) : undefined;
   }
@@ -169,8 +187,15 @@ export class BranchStore {
     if (status === 'ready' && order.status !== 'ready') readyAt = now;
     if (status === 'preparing') readyAt = null;
     const closedAt = CLOSED_STATUSES.includes(status) ? now : null;
-    this.sql.setStatus.run(status, readyAt, closedAt, order.id);
-    if (status === 'ready' && order.status !== 'ready') this.sql.bumpNotify.run(order.id);
+    tx(this.db, () => {
+      this.sql.setStatus.run(status, readyAt, closedAt, order.id);
+      if (status === 'ready' && order.status !== 'ready') this.sql.bumpNotify.run(order.id);
+      // Closed without redeeming: the reward goes back to the device for its next order.
+      if (closedAt && order.reward_id) {
+        this.sql.detachReward.run(order.id);
+        this.sql.clearOrderReward.run(order.id);
+      }
+    });
     return this.sql.order.get(order.id);
   }
 
@@ -198,6 +223,42 @@ export class BranchStore {
     const subscriptions = Number(this.sql.purgeSubs.run(now - SUBSCRIPTION_RETENTION_MS).changes);
     const orders = Number(this.sql.purge.run(now - ORDER_RETENTION_MS).changes);
     return { orders, subscriptions };
+  }
+
+  // ---- loyalty ----
+
+  /** {stamps, rewards (unredeemed)} for one device; zeros for an unknown one. */
+  loyaltyCard(deviceHash) {
+    const device = deviceHash ? this.db.prepare('SELECT stamps FROM loyalty_devices WHERE token_hash = ?').get(deviceHash) : null;
+    const rewards = device
+      ? Number(this.db.prepare('SELECT COUNT(*) AS n FROM loyalty_rewards WHERE token_hash = ? AND redeemed_at IS NULL').get(deviceHash).n)
+      : 0;
+    return { stamps: device?.stamps ?? 0, rewards };
+  }
+
+  /**
+   * One stamp for a picked-up order (staff action), at most once per order. Reaching
+   * `every` creates a reward and resets the stamps. Returns true when a reward was earned.
+   */
+  stamp(order, every) {
+    if (!order.device_hash || order.stamped) return false;
+    return tx(this.db, () => {
+      if (Number(this.db.prepare('UPDATE orders SET stamped = 1 WHERE id = ? AND stamped = 0').run(order.id).changes) !== 1) return false;
+      const { stamps } = this.db.prepare('UPDATE loyalty_devices SET stamps = stamps + 1 WHERE token_hash = ? RETURNING stamps')
+        .get(order.device_hash);
+      if (stamps < every) return false;
+      this.db.prepare('UPDATE loyalty_devices SET stamps = 0 WHERE token_hash = ?').run(order.device_hash);
+      this.db.prepare('INSERT INTO loyalty_rewards (token_hash, earned_at) VALUES (?, ?)').run(order.device_hash, Date.now());
+      return true;
+    });
+  }
+
+  /** Staff confirm the reward attached to an open order. False when there is none to redeem. */
+  redeem(order) {
+    if (!order.reward_id || order.reward_redeemed_at) return false;
+    const res = this.db.prepare('UPDATE loyalty_rewards SET redeemed_at = ? WHERE id = ? AND redeemed_at IS NULL AND attached_order_id = ?')
+      .run(Date.now(), order.reward_id, order.id);
+    return Number(res.changes) === 1;
   }
 
   // ---- feedback ----

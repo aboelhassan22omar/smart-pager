@@ -1,5 +1,6 @@
 import { channels } from './bus.js';
 import { HttpError } from './errors.js';
+import { loyaltyEnabled, loyaltyView } from './loyalty.js';
 import { etaStats, queueFor } from './queue.js';
 import { rollupBranch } from './rollups.js';
 import { OPEN_STATUSES } from './store.js';
@@ -54,8 +55,8 @@ export function createService({ control, tenants, bus, notifier, screens, config
   const publishNonce = (ctx, shop) => bus.emit(channels(ctx.branch.id).bar, 'nonce', qrInfo(shop, config));
   const publishShop = (ctx, shop) => bus.emit(channels(ctx.branch.id).bar, 'shop', barShop(shop));
 
-  function claim(ctx, codes) {
-    const { order, shop, rotated } = ctx.store.claim(codes);
+  function claim(ctx, codes, { deviceHash = null } = {}) {
+    const { order, shop, rotated } = ctx.store.claim(codes, { deviceHash });
     if (rotated) publishNonce(ctx, shop);
     publishOrder(ctx, order, shop, { action: 'created' });
     control.touch(ctx.branch.id);
@@ -66,6 +67,20 @@ export function createService({ control, tenants, bus, notifier, screens, config
     if (!OPEN_STATUSES.includes(order.status)) throw new HttpError(409, 'الطلب ده اتقفل خلاص');
     if (order.status === status) return order;
     const updated = ctx.store.setStatus(order, status);
+    publishOrder(ctx, updated, shop);
+    // Loyalty: a stamp only when staff hand the order over (never on claim, expiry or review).
+    if (status === 'picked' && loyaltyEnabled(shop) && updated.device_hash) {
+      ctx.store.stamp(updated, shop.loyalty_every);
+      const card = loyaltyView(shop, ctx.store.loyaltyCard(updated.device_hash));
+      bus.emit(channels(ctx.branch.id).order(order.id), 'loyalty', card);
+    }
+    return updated;
+  }
+
+  function redeem(ctx, shop, order) {
+    if (!OPEN_STATUSES.includes(order.status)) throw new HttpError(409, 'الطلب ده اتقفل خلاص');
+    if (!loyaltyEnabled(shop) || !ctx.store.redeem(order)) throw new HttpError(409, 'مفيش مكافأة على الطلب ده');
+    const updated = ctx.store.getOrder(order.id);
     publishOrder(ctx, updated, shop);
     return updated;
   }
@@ -130,6 +145,6 @@ export function createService({ control, tenants, bus, notifier, screens, config
   }
 
   return {
-    claim, setStatus, advance, renotify, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+    claim, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
   };
 }

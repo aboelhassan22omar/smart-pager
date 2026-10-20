@@ -1,6 +1,7 @@
 import { Chime } from './chime.js';
 import { applyAccent } from './color.js';
 import { icons } from './icons.js';
+import { loyaltyHtml } from './loyalty-card.js';
 import { aheadText, etaText } from './queue-text.js';
 import { reviewHtml } from './review.js';
 import { api, base64UrlToBytes, elapsedLabel, esc, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
@@ -15,6 +16,8 @@ const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
 const params = new URLSearchParams(location.search);
 const storageKey = `sp:order:${shopId}`;
+// Loyalty device token: lives in an httpOnly cookie, mirrored here in case the cookie is lost.
+const deviceKey = `sp:dev:${shopId}`;
 // Every customer call is scoped to this branch; an order id is only valid under its own branch.
 const branchApi = `/api/b/${encodeURIComponent(shopId)}`;
 const chime = new Chime();
@@ -26,6 +29,7 @@ let events = null;
 let pollTimer = null;
 let bannerTimer = null;
 let ringing = false;
+let loyalty = null; // {every, stamps, rewardText, rewards} while the branch runs a stamp card
 
 const store = {
   get(key) {
@@ -105,9 +109,33 @@ function render() {
   $('ios-hint').hidden = closed || order.status === 'ready' || !isIOS(navigator) || isStandalone();
   renderReview();
   renderQueue();
+  renderLoyalty();
 
   if (order.status === 'ready') showReady();
   else hideReady();
+}
+
+const deviceHeaders = () => {
+  const token = store.get(deviceKey);
+  return token ? { 'x-device-token': token } : {};
+};
+
+function renderLoyalty() {
+  const box = $('loyalty');
+  box.hidden = !loyalty || !order;
+  if (box.hidden) return;
+  box.innerHTML = loyaltyHtml(loyalty, { orderReward: order.reward, closed: CLOSED.includes(order.status) });
+}
+
+async function loadLoyalty() {
+  if (!shop?.loyalty) return;
+  try {
+    const card = await api(`${branchApi}/loyalty`, { headers: deviceHeaders() });
+    loyalty = card.enabled ? card : null;
+  } catch {
+    loyalty = null;
+  }
+  renderLoyalty();
 }
 
 // After pickup, every customer is asked (Google forbids asking only happy ones).
@@ -264,6 +292,10 @@ function connect() {
     order.queue = JSON.parse(e.data);
     renderQueue();
   });
+  events.addEventListener('loyalty', (e) => {
+    loyalty = JSON.parse(e.data);
+    renderLoyalty();
+  });
   events.addEventListener('renotify', (e) => {
     const next = JSON.parse(e.data);
     apply(next);
@@ -333,7 +365,10 @@ async function resolveOrder() {
   const n = params.get('n');
   const k = params.get('k');
   if ((!current || CLOSED.includes(current.status)) && (n || k)) {
-    current = await api(`${branchApi}/claim`, { method: 'POST', body: { n: n ?? undefined, k: k ?? undefined } });
+    current = await api(`${branchApi}/claim`, {
+      method: 'POST', body: { n: n ?? undefined, k: k ?? undefined }, headers: deviceHeaders(),
+    });
+    if (current.deviceToken) store.set(deviceKey, current.deviceToken);
   }
   return current;
 }
@@ -369,6 +404,7 @@ async function boot() {
   order = resolved;
   render();
   connect();
+  loadLoyalty();
 
   $('enable').addEventListener('click', onEnable);
   setInterval(() => {

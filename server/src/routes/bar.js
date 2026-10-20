@@ -161,6 +161,9 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
 
     bar.post('/orders/:id/renotify', async (req) => publicOrder(service.renotify(req.ctx, req.shop, shopOrder(req)), req.shop));
 
+    // Loyalty: staff confirm they gave the customer the reward attached to this order.
+    bar.post('/orders/:id/redeem', async (req) => publicOrder(service.redeem(req.ctx, req.shop, shopOrder(req)), req.shop));
+
     bar.post('/settings', async (req, reply) => {
       const body = req.body ?? {};
       const shop = req.shop;

@@ -249,3 +249,17 @@
     opacity: 0;
   }
 }
+
+/* Loyalty: this order carries a reward to hand over (redeem from the long-press sheet). */
+.tile-gift {
+  position: absolute;
+  inset-block-start: 10px;
+  inset-inline-end: 10px;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: var(--on-accent);
+}

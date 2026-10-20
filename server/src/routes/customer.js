@@ -1,5 +1,8 @@
 import { HttpError } from '../errors.js';
 import { channels } from '../bus.js';
+import {
+  DEVICE_CLAIMS, hashDevice, loyaltyEnabled, loyaltyView, newDeviceToken, readDeviceToken, setDeviceCookie,
+} from '../loyalty.js';
 import { canClaim } from '../plans.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
@@ -48,7 +51,11 @@ export function validateLiveActivity(payload) {
 
 export default async function customerRoutes(app, { config, control, tenants, bus, notifier, service }) {
   const claimLimiter = createRateLimiter({ limit: config.claimRatePerMin });
-  app.addHook('onClose', async () => claimLimiter.close());
+  const deviceLimiter = createRateLimiter(DEVICE_CLAIMS);
+  app.addHook('onClose', async () => {
+    claimLimiter.close();
+    deviceLimiter.close();
+  });
 
   app.get('/health', async () => ({ ok: control.ping() }));
 
@@ -78,8 +85,34 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       // Suspended or trial over: no new orders (open ones finish normally).
       if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الخدمة متوقفة مؤقتًا، اسأل الكاشير');
       const { n, k } = req.body ?? {};
-      const { order, shop } = service.claim(req.ctx, { n, k });
-      return service.customerView(req.ctx, order, shop);
+      const branchId = req.ctx.branch.id;
+
+      // Loyalty on: the order is tied to this device (token created on its first claim).
+      let device = null;
+      if (loyaltyEnabled(req.ctx.store.getShop() ?? {})) {
+        const token = readDeviceToken(req, branchId) ?? newDeviceToken();
+        device = { token, hash: hashDevice(config, branchId, token) };
+        const perDevice = deviceLimiter.take(`dev|${branchId}|${device.hash}`);
+        if (!perDevice.ok) {
+          reply.header('retry-after', String(perDevice.retryAfter));
+          throw new HttpError(429, 'طلبات كتير من الموبايل ده. استنى شوية وجرّب تاني');
+        }
+      }
+
+      const { order, shop } = service.claim(req.ctx, { n, k }, { deviceHash: device?.hash });
+      const view = service.customerView(req.ctx, order, shop);
+      if (!device) return view;
+      setDeviceCookie(reply, config, branchId, device.token);
+      return { ...view, deviceToken: device.token };
+    });
+
+    // The device's stamp card for this branch ({enabled:false} when loyalty is off).
+    b.get('/loyalty', async (req) => {
+      const shop = req.ctx.store.getShop();
+      if (!loyaltyEnabled(shop)) return { enabled: false };
+      const token = readDeviceToken(req, req.ctx.branch.id);
+      const hash = token ? hashDevice(config, req.ctx.branch.id, token) : null;
+      return { enabled: true, ...loyaltyView(shop, req.ctx.store.loyaltyCard(hash)) };
     });
 
     b.get('/orders/:id', async (req) => {

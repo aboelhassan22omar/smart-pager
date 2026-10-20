@@ -414,3 +414,84 @@
   border-radius: 999px;
   font-size: var(--fs-sm);
 }
+
+/* ---------- loyalty stamp card ---------- */
+
+.loyalty {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  animation: rise 520ms var(--ease) 80ms both;
+}
+
+.loyalty-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.loyalty-title,
+.loyalty-count,
+.loyalty-rule,
+.loyalty-note {
+  margin: 0;
+}
+
+.loyalty-title {
+  font-weight: 600;
+}
+
+.loyalty-count {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.stamps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stamp {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  transition: background 240ms var(--ease), border-color 240ms var(--ease);
+}
+
+.stamp.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.loyalty-rule {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.loyalty-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--bg);
+  font-size: var(--fs-sm);
+}
+
+.loyalty-note .icon {
+  flex: none;
+}
+
+.loyalty-note.is-reward {
+  color: var(--accent);
+}
+
+.loyalty-note.is-reward strong {
+  color: var(--text);
+}

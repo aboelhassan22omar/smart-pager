@@ -33,15 +33,20 @@ function sorted() {
   return [...orders.values()].sort((a, b) => a.createdAt - b.createdAt);
 }
 
+// Loyalty reward attached to the order and not handed over yet.
+const hasReward = (o) => Boolean(o.reward && !o.reward.redeemed);
+
 function tileHtml(o) {
   const late = isLate(o);
   const icon = o.status === 'ready' ? icons.bell(14) : icons.clock(14);
   const rings = o.status === 'ready' && o.notifyCount > 1 ? ` ×${o.notifyCount}` : '';
   const label = late ? 'متأخر' : STATUS_LABEL[o.status];
+  const gift = hasReward(o);
   return `
     <button class="tile${fresh.has(o.id) ? ' is-new' : ''}${late ? ' is-late' : ''}" role="listitem" type="button"
             data-id="${esc(o.id)}" data-status="${esc(o.status)}"
-            aria-label="طلب ${esc(o.number)}، ${esc(label)}">
+            aria-label="طلب ${esc(o.number)}، ${esc(label)}${gift ? '، عليه مكافأة' : ''}">
+      ${gift ? `<span class="tile-gift" title="عليه مكافأة">${icons.gift(16)}</span>` : ''}
       <span class="tile-num num">${esc(o.number)}</span>
       <span class="tile-foot">
         <span class="tile-status">${icon}${esc(label)}${esc(rings)}</span>
@@ -98,7 +103,9 @@ async function advance(id) {
   if (!o) return;
   const updated = await act(id, 'advance');
   if (updated?.status === 'ready') toast(`رقم ${updated.number} جاهز. بنرن على العميل`);
-  if (updated?.status === 'picked') toast(`رقم ${updated.number} اتسلّم`);
+  if (updated?.status === 'picked') {
+    toast(hasReward(o) ? `رقم ${updated.number} اتسلّم. المكافأة متسلّمتش، هتفضل لطلبه الجاي` : `رقم ${updated.number} اتسلّم`);
+  }
 }
 
 // ---------- long-press sheet ----------
@@ -123,6 +130,9 @@ function openSheet(id) {
     } else if (a === 'cancelled') {
       b.innerHTML = `${icons.trash()}<span>إلغاء الطلب</span>`;
       b.dataset.confirm = '';
+    } else if (a === 'redeem') {
+      b.innerHTML = `${icons.gift()}<span>سلّم المكافأة: ${esc(o.reward?.text ?? '')}</span>`;
+      b.hidden = !hasReward(o);
     }
   }
   $('sheet').hidden = false;
@@ -147,6 +157,9 @@ async function onSheetAction(button) {
   if (a === 'renotify') {
     const o = await act(id, 'renotify');
     if (o) toast(`رنّينا على رقم ${o.number} تاني`);
+  } else if (a === 'redeem') {
+    const o = await act(id, 'redeem');
+    if (o) toast(`مكافأة رقم ${o.number} اتسجّلت`);
   } else {
     const o = await act(id, 'status', { status: a });
     if (o && a === 'cancelled') toast(`طلب ${o.number} اتلغى`);

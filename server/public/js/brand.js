@@ -81,6 +81,8 @@ function featureFields(b) {
     },
     { type: 'heading', label: 'بطاقة الختم' },
     featureToggle(b, 'loyalty', 'ختم مع كل طلب', 'العميل بياخد ختم لما يستلم، وهدية كل كام طلب'),
+    { name: 'loyaltyEvery', label: 'الهدية كل كام طلب', type: 'number', inputmode: 'numeric', dir: 'ltr', value: b.loyaltyEvery, hint: 'من 2 لـ 20' },
+    { name: 'loyaltyRewardText', label: 'الهدية', value: b.loyaltyRewardText, placeholder: 'مثلًا: مشروب ببلاش', maxlength: 60 },
     { type: 'heading', label: 'عرض وقت الانتظار' },
     featureToggle(b, 'promo', 'عرض تحت رقم الطلب', 'بيظهر بس وهو مستني طلبه'),
   ];
@@ -91,7 +93,12 @@ function featureBody(b, v) {
   for (const f of ['review', 'loyalty', 'promo']) {
     if (!b.forcedOff.includes(f)) features[f] = v[`ff_${f}`] === 'on';
   }
-  return { features, googlePlaceId: v.googlePlaceId ?? '' };
+  return {
+    features,
+    googlePlaceId: v.googlePlaceId ?? '',
+    loyaltyEvery: Number(v.loyaltyEvery),
+    loyaltyRewardText: v.loyaltyRewardText ?? '',
+  };
 }
 
 function openFeatures(b) {

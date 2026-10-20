@@ -1,15 +1,29 @@
 import { verifyPin } from '../auth.js';
 import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
 import { HttpError } from '../errors.js';
+import { LOYALTY_EVERY, REWARD_TEXT_MAX } from '../loyalty.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { OWNER_COOKIE, requireJson, requireOwner, setOwnerSession } from '../sessions.js';
 import { FEATURES } from '../plans.js';
 import { parsePlaceId } from '../upgrades.js';
 import { cleanBranchName } from './super.js';
 
-// Loyalty rule and promo fields (phases 6-7) are validated here as they are added.
-export function ownerExtraFields() {
-  return {};
+// Loyalty rule and promo fields of the owner settings body -> branch_settings columns.
+export function ownerExtraFields(body) {
+  const fields = {};
+  if ('loyaltyEvery' in body) {
+    const every = Number(body.loyaltyEvery);
+    if (!Number.isInteger(every) || every < LOYALTY_EVERY.min || every > LOYALTY_EVERY.max) {
+      throw new HttpError(400, `عدد الطلبات من ${LOYALTY_EVERY.min} لـ ${LOYALTY_EVERY.max}`, { field: 'loyaltyEvery' });
+    }
+    fields.loyalty_every = every;
+  }
+  if ('loyaltyRewardText' in body) {
+    const text = typeof body.loyaltyRewardText === 'string' ? body.loyaltyRewardText.trim() : '';
+    if (text.length > REWARD_TEXT_MAX) throw new HttpError(400, `الهدية لحد ${REWARD_TEXT_MAX} حرف`, { field: 'loyaltyRewardText' });
+    fields.loyalty_reward_text = text || null;
+  }
+  return fields;
 }
 
 // Brand owner: sees and manages the branches of their own brand only.
@@ -102,6 +116,11 @@ export default async function brandRoutes(app, deps) {
       const features = body.features && typeof body.features === 'object' ? body.features : {};
       const toggles = Object.entries(features).filter(([f]) => FEATURES.includes(f));
       if (!Object.keys(fields).length && !toggles.length) throw new HttpError(400, 'مفيش تغييرات تتحفظ');
+      // A stamp card needs a reward to promise.
+      const rewardText = 'loyalty_reward_text' in fields ? fields.loyalty_reward_text : ctx.store.getShop().loyalty_reward_text;
+      if (features.loyalty === true && !rewardText) {
+        throw new HttpError(400, 'اكتب الهدية الأول (مثلًا: مشروب ببلاش)', { field: 'loyaltyRewardText' });
+      }
 
       if (Object.keys(fields).length) {
         ctx.store.updateShop(fields);

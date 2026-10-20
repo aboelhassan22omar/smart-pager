@@ -1,6 +1,7 @@
 // Shapes the API exposes. Never leak pin_hash, nonces or keys outside bar-only views.
 
 import { readableAccent } from '../public/js/color.js';
+import { loyaltyEnabled } from './loyalty.js';
 import { featureFlags } from './plans.js';
 
 /** Google review link: from the place id (preferred), else the v1 free-form link. */
@@ -38,7 +39,14 @@ export const publicShop = (shop) => ({
   // Post-pickup review (phase 5): internal stars + the Google button, together.
   feedback: reviewEnabled(shop),
   googleReviewUrl: reviewEnabled(shop) ? reviewUrl(shop) : null,
+  // Stamp card rule (phase 6); the device's own count comes from GET /loyalty.
+  loyalty: loyaltyEnabled(shop) ? { every: shop.loyalty_every, rewardText: shop.loyalty_reward_text ?? '' } : null,
 });
+
+/** A loyalty reward attached to this order (shown on the bar and to the customer). */
+const orderReward = (order, shop) => (order.reward_id && loyaltyEnabled(shop)
+  ? { text: shop.loyalty_reward_text ?? '', redeemed: Boolean(order.reward_redeemed_at) }
+  : null);
 
 export const publicOrder = (order, shop) => ({
   id: order.id,
@@ -51,6 +59,7 @@ export const publicOrder = (order, shop) => ({
   readyAt: order.ready_at ?? null,
   closedAt: order.closed_at ?? null,
   notifyCount: order.notify_count,
+  reward: orderReward(order, shop),
 });
 
 export const barShop = (shop) => ({
