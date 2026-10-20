@@ -7,6 +7,12 @@ updates:
     groups:
       minor-and-patch:
         update-types: [minor, patch]
+    # ESLint 9 flat config is a project requirement; eslint and @eslint/js majors must move together.
+    ignore:
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      - dependency-name: "@eslint/js"
+        update-types: ["version-update:semver-major"]
     open-pull-requests-limit: 5
 
   - package-ecosystem: github-actions
@@ -21,3 +27,7 @@ updates:
     directory: /server
     schedule:
       interval: monthly
+    # CI tests on Node 22; a Node major is a deliberate upgrade of CI + image together.
+    ignore:
+      - dependency-name: "node"
+        update-types: ["version-update:semver-major"]

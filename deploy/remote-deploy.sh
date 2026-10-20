@@ -1,13 +1,18 @@
 #!/usr/bin/env bash
 # Runs ON the production server (called by .github/workflows/cd.yml over SSH).
-#   usage: echo "$GHCR_TOKEN" | remote-deploy.sh <deploy_path> <ghcr_user> <new_image|-> <health_tries>
-# Reads the registry token from stdin. Rolls back APP_IMAGE when /health fails.
+#   usage: echo "$GHCR_TOKEN" | remote-deploy.sh <deploy_path> <ghcr_user> <new_image|-> <health_tries> <infra_changed>
+# Reads the registry token from stdin. Only touches what changed:
+#   - new app image only -> pull + recreate the app container, nothing else
+#   - infra changed      -> compose up for the whole stack (compose recreates only
+#                           services whose config actually changed)
+# Rolls back APP_IMAGE when /health fails.
 set -euo pipefail
 
 DEPLOY_PATH="$1"
 GHCR_USER="$2"
 NEW_IMAGE="$3"
 TRIES="${4:-20}"
+INFRA_CHANGED="${5:-true}"
 
 cd "$DEPLOY_PATH"
 if [ ! -f .env ]; then
@@ -15,6 +20,11 @@ if [ ! -f .env ]; then
   exit 1
 fi
 mkdir -p secrets
+
+if [ "$NEW_IMAGE" = "-" ] && [ "$INFRA_CHANGED" != "true" ]; then
+  echo "Nothing to deploy."
+  exit 0
+fi
 
 docker login ghcr.io -u "$GHCR_USER" --password-stdin
 trap 'docker logout ghcr.io >/dev/null 2>&1 || true' EXIT
@@ -41,18 +51,30 @@ healthy() {
   return 1
 }
 
+apply() {
+  if [ "$INFRA_CHANGED" = "true" ]; then
+    echo "Applying stack changes (only services whose config changed are recreated)"
+    docker compose pull
+    docker compose up -d --remove-orphans
+  else
+    echo "Updating the app container only"
+    docker compose pull app
+    docker compose up -d --no-deps app
+  fi
+}
+
 if [ "$NEW_IMAGE" != "-" ]; then
-  echo "Deploying $NEW_IMAGE (previous: ${PREV_IMAGE:-none})"
+  echo "App: ${PREV_IMAGE:-none} -> $NEW_IMAGE"
   set_image "$NEW_IMAGE"
 else
-  echo "App image unchanged (${PREV_IMAGE:-none}); applying infra changes only"
+  echo "App image unchanged (${PREV_IMAGE:-none})"
 fi
 
-docker compose pull
-docker compose up -d --remove-orphans
+apply
 
 if healthy; then
   echo "Healthy."
+  docker compose ps --format '{{.Name}}\t{{.Image}}\t{{.Status}}'
   docker image prune -f >/dev/null || true
   exit 0
 fi
@@ -63,7 +85,7 @@ if [ "$NEW_IMAGE" != "-" ] && [ -n "$PREV_IMAGE" ] && [ "$PREV_IMAGE" != "$NEW_I
   echo "Rolling back to $PREV_IMAGE"
   set_image "$PREV_IMAGE"
   docker compose pull app || true
-  docker compose up -d --remove-orphans
+  docker compose up -d --no-deps app
   if healthy; then
     echo "::warning::Rolled back to $PREV_IMAGE"
   else
