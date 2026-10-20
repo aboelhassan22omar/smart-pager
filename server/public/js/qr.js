@@ -1,3 +1,4 @@
+import { applyAccent } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, staffEvents } from './staff.js';
 import { esc, shopIdFromPath } from './util.js';
@@ -23,6 +24,20 @@ function swapImage(img, src) {
 function render(state) {
   qr = state.qr;
   clockOffset = qr.serverNow - Date.now();
+  applyAccent(document.documentElement, state.shop.accent);
+  const logo = $('qr-logo');
+  logo.hidden = !state.shop.logoUrl;
+  if (state.shop.logoUrl && logo.dataset.src !== state.shop.logoUrl) {
+    logo.dataset.src = state.shop.logoUrl;
+    logo.innerHTML = '';
+    const img = new Image(84, 84);
+    img.alt = '';
+    img.src = state.shop.logoUrl;
+    img.addEventListener('error', () => {
+      logo.hidden = true;
+    });
+    logo.append(img);
+  }
   $('shop-name').textContent = state.shop.name;
   $('print-shop').textContent = state.shop.name;
   document.title = `الكود — ${state.shop.name}`;

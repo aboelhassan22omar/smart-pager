@@ -314,6 +314,91 @@ describe('settings', () => {
   });
 });
 
+describe('shop accent + Google review', () => {
+  const settings = (body) => bar.post(`/api/bar/${SHOP}/settings`, body);
+  const publicShop = async () => (await api.get(`/api/shops/${SHOP}`)).data;
+
+  test('accent color is validated, made readable, and can be cleared', async () => {
+    assert.equal((await settings({ accentColor: 'blue' })).data.field, 'accentColor');
+    assert.equal((await settings({ accentColor: '#12345' })).status, 400);
+
+    const res = await settings({ accentColor: '#0B1F4B' });
+    assert.equal(res.status, 200);
+    assert.equal(res.data.shop.accentColor, '#0b1f4b', 'stored as given (lowercase)');
+    const { accent } = await publicShop();
+    assert.match(accent.color, /^#[0-9a-f]{6}$/);
+    assert.notEqual(accent.color, '#0b1f4b', 'too dark on graphite, so it is lightened');
+    assert.ok(['#1e1f21', '#ffffff'].includes(accent.ink));
+
+    await settings({ accentColor: null });
+    assert.equal((await publicShop()).accent, null);
+  });
+
+  test('Google review link must be an https Google URL; empty removes it', async () => {
+    assert.equal((await settings({ googleReviewUrl: 'http://g.page/r/abc/review' })).data.field, 'googleReviewUrl');
+    assert.equal((await settings({ googleReviewUrl: 'https://evil.example.com/review' })).status, 400);
+    assert.equal((await settings({ googleReviewUrl: 'https://google.com.evil.io/x' })).status, 400);
+    for (const ok of [
+      'https://g.page/r/CbX1abc/review',
+      'https://search.google.com/local/writereview?placeid=ChIJ123',
+      'https://maps.app.goo.gl/AbCd',
+      'https://www.google.com.eg/maps/place/x',
+    ]) {
+      assert.equal((await settings({ googleReviewUrl: ok })).status, 200, ok);
+    }
+    await settings({ googleReviewUrl: '  ' });
+    assert.equal((await publicShop()).googleReviewUrl, null);
+  });
+
+  test('review taps are counted once per picked-up order', async () => {
+    const order = await claimDynamic();
+    const click = () => api.request('POST', `/api/orders/${order.id}/review-click`, {
+      body: '',
+      headers: { 'content-type': 'text/plain;charset=UTF-8' },
+    });
+    await settings({ googleReviewUrl: 'https://g.page/r/CbX1abc/review' });
+    assert.equal((await click()).status, 409, 'not picked yet');
+
+    await bar.post(`/api/bar/${SHOP}/orders/${order.id}/status`, { status: 'picked' });
+    assert.deepEqual((await click()).data, { ok: true, counted: true });
+    assert.deepEqual((await click()).data, { ok: true, counted: false });
+    assert.equal((await barState()).shop.reviewClicks, 1);
+    assert.equal((await publicShop()).googleReviewUrl, 'https://g.page/r/CbX1abc/review');
+
+    await settings({ googleReviewUrl: '' });
+    assert.equal((await click()).status, 409, 'no link, no counting');
+  });
+});
+
+describe('database upgrade', () => {
+  test('adds the new columns to a database created by the first release', async () => {
+    const { DatabaseSync } = await import('node:sqlite');
+    const { openDb } = await import('../src/db.js');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const fs = await import('node:fs');
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pager-migrate-'));
+    const file = path.join(dir, 'old.db');
+    const old = new DatabaseSync(file);
+    old.exec(`CREATE TABLE shops (id TEXT PRIMARY KEY, name TEXT NOT NULL, logo TEXT, pin_hash TEXT NOT NULL,
+      qr_mode TEXT NOT NULL DEFAULT 'dynamic', qr_nonce TEXT NOT NULL, qr_prev_nonce TEXT, qr_rotated_at INTEGER NOT NULL,
+      static_key TEXT NOT NULL, next_number INTEGER NOT NULL DEFAULT 1, number_day TEXT, max_number INTEGER NOT NULL DEFAULT 999,
+      expire_hours INTEGER NOT NULL DEFAULT 3, preparing_message TEXT NOT NULL DEFAULT 'x', ready_message TEXT NOT NULL DEFAULT 'y',
+      created_at INTEGER NOT NULL);
+      INSERT INTO shops (id, name, pin_hash, qr_nonce, qr_rotated_at, static_key, created_at) VALUES ('old-shop', 'Old', 'h', 'n', 0, 'k', 0);`);
+    old.close();
+
+    const db = openDb(file);
+    const cols = (t) => db.prepare(`PRAGMA table_info(${t})`).all().map((c) => c.name);
+    for (const c of ['accent_color', 'google_review_url', 'review_clicks']) assert.ok(cols('shops').includes(c), c);
+    assert.ok(cols('orders').includes('review_clicked_at'));
+    assert.equal(db.prepare("SELECT review_clicks FROM shops WHERE id = 'old-shop'").get().review_clicks, 0);
+    db.close();
+    openDb(file).close(); // idempotent
+    fs.rmSync(dir, { recursive: true, force: true });
+  });
+});
+
 describe('logo upload', () => {
   const upload = (body, type) =>
     bar.request('POST', `/api/bar/${SHOP}/logo`, { body, headers: { 'content-type': type } });

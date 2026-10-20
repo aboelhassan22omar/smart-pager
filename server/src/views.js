@@ -1,5 +1,7 @@
 // Shapes the API exposes. Never leak pin_hash, nonces or keys outside bar-only views.
 
+import { readableAccent } from '../public/js/color.js';
+
 export const DONE_MESSAGES = {
   picked: 'بالهنا والشفا',
   expired: 'الطلب ده انتهى',
@@ -20,6 +22,9 @@ export const publicShop = (shop) => ({
   logoUrl: logoUrl(shop),
   preparingMessage: shop.preparing_message,
   readyMessage: shop.ready_message,
+  // {color, ink} already adjusted for contrast; null = default latte accent.
+  accent: shop.accent_color ? readableAccent(shop.accent_color) : null,
+  googleReviewUrl: shop.google_review_url ?? null,
 });
 
 export const publicOrder = (order, shop) => ({
@@ -37,9 +42,11 @@ export const publicOrder = (order, shop) => ({
 
 export const barShop = (shop) => ({
   ...publicShop(shop),
+  accentColor: shop.accent_color ?? null,
   qrMode: shop.qr_mode,
   maxNumber: shop.max_number,
   expireHours: shop.expire_hours,
+  reviewClicks: shop.review_clicks ?? 0,
 });
 
 export function qrInfo(shop, config) {

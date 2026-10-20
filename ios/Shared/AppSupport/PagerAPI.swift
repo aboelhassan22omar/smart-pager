@@ -33,6 +33,10 @@ struct PagerAPI {
         let _: OK = try await send("api/subscribe", method: "POST", body: try JSONEncoder().encode(body))
     }
 
+    func reviewClick(orderId: String) async throws {
+        let _: OK = try await send("api/orders/\(orderId)/review-click", method: "POST", body: nil)
+    }
+
     private struct OK: Decodable {
         let ok: Bool
     }

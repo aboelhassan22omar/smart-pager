@@ -21,6 +21,13 @@ enum Theme {
 }
 
 extension Color {
+    /// "#rrggbb" → Color; nil for anything else.
+    init?(hexString: String) {
+        let digits = hexString.hasPrefix("#") ? String(hexString.dropFirst()) : hexString
+        guard digits.count == 6, let value = UInt32(digits, radix: 16) else { return nil }
+        self.init(hex: value)
+    }
+
     init(hex: UInt32) {
         self.init(
             red: Double((hex >> 16) & 0xFF) / 255,

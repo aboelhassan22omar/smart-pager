@@ -10,7 +10,7 @@ export const ORDER_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 const SHOP_COLUMNS = new Set([
   'name', 'logo', 'pin_hash', 'qr_mode', 'static_key', 'max_number', 'expire_hours',
-  'preparing_message', 'ready_message',
+  'preparing_message', 'ready_message', 'accent_color', 'google_review_url',
 ]);
 const PURGE_AFTER_MS = 24 * 3600 * 1000;
 
@@ -36,6 +36,8 @@ export class Store {
       openOrders: p(`SELECT * FROM orders WHERE shop_id = ? AND status IN ('preparing', 'ready') ORDER BY created_at`),
       setStatus: p('UPDATE orders SET status = ?, ready_at = ?, closed_at = ? WHERE id = ?'),
       bumpNotify: p('UPDATE orders SET notify_count = notify_count + 1 WHERE id = ?'),
+      markReviewClick: p('UPDATE orders SET review_clicked_at = ? WHERE id = ? AND review_clicked_at IS NULL'),
+      bumpReviewClicks: p('UPDATE shops SET review_clicks = review_clicks + 1 WHERE id = ?'),
       subs: p('SELECT * FROM subscriptions WHERE order_id = ?'),
       countSubs: p('SELECT COUNT(*) AS c FROM subscriptions WHERE order_id = ?'),
       insertSub: p('INSERT OR IGNORE INTO subscriptions (order_id, kind, payload, created_at) VALUES (?, ?, ?, ?)'),
@@ -145,6 +147,15 @@ export class Store {
   bumpNotify(order) {
     this.sql.bumpNotify.run(order.id);
     return this.sql.order.get(order.id);
+  }
+
+  // Counts a "rate us on Google" tap once per order.
+  recordReviewClick(order) {
+    return tx(this.db, () => {
+      const first = Number(this.sql.markReviewClick.run(Date.now(), order.id).changes) === 1;
+      if (first) this.sql.bumpReviewClicks.run(order.shop_id);
+      return first;
+    });
   }
 
   dueForExpiry(now = Date.now()) {

@@ -1,4 +1,5 @@
 import { Chime } from './chime.js';
+import { applyAccent } from './color.js';
 import { icons } from './icons.js';
 import { api, base64UrlToBytes, elapsedLabel, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
 import { keepAwake, releaseAwake } from './wakelock.js';
@@ -89,9 +90,28 @@ function render() {
   const closed = CLOSED.includes(order.status);
   $('enable').hidden = closed || order.status === 'ready';
   $('ios-hint').hidden = closed || order.status === 'ready' || !isIOS(navigator) || isStandalone();
+  renderReview();
 
   if (order.status === 'ready') showReady();
   else hideReady();
+}
+
+// After pickup, every customer is asked (Google forbids asking only happy ones).
+function renderReview() {
+  const show = order.status === 'picked' && Boolean(shop?.googleReviewUrl);
+  const box = $('review');
+  if (!show) {
+    box.hidden = true;
+    return;
+  }
+  if (!box.hidden) return;
+  $('review-stars').innerHTML = icons.star(26).repeat(5);
+  const link = $('review-link');
+  link.href = shop.googleReviewUrl;
+  link.addEventListener('click', () => {
+    navigator.sendBeacon?.(`/api/orders/${encodeURIComponent(order.id)}/review-click`, '');
+  }, { once: true });
+  box.hidden = false;
 }
 
 function showReady() {
@@ -275,9 +295,10 @@ async function boot() {
     fatal(err.status === 404 ? 'المحل ده مش موجود. اتأكد من الكود' : err.message);
     return;
   }
-  paintLogo($('splash-logo'), 112);
+  applyAccent(document.documentElement, shop.accent);
+  paintLogo($('splash-logo'), 136);
   $('splash-name').textContent = shop.name;
-  paintLogo($('card-logo'), 26);
+  paintLogo($('card-logo'), 56);
 
   let resolved = null;
   let failure = null;

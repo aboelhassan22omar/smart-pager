@@ -36,7 +36,37 @@
           <div class="row-actions">
             <button id="logo-remove" class="btn btn-danger" type="button" hidden>شيل الشعار</button>
           </div>
+
+          <div class="accent">
+            <div class="accent-head">
+              <label class="accent-swatch" id="accent-swatch" title="اختار لون">
+                <input id="accent-input" type="color" aria-label="اختار لون المحل">
+              </label>
+              <div class="accent-text">
+                <p class="accent-title">لون المحل</p>
+                <p class="muted small" id="accent-note"></p>
+              </div>
+              <span class="accent-sample" id="accent-sample">فعّل التنبيه</span>
+            </div>
+            <div class="row-actions">
+              <button id="accent-auto" class="btn btn-quiet" type="button">من الشعار</button>
+              <button id="accent-reset" class="btn btn-quiet" type="button">اللون الافتراضي</button>
+            </div>
+          </div>
         </div>
+      </section>
+
+      <section class="group" aria-labelledby="h-review">
+        <h2 id="h-review">تقييم جوجل</h2>
+        <form id="form-review" class="panel stack" novalidate>
+          <label class="field"><span>رابط التقييم</span>
+            <input class="input" name="googleReviewUrl" type="url" inputmode="url" dir="ltr"
+                   placeholder="https://g.page/r/.../review" maxlength="500"></label>
+          <p class="muted small">من Google Business Profile دوس «اطلب تقييمات» وانسخ الرابط. بعد ما العميل يستلم طلبه هيظهرله زرار يقيّمكم بيه، ولو سبت الخانة فاضية الزرار مش هيظهر.</p>
+          <p class="review-stats" id="review-stats" hidden></p>
+          <p class="form-error" hidden></p>
+          <button class="btn btn-primary" type="submit">احفظ الرابط</button>
+        </form>
       </section>
 
       <section class="group" aria-labelledby="h-info">

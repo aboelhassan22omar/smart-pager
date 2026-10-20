@@ -42,9 +42,19 @@ struct RootView: View {
                     ReadyView(order: order)
                         .transition(.opacity)
                 } else {
-                    TrackingCardView(shopName: order.shopName, number: order.number,
-                                     status: order.status, message: order.message) {
-                        ShopLogo(path: model.shop?.logoUrl, name: order.shopName, size: 26)
+                    VStack(spacing: 16) {
+                        TrackingCardView(shopName: order.shopName, number: order.number,
+                                         status: order.status, message: order.message,
+                                         accent: model.shop?.accentColor ?? Theme.accent) {
+                            ShopLogo(path: model.shop?.logoUrl, name: order.shopName, size: 56)
+                        }
+                        if order.status == "picked", let shop = model.shop,
+                           let raw = shop.googleReviewUrl, let url = URL(string: raw) {
+                            ReviewPrompt(url: url, accent: shop.accentColor, ink: shop.accentInk) {
+                                model.recordReviewClick()
+                            }
+                            .transition(.move(edge: .bottom).combined(with: .opacity))
+                        }
                     }
                     .padding(.horizontal, 16)
                     .frame(maxWidth: 420)
@@ -60,7 +70,7 @@ struct SplashView: View {
 
     var body: some View {
         VStack(spacing: 18) {
-            ShopLogo(path: shop?.logoUrl, name: shop?.name ?? "", size: 112)
+            ShopLogo(path: shop?.logoUrl, name: shop?.name ?? "", size: 136)
             Text(shop?.name ?? " ")
                 .font(.title2.weight(.semibold))
                 .foregroundStyle(Theme.text)
@@ -151,6 +161,48 @@ struct ReadyView: View {
                 try? await Task.sleep(nanoseconds: 2_600_000_000)
             }
         }
+    }
+}
+
+/// After pickup: ask every customer for a Google review (asking only happy ones breaks Google's policy).
+struct ReviewPrompt: View {
+    let url: URL
+    let accent: Color
+    let ink: Color
+    let onOpen: () -> Void
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 4) {
+                ForEach(0..<5, id: \.self) { _ in
+                    Image(systemName: "star.fill")
+                }
+            }
+            .font(.system(size: 22))
+            .foregroundStyle(accent)
+            Text("عجبتك التجربة؟")
+                .font(.headline)
+                .foregroundStyle(Theme.text)
+                .padding(.top, 4)
+            Text("تقييمك على جوجل بيفرق معانا جداً وبياخد ثواني")
+                .font(.subheadline)
+                .foregroundStyle(Theme.muted)
+                .multilineTextAlignment(.center)
+            Button {
+                onOpen()
+                openURL(url)
+            } label: {
+                Text("قيّمنا على جوجل")
+                    .font(.headline)
+                    .foregroundStyle(ink)
+                    .frame(maxWidth: .infinity, minHeight: 48)
+                    .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(accent))
+            }
+            .padding(.top, 8)
+        }
+        .padding(20)
+        .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.surface))
     }
 }
 
