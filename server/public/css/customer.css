@@ -1,0 +1,310 @@
+/* Customer tracker. The order number is the one loud element; everything else stays quiet. */
+
+/* ---------- splash ---------- */
+
+.splash {
+  position: fixed;
+  inset: 0 0 calc(var(--footer-h) + env(safe-area-inset-bottom));
+  z-index: 50;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 18px;
+  background: var(--bg);
+  transition: opacity 420ms var(--ease);
+}
+
+.splash.is-leaving {
+  opacity: 0;
+  pointer-events: none;
+}
+
+.splash-logo {
+  display: grid;
+  place-items: center;
+  width: 112px;
+  height: 112px;
+  overflow: hidden;
+  border-radius: 30px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 2.75rem;
+  font-weight: 600;
+}
+
+.splash-logo img,
+.card-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.splash-name {
+  margin: 0;
+  max-width: 80vw;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  text-align: center;
+}
+
+/* ---------- stage ---------- */
+
+.stage {
+  display: grid;
+  align-content: center;
+  gap: 16px;
+  width: min(100% - 2 * var(--gutter), 420px);
+  min-height: calc(100dvh - var(--footer-h) - env(safe-area-inset-bottom));
+  margin-inline: auto;
+  padding-block: calc(24px + env(safe-area-inset-top)) 24px;
+}
+
+.stage.is-entering .card,
+.stage.is-entering .enable {
+  animation: rise 520ms var(--ease) both;
+}
+
+.stage.is-entering .enable {
+  animation-delay: 90ms;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+}
+
+.banner {
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-control);
+  background: var(--surface);
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+/* ---------- order card (styled like a notification) ---------- */
+
+.card {
+  padding: 18px 20px 20px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.card-logo {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.card-app {
+  flex: 1;
+  letter-spacing: 0.08em;
+  direction: ltr;
+  text-align: right;
+}
+
+.card-shop {
+  margin: 14px 0 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+  line-height: 1.35;
+}
+
+.card-label {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.card-number {
+  margin: 0;
+  font-size: clamp(5.5rem, 30vw, 8.5rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  text-align: right;
+  transition: opacity 240ms var(--ease);
+}
+
+.card-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 18px 0 0;
+  font-weight: 500;
+}
+
+.card-icon {
+  display: inline-grid;
+  color: var(--muted);
+}
+
+.progress {
+  position: relative;
+  height: 6px;
+  margin-top: 14px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface-2);
+}
+
+.progress span {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  width: 0;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 600ms var(--ease), background-color 300ms var(--ease);
+}
+
+.card[data-status='preparing'] .progress span {
+  width: 48%;
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.card[data-status='ready'] .progress span,
+.card[data-status='picked'] .progress span {
+  width: 100%;
+}
+
+.card[data-status='ready'] .card-icon,
+.card[data-status='picked'] .card-icon {
+  color: var(--ready);
+}
+
+.card[data-status='picked'] .card-number,
+.card[data-status='expired'] .card-number,
+.card[data-status='cancelled'] .card-number {
+  opacity: 0.4;
+}
+
+.card[data-status='picked'] .card-status {
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.enable {
+  min-height: 54px;
+  font-size: var(--fs-lg);
+}
+
+.enable.is-on {
+  border: 1px solid var(--line-strong);
+  background: transparent;
+  color: var(--muted);
+  font-size: var(--fs-md);
+  font-weight: 500;
+}
+
+.hint {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  text-align: center;
+}
+
+.fatal {
+  padding: 28px 22px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  font-size: var(--fs-lg);
+  text-align: center;
+}
+
+.fatal p {
+  margin: 0;
+}
+
+/* ---------- ready: full green until touched ---------- */
+
+.ready {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  gap: 6px;
+  padding: 24px var(--gutter) calc(var(--footer-h) + 24px + env(safe-area-inset-bottom));
+  background: var(--ready-deep);
+  color: #fff;
+  text-align: center;
+  animation: flood 360ms var(--ease) both;
+}
+
+.ready.is-ringing {
+  animation: flood 360ms var(--ease) both, pulse 1.3s ease-in-out 360ms infinite;
+}
+
+@keyframes flood {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes pulse {
+  50% {
+    background-color: var(--ready);
+  }
+}
+
+.ready-mark .icon {
+  width: 72px;
+  height: 72px;
+  stroke-width: 1.6;
+}
+
+.ready-title {
+  margin: 8px 0 0;
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+}
+
+.ready-number {
+  margin: 0;
+  font-size: clamp(7rem, 42vw, 12rem);
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.ready-message {
+  max-width: 30ch;
+  margin: 8px 0 0;
+  font-size: var(--fs-lg);
+}
+
+.ready-hint {
+  margin: 28px 0 0;
+  padding: 8px 16px;
+  border: 1px solid rgb(255 255 255 / 0.35);
+  border-radius: 999px;
+  font-size: var(--fs-sm);
+}

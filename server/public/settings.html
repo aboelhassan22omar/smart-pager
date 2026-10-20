@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1f21">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>الإعدادات — Smart Pager</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/settings.css">
+  <script type="module" src="/js/powered.js"></script>
+  <script type="module" src="/js/settings.js"></script>
+</head>
+<body>
+  <div id="login-root"></div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <a class="icon-link" id="back" href="#" aria-label="رجوع للطلبات" title="رجوع للطلبات"></a>
+      <h1>الإعدادات</h1>
+    </header>
+
+    <main class="settings">
+      <section class="group" aria-labelledby="h-logo">
+        <h2 id="h-logo">الشعار</h2>
+        <div class="panel">
+          <div id="drop" class="drop" tabindex="0" role="button" aria-describedby="drop-help">
+            <div class="drop-preview" id="logo-preview"></div>
+            <div class="drop-text">
+              <p class="drop-title" id="drop-title">اسحب صورة الشعار هنا أو دوس للاختيار</p>
+              <p class="muted" id="drop-help">PNG أو JPG أو WEBP، أقصى حجم 2 ميجا</p>
+            </div>
+            <input id="logo-input" type="file" accept="image/png,image/jpeg,image/webp" hidden>
+          </div>
+          <div class="row-actions">
+            <button id="logo-remove" class="btn btn-danger" type="button" hidden>شيل الشعار</button>
+          </div>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="h-info">
+        <h2 id="h-info">بيانات المحل</h2>
+        <form id="form-info" class="panel stack" novalidate>
+          <label class="field"><span>اسم المحل</span>
+            <input class="input" name="name" maxlength="60" required></label>
+          <label class="field"><span>رسالة أثناء التحضير</span>
+            <input class="input" name="preparingMessage" maxlength="140" required></label>
+          <label class="field"><span>رسالة لما الطلب يجهز</span>
+            <input class="input" name="readyMessage" maxlength="140" required></label>
+          <p class="form-error" hidden></p>
+          <button class="btn btn-primary" type="submit">احفظ البيانات</button>
+        </form>
+      </section>
+
+      <section class="group" aria-labelledby="h-qr">
+        <h2 id="h-qr">كود الطلب</h2>
+        <div class="panel stack">
+          <fieldset class="choices" id="qr-mode">
+            <legend class="sr-only">نوع الكود</legend>
+            <label class="choice">
+              <input type="radio" name="qrMode" value="dynamic">
+              <span><strong>متغير على شاشة</strong><small>الكود بيتغير بعد كل عميل. ده الأكثر أمانًا، بس محتاج شاشة عند الكاشير.</small></span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="qrMode" value="static">
+              <span><strong>ثابت مطبوع</strong><small>ورقة على الكاونتر. أي حد معاه صورة منها يقدر ياخد رقم، فغيّر الكود لو حسيت إنه اتسرّب.</small></span>
+            </label>
+            <label class="choice">
+              <input type="radio" name="qrMode" value="both">
+              <span><strong>الاتنين مع بعض</strong><small>الشاشة والورقة شغالين في نفس الوقت.</small></span>
+            </label>
+          </fieldset>
+          <div class="row-actions" id="static-actions">
+            <a class="btn" id="download-static" href="#" download></a>
+            <button class="btn btn-danger" id="rotate-key" type="button">غيّر الكود الثابت</button>
+          </div>
+          <p class="muted small" id="rotate-help">لما تغيّر الكود الثابت، الورقة القديمة هتبطل تشتغل ولازم تطبع الجديدة.</p>
+        </div>
+      </section>
+
+      <section class="group" aria-labelledby="h-numbers">
+        <h2 id="h-numbers">الأرقام</h2>
+        <form id="form-numbers" class="panel stack" novalidate>
+          <div class="pair">
+            <label class="field"><span>أكبر رقم</span>
+              <input class="input num" name="maxNumber" type="number" inputmode="numeric" min="10" max="9999" required></label>
+            <label class="field"><span>الطلب يتقفل بعد (ساعات)</span>
+              <input class="input num" name="expireHours" type="number" inputmode="numeric" min="1" max="24" required></label>
+          </div>
+          <p class="muted small">الأرقام بتبدأ من 1 كل يوم، وبعد أكبر رقم بترجع لـ 1 وبتعدّي أي رقم لسه مفتوح.</p>
+          <p class="form-error" hidden></p>
+          <button class="btn btn-primary" type="submit">احفظ الأرقام</button>
+        </form>
+      </section>
+
+      <section class="group" aria-labelledby="h-pin">
+        <h2 id="h-pin">الرقم السري</h2>
+        <form id="form-pin" class="panel stack" novalidate>
+          <label class="field"><span>الرقم السري الحالي</span>
+            <input class="input num" name="currentPin" type="password" inputmode="numeric" maxlength="8" autocomplete="current-password" required></label>
+          <div class="pair">
+            <label class="field"><span>الرقم الجديد</span>
+              <input class="input num" name="newPin" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" required></label>
+            <label class="field"><span>اكتبه تاني</span>
+              <input class="input num" name="confirmPin" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password" required></label>
+          </div>
+          <p class="muted small">أي جهاز تاني داخل بالرقم القديم هيخرج تلقائي.</p>
+          <p class="form-error" hidden></p>
+          <button class="btn btn-primary" type="submit">غيّر الرقم السري</button>
+        </form>
+      </section>
+
+      <section class="group" aria-labelledby="h-apple">
+        <h2 id="h-apple">الآيفون (Live Activity)</h2>
+        <dl class="panel status-list" id="apple-status"></dl>
+      </section>
+
+      <section class="group">
+        <button id="logout" class="btn btn-block" type="button"></button>
+      </section>
+    </main>
+  </div>
+</body>
+</html>

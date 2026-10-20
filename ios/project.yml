@@ -1,0 +1,144 @@
+# Smart Pager iOS — generate with ./generate.sh (sets PAGER_DOMAIN / APPLE_TEAM_ID defaults).
+name: SmartPager
+
+options:
+  bundleIdPrefix: cc.aurexis
+  deploymentTarget:
+    iOS: "17.0"
+  developmentLanguage: ar
+  createIntermediateGroups: true
+
+settings:
+  base:
+    DEVELOPMENT_TEAM: "${APPLE_TEAM_ID}"
+    CODE_SIGN_STYLE: Automatic
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    SWIFT_VERSION: "5.0"
+    TARGETED_DEVICE_FAMILY: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+
+targets:
+  SmartPager:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.aurexis.pager
+        PRODUCT_NAME: SmartPager
+    info:
+      path: Generated/App-Info.plist
+      properties:
+        CFBundleDisplayName: Smart Pager
+        CFBundleDevelopmentRegion: ar
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIUserInterfaceStyle: Dark
+        NSSupportsLiveActivities: true
+        PagerBaseURL: "https://${PAGER_DOMAIN}"
+    entitlements:
+      path: Generated/SmartPager.entitlements
+      properties:
+        com.apple.developer.associated-domains:
+          - "applinks:${PAGER_DOMAIN}"
+          - "appclips:${PAGER_DOMAIN}"
+    dependencies:
+      - target: SmartPagerClip
+      - target: SmartPagerWidget
+
+  SmartPagerClip:
+    type: application.on-demand-install-capable
+    platform: iOS
+    sources:
+      - path: Clip
+      - path: Shared
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.aurexis.pager.Clip
+        PRODUCT_NAME: SmartPagerClip
+    info:
+      path: Generated/Clip-Info.plist
+      properties:
+        CFBundleDisplayName: Smart Pager
+        CFBundleDevelopmentRegion: ar
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        UIUserInterfaceStyle: Dark
+        NSSupportsLiveActivities: true
+        PagerBaseURL: "https://${PAGER_DOMAIN}"
+        NSAppClip:
+          NSAppClipRequestEphemeralUserNotification: true
+          NSAppClipRequestLocationConfirmation: false
+    entitlements:
+      path: Generated/SmartPagerClip.entitlements
+      properties:
+        com.apple.developer.on-demand-install-capable: true
+        com.apple.developer.parent-application-identifiers:
+          - "$(AppIdentifierPrefix)cc.aurexis.pager"
+        com.apple.developer.associated-domains:
+          - "appclips:${PAGER_DOMAIN}"
+    dependencies:
+      - target: SmartPagerClipWidget
+
+  SmartPagerWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widget
+      - path: Shared/Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.aurexis.pager.Widget
+        PRODUCT_NAME: SmartPagerWidget
+    info:
+      path: Generated/Widget-Info.plist
+      properties:
+        CFBundleDisplayName: Smart Pager
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+  SmartPagerClipWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: Widget
+      - path: Shared/Core
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: cc.aurexis.pager.Clip.Widget
+        PRODUCT_NAME: SmartPagerClipWidget
+    info:
+      path: Generated/ClipWidget-Info.plist
+      properties:
+        CFBundleDisplayName: Smart Pager
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+
+schemes:
+  SmartPager:
+    build:
+      targets:
+        SmartPager: all
+    run:
+      config: Debug
+    archive:
+      config: Release
+  SmartPagerClip:
+    build:
+      targets:
+        SmartPagerClip: all
+    run:
+      config: Debug
+    archive:
+      config: Release

@@ -1,0 +1,198 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cd-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  ci:
+    name: Stage 1 - CI
+    uses: ./.github/workflows/ci.yml
+    permissions:
+      contents: read
+      pull-requests: read
+
+  changes:
+    name: Stage 2 - Detect changed services
+    needs: ci
+    runs-on: ubuntu-latest
+    outputs:
+      app: ${{ steps.filter.outputs.app }}
+      infra: ${{ steps.filter.outputs.infra }}
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            app:
+              - 'server/**'
+            infra:
+              - 'docker-compose.yml'
+              - 'Caddyfile'
+              - '.env.example'
+              - 'deploy/**'
+              - '.github/workflows/cd.yml'
+            ios:
+              - 'ios/**'
+      - name: Summary
+        env:
+          APP: ${{ steps.filter.outputs.app }}
+          INFRA: ${{ steps.filter.outputs.infra }}
+          IOS: ${{ steps.filter.outputs.ios }}
+        run: |
+          {
+            echo "### Changed services"
+            echo "| service | changed |"
+            echo "|---|---|"
+            echo "| app | $APP |"
+            echo "| infra | $INFRA |"
+            echo "| ios | $IOS |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  publish-app:
+    name: CD - Publish app image
+    needs: changes
+    if: needs.changes.outputs.app == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Image name
+        id: meta
+        run: |
+          repo="${GITHUB_REPOSITORY,,}"
+          echo "repo=ghcr.io/${repo}" >> "$GITHUB_OUTPUT"
+          echo "image=ghcr.io/${repo}:sha-${GITHUB_SHA}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push (amd64 + arm64)
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.repo }}:sha-${{ github.sha }}
+            ${{ steps.meta.outputs.repo }}:latest
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=app-release
+          cache-to: type=gha,mode=max,scope=app-release
+
+  release-gate:
+    name: CD - All release images published
+    needs: [changes, publish-app]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check release images
+        env:
+          CHANGES: ${{ needs.changes.result }}
+          PUBLISH: ${{ needs.publish-app.result }}
+        run: |
+          echo "changes=$CHANGES publish-app=$PUBLISH"
+          [ "$CHANGES" = "success" ] || { echo "::error::change detection did not succeed"; exit 1; }
+          case "$PUBLISH" in
+            success|skipped) echo "All release images are published." ;;
+            *) echo "::error::app image publish $PUBLISH"; exit 1 ;;
+          esac
+
+  deploy:
+    name: Stage 3 - Deploy production
+    needs: [changes, publish-app, release-gate]
+    if: >-
+      always()
+      && needs.release-gate.result == 'success'
+      && vars.DEPLOY_PATH != ''
+      && (needs.changes.outputs.app == 'true' || needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_URL }}
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      packages: read
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_USER" ] || [ -z "$SSH_PRIVATE_KEY" ]; then
+            echo "::error::SSH_HOST, SSH_USER and SSH_PRIVATE_KEY secrets are required"
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          {
+            echo "Host prod"
+            echo "  HostName $SSH_HOST"
+            echo "  User $SSH_USER"
+            echo "  Port ${SSH_PORT:-22}"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+            echo "  ServerAliveInterval 30"
+          } > ~/.ssh/config
+
+      - name: Copy compose files
+        run: |
+          # Variables are meant to expand on the runner side.
+          # shellcheck disable=SC2029
+          ssh prod "mkdir -p '$DEPLOY_PATH/secrets'"
+          scp docker-compose.yml Caddyfile .env.example deploy/remote-deploy.sh "prod:$DEPLOY_PATH/"
+
+      - name: Pull and start
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APP_CHANGED: ${{ needs.publish-app.result == 'success' }}
+          NEW_IMAGE: ${{ needs.publish-app.outputs.image }}
+        run: |
+          image="-"
+          if [ "$APP_CHANGED" = "true" ]; then image="$NEW_IMAGE"; fi
+          # The token goes over stdin, never on a command line.
+          # shellcheck disable=SC2029
+          printf '%s' "$GHCR_TOKEN" | ssh prod \
+            "bash '$DEPLOY_PATH/remote-deploy.sh' '$DEPLOY_PATH' '$GITHUB_ACTOR' '$image' 20"
+
+      - name: Public health check
+        env:
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+        run: |
+          [ -n "$PUBLIC_URL" ] || { echo "vars.PUBLIC_URL not set; skipping"; exit 0; }
+          for _ in $(seq 1 10); do
+            if curl -fsS "$PUBLIC_URL/health"; then echo; exit 0; fi
+            sleep 3
+          done
+          echo "::error::$PUBLIC_URL/health is not reachable"
+          exit 1

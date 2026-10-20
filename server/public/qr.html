@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1f21">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>الكود — Smart Pager</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/qr.css">
+  <script type="module" src="/js/powered.js"></script>
+  <script type="module" src="/js/qr.js"></script>
+</head>
+<body>
+  <div id="login-root"></div>
+
+  <main id="app" class="qr-stage" hidden>
+    <a class="icon-link qr-back" id="back" href="#" aria-label="رجوع للطلبات" title="رجوع للطلبات"></a>
+
+    <h1 class="qr-shop" id="shop-name"></h1>
+    <p class="qr-lead">امسح الكود بكاميرا الموبايل عشان تاخد رقم طلبك</p>
+
+    <figure class="qr-frame">
+      <img id="qr-img" alt="كود الطلب" width="320" height="320" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==">
+    </figure>
+
+    <div id="countdown" class="countdown" hidden>
+      <div class="countdown-track"><span id="countdown-bar"></span></div>
+      <p class="muted" id="countdown-text"></p>
+    </div>
+
+    <p class="qr-note muted" id="qr-note"></p>
+    <button id="print" class="btn" type="button" hidden></button>
+  </main>
+
+  <section id="print-sheet" class="print-sheet" aria-hidden="true">
+    <h1 id="print-shop"></h1>
+    <img id="print-img" alt="" width="480" height="480" src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACH5BAEAAAAALAAAAAABAAEAAAICRAEAOw==">
+    <p>امسح الكود بكاميرا الموبايل عشان تاخد رقم طلبك</p>
+    <p>وموبايلك هيرن أول ما طلبك يجهز</p>
+  </section>
+</body>
+</html>

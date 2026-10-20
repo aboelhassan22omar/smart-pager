@@ -1,0 +1,40 @@
+// "Powered by AUREXIS" footer, fixed at the bottom of every page (splash included).
+
+export const AUREXIS_URL = 'https://aurexis.cc/';
+export const AUREXIS_LOGO = 'https://aurexis.cc/brand/aurexis-mark-white.svg';
+
+export function mountPoweredBy(doc) {
+  if (doc.getElementById('powered-by')) return doc.getElementById('powered-by');
+
+  const footer = doc.createElement('footer');
+  footer.id = 'powered-by';
+  footer.className = 'powered-by';
+  footer.setAttribute('dir', 'ltr');
+
+  const link = doc.createElement('a');
+  link.href = AUREXIS_URL;
+  link.target = '_blank';
+  link.rel = 'noopener';
+
+  const label = doc.createElement('span');
+  label.textContent = 'Powered by';
+
+  const logo = doc.createElement('img');
+  logo.src = AUREXIS_LOGO;
+  logo.alt = '';
+  logo.width = 14;
+  logo.height = 14;
+  logo.addEventListener('error', () => {
+    logo.hidden = true;
+  });
+
+  const brand = doc.createElement('strong');
+  brand.textContent = 'AUREXIS';
+
+  link.append(label, logo, brand);
+  footer.append(link);
+  doc.body.append(footer);
+  return footer;
+}
+
+if (typeof document !== 'undefined') mountPoweredBy(document);

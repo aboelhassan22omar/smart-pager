@@ -1,0 +1,210 @@
+/* Settings: grouped panels, one column. */
+
+.settings {
+  display: grid;
+  gap: 28px;
+  width: min(100% - 2 * var(--gutter), 640px);
+  margin: 20px auto 32px;
+}
+
+.group {
+  display: grid;
+  gap: 10px;
+}
+
+.group h2 {
+  margin: 0;
+  padding-inline: 4px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 500;
+}
+
+.panel {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.stack {
+  display: grid;
+  gap: 14px;
+}
+
+.stack > .btn {
+  justify-self: start;
+}
+
+.pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 14px;
+}
+
+.small {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.row-actions:empty {
+  display: none;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* ---------- logo drop zone ---------- */
+
+.drop {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px;
+  border: 1.5px dashed var(--line-strong);
+  border-radius: var(--r-tile);
+  cursor: pointer;
+  transition: border-color 160ms var(--ease), background-color 160ms var(--ease);
+}
+
+.drop:hover,
+.drop.is-over {
+  border-color: var(--accent);
+}
+
+.drop.is-over {
+  background: var(--surface-2);
+}
+
+.drop.is-busy {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.drop-preview {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 20px;
+  background: var(--surface-2);
+  color: var(--muted);
+}
+
+.drop-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.drop-text p {
+  margin: 0;
+}
+
+.drop-title {
+  font-weight: 500;
+}
+
+.drop-text .muted {
+  font-size: var(--fs-sm);
+}
+
+.drop + .row-actions {
+  margin-top: 10px;
+}
+
+/* ---------- QR mode choices ---------- */
+
+.choices {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.choice {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  cursor: pointer;
+  transition: border-color 160ms var(--ease);
+}
+
+.choice:has(input:checked) {
+  border-color: var(--accent);
+}
+
+.choice input {
+  width: 18px;
+  height: 18px;
+  margin: 3px 0 0;
+  accent-color: var(--accent);
+}
+
+.choice span {
+  display: grid;
+  gap: 2px;
+}
+
+.choice strong {
+  font-weight: 500;
+}
+
+.choice small {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  line-height: 1.5;
+}
+
+/* ---------- Apple status ---------- */
+
+.status-list {
+  display: grid;
+  gap: 0;
+  margin: 0;
+  padding-block: 4px;
+}
+
+.status-list div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.status-list div:last-child {
+  border-bottom: 0;
+}
+
+.status-list dt {
+  color: var(--muted);
+}
+
+.status-list dd {
+  margin: 0;
+  font-weight: 500;
+  text-align: end;
+}
+
+.status-list dd[data-on='true'] {
+  color: var(--ready);
+}

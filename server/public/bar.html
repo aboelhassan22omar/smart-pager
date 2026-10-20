@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1f21">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>الطلبات — Smart Pager</title>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/bar.css">
+  <script type="module" src="/js/powered.js"></script>
+  <script type="module" src="/js/bar.js"></script>
+</head>
+<body>
+  <div id="login-root"></div>
+
+  <div id="app" hidden>
+    <header class="topbar">
+      <span class="dot" id="dot" data-online="false" title="الاتصال"></span>
+      <h1 id="shop-name"></h1>
+      <nav>
+        <a class="icon-link" id="link-qr" href="#" aria-label="شاشة الكود" title="شاشة الكود"></a>
+        <a class="icon-link" id="link-settings" href="#" aria-label="الإعدادات" title="الإعدادات"></a>
+      </nav>
+    </header>
+
+    <button id="sound" class="sound-pill" type="button" hidden></button>
+
+    <main class="board">
+      <p class="board-meta" id="board-meta"></p>
+      <div id="grid" class="grid" role="list"></div>
+      <div id="empty" class="empty" hidden>
+        <p class="empty-title">مفيش طلبات مفتوحة</p>
+        <p class="muted">أول ما عميل يمسح الكود، رقمه هيظهر هنا.</p>
+      </div>
+      <p class="help muted">دوسة واحدة: الطلب جاهز وبيرن عند العميل. دوسة تانية: اتسلّم. دوسة طويلة: اختيارات أكتر.</p>
+    </main>
+  </div>
+
+  <div id="sheet" class="sheet-backdrop" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <h2 id="sheet-title"></h2>
+      <p class="muted" id="sheet-sub"></p>
+      <div class="sheet-actions">
+        <button class="btn btn-block" data-act="renotify" type="button"></button>
+        <button class="btn btn-block" data-act="preparing" type="button"></button>
+        <button class="btn btn-block" data-act="picked" type="button"></button>
+        <button class="btn btn-danger btn-block" data-act="cancelled" type="button"></button>
+        <button class="btn btn-quiet btn-block" data-act="close" type="button">رجوع</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

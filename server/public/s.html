@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#1e1f21">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <!--APPLE_META-->
+  <title>طلبك — Smart Pager</title>
+  <link rel="preload" href="/fonts/readex-pro-arabic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/customer.css">
+  <script type="module" src="/js/powered.js"></script>
+  <script type="module" src="/js/customer.js"></script>
+</head>
+<body>
+  <div id="splash" class="splash" aria-live="polite">
+    <div class="splash-logo" id="splash-logo"></div>
+    <p class="splash-name" id="splash-name"></p>
+  </div>
+
+  <main id="app" class="stage" hidden>
+    <p id="banner" class="banner" role="status" hidden>الاتصال اتقطع. بنحاول نرجّعه…</p>
+
+    <article id="card" class="card" data-status="preparing" aria-live="polite">
+      <header class="card-head">
+        <span class="card-logo" id="card-logo"></span>
+        <span class="card-app">ORDER TRACKER</span>
+        <span class="card-when" id="card-when">دلوقتي</span>
+      </header>
+      <h1 class="card-shop" id="card-shop"></h1>
+      <p class="card-label">رقم الطلب</p>
+      <p class="card-number num" id="card-number">--</p>
+      <p class="card-status">
+        <span class="card-icon" id="card-icon"></span>
+        <span id="card-message"></span>
+      </p>
+      <div class="progress" aria-hidden="true"><span></span></div>
+    </article>
+
+    <button id="enable" class="btn btn-primary btn-block enable" type="button">فعّل التنبيه</button>
+    <p id="ios-hint" class="hint" hidden>على الآيفون سيب الصفحة دي مفتوحة والشاشة منوّرة لحد ما طلبك يجهز.</p>
+
+    <section id="fatal" class="fatal" hidden>
+      <p id="fatal-message"></p>
+    </section>
+  </main>
+
+  <section id="ready" class="ready" hidden aria-live="assertive">
+    <div class="ready-mark" id="ready-mark"></div>
+    <h2 class="ready-title">طلبك جاهز</h2>
+    <p class="ready-number num" id="ready-number"></p>
+    <p class="ready-message" id="ready-message"></p>
+    <p class="ready-hint" id="ready-hint">المس الشاشة عشان توقّف التنبيه</p>
+  </section>
+</body>
+</html>

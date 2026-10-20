@@ -1,0 +1,241 @@
+name: CI
+
+on:
+  push:
+    branches-ignore: [main]
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+
+jobs:
+  deps:
+    name: CI - Dependencies
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: Restore node_modules
+        id: cache
+        uses: actions/cache@v4
+        with:
+          path: server/node_modules
+          key: node-modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('server/package-lock.json') }}
+      - name: npm ci
+        if: steps.cache.outputs.cache-hit != 'true'
+        run: npm ci
+
+  check:
+    name: CI - Syntax check
+    needs: deps
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: server/node_modules
+          key: node-modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('server/package-lock.json') }}
+          fail-on-cache-miss: true
+      - run: npm run check
+
+  lint:
+    name: CI - Lint
+    needs: deps
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: server/node_modules
+          key: node-modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('server/package-lock.json') }}
+          fail-on-cache-miss: true
+      - run: npm run lint
+      - name: actionlint
+        working-directory: .
+        run: |
+          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.7/scripts/download-actionlint.bash) 1.7.7
+          ./actionlint -color
+
+  backend:
+    name: CI - Backend tests
+    needs: deps
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: server/node_modules
+          key: node-modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('server/package-lock.json') }}
+          fail-on-cache-miss: true
+      - run: npm test
+
+  frontend:
+    name: CI - Frontend tests
+    needs: deps
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - uses: actions/cache/restore@v4
+        with:
+          path: server/node_modules
+          key: node-modules-${{ runner.os }}-node${{ env.NODE_VERSION }}-${{ hashFiles('server/package-lock.json') }}
+          fail-on-cache-miss: true
+      - run: npm run test:frontend
+
+  audit:
+    name: CI - Asset audit
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      - run: npm audit --omit=dev --audit-level=high
+
+  compose:
+    name: CI - Docker Compose validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: docker compose config
+        run: |
+          cp .env.example .env
+          docker compose config --quiet
+      - name: caddy validate
+        run: |
+          docker run --rm -e DOMAIN=pager.example.com \
+            -v "$PWD/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+
+  image:
+    name: CI - Image build
+    needs: [check, lint, backend, frontend]
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [linux/amd64, linux/arm64]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Cache scope
+        id: scope
+        env:
+          PLATFORM: ${{ matrix.platform }}
+        run: echo "name=app-${PLATFORM//\//-}" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v3
+        if: matrix.platform != 'linux/amd64'
+      - uses: docker/setup-buildx-action@v3
+      - name: Build
+        uses: docker/build-push-action@v6
+        with:
+          context: server
+          platforms: ${{ matrix.platform }}
+          push: false
+          load: ${{ matrix.platform == 'linux/amd64' }}
+          tags: smart-pager:ci
+          cache-from: type=gha,scope=${{ steps.scope.outputs.name }}
+          cache-to: type=gha,mode=max,scope=${{ steps.scope.outputs.name }}
+      - name: Smoke test
+        if: matrix.platform == 'linux/amd64'
+        run: |
+          docker run -d --name pager -p 3000:3000 \
+            -e ADMIN_TOKEN=ci-token -e PUBLIC_URL=http://localhost:3000 smart-pager:ci
+          for _ in $(seq 1 30); do
+            curl -fsS http://localhost:3000/health && break
+            sleep 1
+          done
+          curl -fsS -X POST http://localhost:3000/api/admin/shops \
+            -H 'x-admin-token: ci-token' -H 'content-type: application/json' \
+            -d '{"id":"smoke-cafe","name":"Smoke Cafe","pin":"1234"}'
+          curl -fsS http://localhost:3000/api/shops/smoke-cafe | grep -q '"id":"smoke-cafe"'
+          curl -fsS http://localhost:3000/s/smoke-cafe | grep -q 'dir="rtl"'
+          docker exec pager id -u | grep -qv '^0$'
+          echo "smoke test passed"
+      - name: Container logs
+        if: failure() && matrix.platform == 'linux/amd64'
+        run: docker logs pager || true
+
+  ios-changes:
+    name: CI - Detect iOS changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      ios: ${{ steps.filter.outputs.ios }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ios:
+              - 'ios/**'
+              - '.github/workflows/ci.yml'
+
+  ios:
+    name: CI - iOS build
+    needs: ios-changes
+    if: needs.ios-changes.outputs.ios == 'true'
+    runs-on: macos-15
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        env:
+          PAGER_DOMAIN: pager.example.com
+        run: bash generate.sh
+      - name: Build app (simulator, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project SmartPager.xcodeproj -scheme SmartPager -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build -quiet
+      - name: Build App Clip (simulator, unsigned)
+        run: |
+          set -o pipefail
+          xcodebuild -project SmartPager.xcodeproj -scheme SmartPagerClip -configuration Debug \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO build -quiet

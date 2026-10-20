@@ -1,0 +1,11 @@
+{$DOMAIN} {
+	# Automatic HTTPS (Let's Encrypt). flush_interval -1 streams SSE without buffering.
+	reverse_proxy app:3000 {
+		flush_interval -1
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		-Server
+	}
+}
