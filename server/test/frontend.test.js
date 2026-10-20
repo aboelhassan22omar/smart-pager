@@ -72,7 +72,7 @@ describe('Powered by AUREXIS', () => {
     assert.equal(label.textContent, 'Powered by');
     assert.equal(brand.textContent, 'AUREXIS');
     assert.equal(logo.src, AUREXIS_LOGO);
-    assert.equal(AUREXIS_LOGO, 'https://aurexis.cc/brand/aurexis-mark-white.svg');
+    assert.equal(AUREXIS_LOGO, 'https://aurexis.cc/brand/aurexis-mark.svg');
     assert.equal(mountPoweredBy(doc), footer, 'idempotent');
     assert.equal(doc.body.children.length, 1);
   });

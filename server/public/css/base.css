@@ -351,15 +351,19 @@ select {
   pointer-events: auto;
 }
 
+/* Mark + wordmark as on aurexis.cc (gap 11px, 0.22em tracking), scaled down. */
 .powered-by img {
-  width: 14px;
-  height: 14px;
+  width: 17px;
+  height: 16px;
+  margin-inline-start: 2px;
 }
 
 .powered-by strong {
+  margin-inline-start: -1px;
   color: var(--text);
-  font-weight: 600;
-  letter-spacing: 0.12em;
+  font-size: 0.8125rem;
+  font-weight: 700;
+  letter-spacing: 0.22em;
 }
 
 body.is-ready .powered-by {

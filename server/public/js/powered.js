@@ -1,7 +1,8 @@
 // "Powered by AUREXIS" footer, fixed at the bottom of every page (splash included).
 
 export const AUREXIS_URL = 'https://aurexis.cc/';
-export const AUREXIS_LOGO = 'https://aurexis.cc/brand/aurexis-mark-white.svg';
+// The colored brand mark, same file the aurexis.cc header uses.
+export const AUREXIS_LOGO = 'https://aurexis.cc/brand/aurexis-mark.svg';
 
 export function mountPoweredBy(doc) {
   if (doc.getElementById('powered-by')) return doc.getElementById('powered-by');
@@ -22,8 +23,8 @@ export function mountPoweredBy(doc) {
   const logo = doc.createElement('img');
   logo.src = AUREXIS_LOGO;
   logo.alt = '';
-  logo.width = 14;
-  logo.height = 14;
+  logo.width = 17;
+  logo.height = 16;
   logo.addEventListener('error', () => {
     logo.hidden = true;
   });

@@ -178,9 +178,10 @@ struct MessageView: View {
 struct PoweredByView: View {
     var body: some View {
         Link(destination: URL(string: "https://aurexis.cc/")!) {
-            HStack(spacing: 6) {
+            HStack(spacing: 7) {
                 Text(verbatim: "Powered by").foregroundStyle(Theme.muted)
-                Text(verbatim: "AUREXIS").fontWeight(.semibold).tracking(1.6).foregroundStyle(Theme.text)
+                AurexisMark().frame(width: 17, height: 16)
+                Text(verbatim: "AUREXIS").fontWeight(.bold).tracking(2.8).foregroundStyle(Theme.text)
             }
             .font(.caption)
             .frame(maxWidth: .infinity)
