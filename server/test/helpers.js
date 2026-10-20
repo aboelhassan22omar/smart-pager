@@ -5,6 +5,7 @@ import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import { fileURLToPath } from 'node:url';
 
 const SERVER = fileURLToPath(new URL('../src/server.js', import.meta.url));
@@ -94,6 +95,16 @@ export async function startServer(env = {}, { dataDir: seeded, expectExit = fals
       fs.rmSync(dataDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },
   };
+}
+
+// Flips an owner feature toggle straight in control.db (the server reads it live).
+export function setFeatureFlag(dataDir, branchId, feature, on = true) {
+  const db = new DatabaseSync(path.join(dataDir, 'control.db'));
+  try {
+    db.prepare(`UPDATE branches SET ff_${feature} = ? WHERE id = ?`).run(on ? 1 : 0, branchId);
+  } finally {
+    db.close();
+  }
 }
 
 const randomIp = () => `10.${crypto.randomInt(256)}.${crypto.randomInt(256)}.${crypto.randomInt(1, 255)}`;

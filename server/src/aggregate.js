@@ -24,10 +24,20 @@ function branchStats(ctx, shop, { since, now }) {
   };
 }
 
+const WEEK = 7 * 86_400_000;
+
+function ratingSummary(ctx, now) {
+  const rows = ctx.store.feedbackSince(now - WEEK, now + 1);
+  const avg = rows.length ? Math.round((rows.reduce((s, r) => s + r.rating, 0) / rows.length) * 10) / 10 : null;
+  const low = rows.filter((r) => r.rating <= 2).slice(0, 3).map((r) => ({ rating: r.rating, comment: r.comment, at: r.created_at }));
+  return { avg, count: rows.length, low };
+}
+
 function branchSummary({ tenants, screens, config }, branch, now) {
   const ctx = tenants.get(branch.id);
   const shop = ctx?.store.getShop();
   const stats = shop ? branchStats(ctx, shop, { since: startOfDayIn(config.tz, now), now }) : null;
+  const ratings = shop ? ratingSummary(ctx, now) : { avg: null, count: 0, low: [] };
   return {
     id: branch.id,
     brandId: branch.brand_id,
@@ -38,10 +48,15 @@ function branchSummary({ tenants, screens, config }, branch, now) {
     paidUntil: branch.paid_until ?? null,
     trialEndsAt: branch.trial_ends_at ?? null,
     features: featureFlags(branch),
+    toggles: { review: Boolean(branch.ff_review), loyalty: Boolean(branch.ff_loyalty), promo: Boolean(branch.ff_promo) },
     forcedOff: JSON.parse(branch.forced_off || '[]'),
+    googlePlaceId: shop?.google_place_id ?? null,
+    legacyReviewUrl: shop?.google_review_url ?? null,
     screens: screens.count(branch.id),
     lastActivityAt: branch.last_activity_at ?? stats?.lastOrderAt ?? null,
-    avgRating7d: null, // phase 5 (internal feedback)
+    avgRating7d: ratings.avg,
+    ratings7d: ratings.count,
+    lowRatings7d: ratings.low,
     ...(stats ?? { openNow: 0, ordersToday: 0, lateToday: 0 }),
   };
 }
@@ -187,9 +202,22 @@ export function brandAnalytics(deps, brandId, { from, to, branchId = null, now =
     });
   }
 
+  // Internal feedback in the range (ratings <= 2 are highlighted by the UI).
+  const feedback = [];
+  for (const branch of branches) {
+    const ctx = tenants.get(branch.id);
+    if (!ctx?.store.getShop()) continue;
+    for (const f of ctx.store.feedbackSince(start, endExact)) {
+      feedback.push({ branchId: branch.id, branchName: branch.name, rating: f.rating, comment: f.comment, at: f.created_at });
+    }
+  }
+  feedback.sort((a, b) => b.at - a.at);
+  const ratingAvg = feedback.length ? Math.round((feedback.reduce((s, f) => s + f.rating, 0) / feedback.length) * 10) / 10 : null;
+
   return {
     range: { from, to },
     exact,
+    feedback: { count: feedback.length, avg: ratingAvg, low: feedback.filter((f) => f.rating <= 2).length, latest: feedback.slice(0, 30) },
     total: finish(totalAll, {
       prep: exact ? pooled.prep : null,
       wait: exact ? pooled.wait : null,

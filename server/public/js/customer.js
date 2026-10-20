@@ -2,6 +2,7 @@ import { Chime } from './chime.js';
 import { applyAccent } from './color.js';
 import { icons } from './icons.js';
 import { aheadText, etaText } from './queue-text.js';
+import { reviewHtml } from './review.js';
 import { api, base64UrlToBytes, elapsedLabel, esc, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
 import { keepAwake, releaseAwake } from './wakelock.js';
 
@@ -110,21 +111,53 @@ function render() {
 }
 
 // After pickup, every customer is asked (Google forbids asking only happy ones).
+// Stars + comment + the Google button, all at once (no review gating; see review.js).
+const review = { rating: 0, comment: '', sent: false, bound: false };
+
 function renderReview() {
-  const show = order.status === 'picked' && Boolean(shop?.googleReviewUrl);
   const box = $('review');
-  if (!show) {
-    box.hidden = true;
-    return;
+  const show = order.status === 'picked' && Boolean(shop?.feedback || shop?.googleReviewUrl);
+  box.hidden = !show;
+  if (!show) return;
+  if (order.feedback) {
+    review.sent = true;
+    review.rating = order.feedback.rating;
   }
-  if (!box.hidden) return;
-  $('review-stars').innerHTML = icons.star(26).repeat(5);
-  const link = $('review-link');
-  link.href = shop.googleReviewUrl;
-  link.addEventListener('click', () => {
-    navigator.sendBeacon?.(`${branchApi}/orders/${encodeURIComponent(order.id)}/review-click`, '');
-  }, { once: true });
-  box.hidden = false;
+  box.innerHTML = reviewHtml({
+    googleUrl: shop.googleReviewUrl, feedback: shop.feedback, rating: review.rating, sent: review.sent, comment: review.comment,
+  });
+  if (review.bound) return;
+  review.bound = true;
+  box.addEventListener('click', async (e) => {
+    const star = e.target.closest('[data-rating]');
+    if (star && !review.sent) {
+      review.rating = Number(star.dataset.rating);
+      renderReview();
+      $('review-comment')?.focus();
+      return;
+    }
+    if (e.target.closest('#review-link')) {
+      navigator.sendBeacon?.(`${branchApi}/orders/${encodeURIComponent(order.id)}/review-click`, '');
+      return;
+    }
+    const send = e.target.closest('#review-send');
+    if (send) {
+      send.disabled = true;
+      try {
+        await api(`${branchApi}/orders/${encodeURIComponent(order.id)}/feedback`, {
+          method: 'POST', body: { rating: review.rating, comment: review.comment },
+        });
+        review.sent = true;
+      } catch (err) {
+        if (err.status === 409) review.sent = true;
+        else send.disabled = false;
+      }
+      renderReview();
+    }
+  });
+  box.addEventListener('input', (e) => {
+    if (e.target.id === 'review-comment') review.comment = e.target.value;
+  });
 }
 
 function showReady() {

@@ -73,6 +73,12 @@ function attentionItems() {
       } else if (status === 'trial' && daysLeft <= 1) {
         items.push({ text: `${b.name}: التجربة بتخلص ${daysLeft === 0 ? 'النهارده' : 'بكرة'}`, act: 'payment', id: b.id, label: 'سجّل دفعة' });
       }
+      // Low internal ratings this week (1-2 stars): worth a call to the owner.
+      const low = b.lowRatings7d ?? [];
+      if (low.length) {
+        const quote = low.find((r) => r.comment)?.comment;
+        items.push({ text: `${b.name}: ${low.length === 1 ? 'تقييم واطي' : `${low.length} تقييمات واطية`} الأسبوع ده${quote ? ` («${quote.slice(0, 60)}»)` : ''}` });
+      }
     }
   }
   const dayAgo = Date.now() - 86400000;

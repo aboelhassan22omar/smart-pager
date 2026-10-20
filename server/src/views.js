@@ -1,6 +1,17 @@
 // Shapes the API exposes. Never leak pin_hash, nonces or keys outside bar-only views.
 
 import { readableAccent } from '../public/js/color.js';
+import { featureFlags } from './plans.js';
+
+/** Google review link: from the place id (preferred), else the v1 free-form link. */
+export function reviewUrl(shop) {
+  if (shop.google_place_id) {
+    return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(shop.google_place_id)}`;
+  }
+  return shop.google_review_url ?? null;
+}
+
+export const reviewEnabled = (shop) => featureFlags(shop).review;
 
 export const DONE_MESSAGES = {
   picked: 'بالهنا والشفا',
@@ -24,7 +35,9 @@ export const publicShop = (shop) => ({
   readyMessage: shop.ready_message,
   // {color, ink} already adjusted for contrast; null = default latte accent.
   accent: shop.accent_color ? readableAccent(shop.accent_color) : null,
-  googleReviewUrl: shop.google_review_url ?? null,
+  // Post-pickup review (phase 5): internal stars + the Google button, together.
+  feedback: reviewEnabled(shop),
+  googleReviewUrl: reviewEnabled(shop) ? reviewUrl(shop) : null,
 });
 
 export const publicOrder = (order, shop) => ({

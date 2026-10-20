@@ -68,6 +68,17 @@ export const BRANCH_MIGRATIONS = [
   );
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  // 3: Google place id + internal post-pickup feedback (phase 5).
+  `
+  ALTER TABLE branch_settings ADD COLUMN google_place_id TEXT;
+  CREATE TABLE feedback (
+    order_id TEXT PRIMARY KEY REFERENCES orders (id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX feedback_created_at ON feedback (created_at);
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

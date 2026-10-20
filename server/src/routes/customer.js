@@ -3,8 +3,8 @@ import { channels } from '../bus.js';
 import { canClaim } from '../plans.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
-import { OPEN_STATUSES } from '../store.js';
-import { publicShop } from '../views.js';
+import { FEEDBACK_WINDOW_MS, OPEN_STATUSES } from '../store.js';
+import { publicShop, reviewEnabled, reviewUrl } from '../views.js';
 
 const MAX_SUBSCRIPTIONS = 5;
 const B64URL_RE = /^[A-Za-z0-9_-]+={0,2}$/;
@@ -100,8 +100,29 @@ export default async function customerRoutes(app, { config, control, tenants, bu
     // Sent (via sendBeacon) when a customer taps "rate us on Google" after pickup.
     b.post('/orders/:id/review-click', async (req) => {
       const { order, shop } = loadOrder(req, req.params.id);
-      if (order.status !== 'picked' || !shop.google_review_url) throw new HttpError(409, 'التقييم مش متاح للطلب ده');
+      if (order.status !== 'picked' || !reviewEnabled(shop) || !reviewUrl(shop)) {
+        throw new HttpError(409, 'التقييم مش متاح للطلب ده');
+      }
       return { ok: true, counted: req.ctx.store.recordReviewClick(order) };
+    });
+
+    // Internal stars + optional comment after pickup. Never gates the Google button.
+    b.post('/orders/:id/feedback', async (req, reply) => {
+      const { order, shop } = loadOrder(req, req.params.id);
+      if (!reviewEnabled(shop)) throw new HttpError(404, 'التقييم مش متاح في الفرع ده');
+      if (order.status !== 'picked' || Date.now() - order.closed_at > FEEDBACK_WINDOW_MS) {
+        throw new HttpError(409, 'التقييم مش متاح للطلب ده');
+      }
+      const rating = Number(req.body?.rating);
+      if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+        throw new HttpError(400, 'اختار من 1 لـ 5 نجوم', { field: 'rating' });
+      }
+      const raw = typeof req.body?.comment === 'string' ? req.body.comment.trim() : '';
+      if (raw.length > 500) throw new HttpError(400, 'التعليق لحد 500 حرف', { field: 'comment' });
+      if (!req.ctx.store.addFeedback(order.id, { rating, comment: raw || null })) {
+        throw new HttpError(409, 'رأيك وصلنا قبل كده، شكراً');
+      }
+      return reply.code(201).send({ ok: true });
     });
 
     b.post('/subscribe', async (req) => {

@@ -5,6 +5,7 @@ import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
 import { BG, contrast, extractAccent, hexToRgb, readableAccent, rgbToHsl } from '../public/js/color.js';
+import { reviewHtml } from '../public/js/review.js';
 import { mountPoweredBy, AUREXIS_LOGO, AUREXIS_URL } from '../public/js/powered.js';
 import { esc, SPLASH_MIN_MS } from '../public/js/util.js';
 
@@ -160,12 +161,39 @@ describe('shop accent from the logo', () => {
 });
 
 describe('Google review prompt', () => {
-  test('shows after pickup only, for every customer, and counts the tap', () => {
+  const GOOGLE = 'https://search.google.com/local/writereview?placeid=ChIJ123';
+  const googleLinks = (html) => html.match(/<a [^>]*id="review-link"[^>]*>/g) ?? [];
+
+  test('NO GATING: the Google button renders for every rating, before and after sending', () => {
+    for (const feedback of [true, false]) {
+      for (let rating = 0; rating <= 5; rating++) {
+        for (const sent of [false, true]) {
+          const html = reviewHtml({ googleUrl: GOOGLE, feedback, rating, sent });
+          const links = googleLinks(html);
+          assert.equal(links.length, 1, `rating=${rating} sent=${sent} feedback=${feedback}`);
+          assert.match(links[0], /target="_blank"[^>]*rel="noopener"/);
+          assert.ok(links[0].includes(`href="${esc(GOOGLE)}"`));
+        }
+      }
+    }
+  });
+
+  test('stars only when internal feedback is on; nothing Google without a link', () => {
+    assert.equal((reviewHtml({ googleUrl: GOOGLE }).match(/data-rating=/g) ?? []).length, 0);
+    assert.equal((reviewHtml({ feedback: true }).match(/data-rating=/g) ?? []).length, 5);
+    assert.equal(googleLinks(reviewHtml({ feedback: true, rating: 2 })).length, 0);
+    assert.match(reviewHtml({ feedback: true, rating: 3 }), /id="review-send"/);
+    assert.doesNotMatch(reviewHtml({ feedback: true, rating: 3, sent: true }), /id="review-send"/);
+    assert.ok(!reviewHtml({ feedback: true, rating: 1, comment: '<b>x</b>' }).includes('<b>x</b>'), 'comment is escaped');
+  });
+
+  test('shows after pickup only and counts the tap', () => {
     const js = read('public/js/customer.js');
-    assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.googleReviewUrl\)/);
+    assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.feedback \|\| shop\?\.googleReviewUrl\)/);
     assert.match(js, /sendBeacon\?\.\(`\$\{branchApi\}\/orders\/\$\{encodeURIComponent\(order\.id\)\}\/review-click`/);
-    const html = read('public/s.html');
-    assert.match(html, /id="review-link"[^>]*target="_blank"[^>]*rel="noopener"/);
+    // Rewards never depend on reviews: the review card does not touch loyalty.
+    const code = read('public/js/review.js').replace(/^\s*(\/\/|\*).*$/gm, '');
+    assert.doesNotMatch(code, /loyal|stamp|reward/i);
   });
 });
 

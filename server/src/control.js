@@ -92,6 +92,9 @@ export class ControlStore {
       setPaidUntil: p('UPDATE branches SET paid_until = ? WHERE id = ?'),
       setSuspended: p('UPDATE branches SET suspended_manual = ? WHERE id = ?'),
       setForcedOff: p('UPDATE branches SET forced_off = ? WHERE id = ?'),
+      setReviewFlag: p('UPDATE branches SET ff_review = ? WHERE id = ?'),
+      setLoyaltyFlag: p('UPDATE branches SET ff_loyalty = ? WHERE id = ?'),
+      setPromoFlag: p('UPDATE branches SET ff_promo = ? WHERE id = ?'),
       setPlanStatus: p('UPDATE branches SET plan_status = ? WHERE id = ?'),
       owner: p('SELECT * FROM owners WHERE id = ?'),
       ownerByName: p('SELECT * FROM owners WHERE username = ?'),
@@ -156,6 +159,13 @@ export class ControlStore {
 
   setSuspended(id, suspended) {
     this.sql.setSuspended.run(suspended ? 1 : 0, id);
+  }
+
+  /** Owner toggle for one feature ('review' | 'loyalty' | 'promo'). */
+  setFeature(id, feature, on) {
+    const stmt = { review: this.sql.setReviewFlag, loyalty: this.sql.setLoyaltyFlag, promo: this.sql.setPromoFlag }[feature];
+    if (!stmt) throw new Error(`unknown feature ${feature}`);
+    stmt.run(on ? 1 : 0, id);
   }
 
   setForcedOff(id, features) {

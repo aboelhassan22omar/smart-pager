@@ -3,7 +3,14 @@ import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
 import { HttpError } from '../errors.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { OWNER_COOKIE, requireJson, requireOwner, setOwnerSession } from '../sessions.js';
+import { FEATURES } from '../plans.js';
+import { parsePlaceId } from '../upgrades.js';
 import { cleanBranchName } from './super.js';
+
+// Loyalty rule and promo fields (phases 6-7) are validated here as they are added.
+export function ownerExtraFields() {
+  return {};
+}
 
 // Brand owner: sees and manages the branches of their own brand only.
 export default async function brandRoutes(app, deps) {
@@ -77,14 +84,33 @@ export default async function brandRoutes(app, deps) {
       return analyticsCsv(report);
     });
 
+    // Owner settings of one branch: name, feature toggles, Google place id (+ loyalty/promo).
     b.post('/branches/:branch/settings', async (req) => {
       const ctx = ownBranch(req);
-      const name = cleanBranchName(req.body?.name);
-      ctx.store.updateShop({ name });
-      control.audit({
-        actor: `owner:${req.owner.id}`, action: 'branch.rename', brandId: req.params.brand, branchId: ctx.branch.id,
-        detail: { name }, ip: req.ip,
+      const body = req.body ?? {};
+      const audit = (action, detail) => control.audit({
+        actor: `owner:${req.owner.id}`, action, brandId: req.params.brand, branchId: ctx.branch.id, detail, ip: req.ip,
       });
+      const fields = {};
+      if ('name' in body) fields.name = cleanBranchName(body.name);
+      if ('googlePlaceId' in body) {
+        const id = parsePlaceId(body.googlePlaceId);
+        if (id === undefined) throw new HttpError(400, 'الـ Place ID مش مظبوط (أو الصق رابط فيه placeid=)', { field: 'googlePlaceId' });
+        fields.google_place_id = id;
+      }
+      Object.assign(fields, ownerExtraFields(body));
+      const features = body.features && typeof body.features === 'object' ? body.features : {};
+      const toggles = Object.entries(features).filter(([f]) => FEATURES.includes(f));
+      if (!Object.keys(fields).length && !toggles.length) throw new HttpError(400, 'مفيش تغييرات تتحفظ');
+
+      if (Object.keys(fields).length) {
+        ctx.store.updateShop(fields);
+        audit(fields.name ? 'branch.rename' : 'branch.owner_settings', { fields: Object.keys(fields) });
+      }
+      for (const [feature, on] of toggles) {
+        control.setFeature(ctx.branch.id, feature, Boolean(on));
+        audit(on ? 'feature.enable' : 'feature.disable', { feature });
+      }
       return { ok: true };
     });
   }, { prefix: '/api/brand/:brand' });

@@ -55,9 +55,56 @@ function render() {
   $('branches').innerHTML = data.branches.length
     ? `<div class="cards">${data.branches.map((b) => branchCardHtml(b, {
       now,
-      actions: `<button class="btn btn-sm" data-act="rename" data-branch="${esc(b.id)}" type="button">غيّر الاسم</button>`,
+      actions: `<button class="btn btn-sm" data-act="features" data-branch="${esc(b.id)}" type="button">الخصائص</button>
+        <button class="btn btn-sm" data-act="rename" data-branch="${esc(b.id)}" type="button">غيّر الاسم</button>`,
     })).join('')}</div>`
     : '<p class="empty-note">لسه مفيش فروع. كلّم Aurexis عشان نضيفها.</p>';
+}
+
+const FORCED_HINT = 'مقفولة من الإدارة';
+
+/** One feature switch; a feature the super forced off is shown but can't be changed. */
+function featureToggle(b, feature, label, hint) {
+  const forced = b.forcedOff.includes(feature);
+  return { name: `ff_${feature}`, type: 'toggle', label, hint: forced ? FORCED_HINT : hint, value: b.toggles[feature], disabled: forced };
+}
+
+/** Extra fields per feature, filled in by the loyalty and promo phases. */
+function featureFields(b) {
+  const reviewHint = !b.googlePlaceId && b.legacyReviewUrl ? 'شغال دلوقتي بالرابط القديم' : 'من Google Business Profile ← اطلب تقييمات';
+  return [
+    { type: 'heading', label: 'التقييم' },
+    featureToggle(b, 'review', 'التقييم بعد الاستلام', 'نجوم لينا وزرار تقييم جوجل، لكل العملاء'),
+    {
+      name: 'googlePlaceId', label: 'Google Place ID', dir: 'ltr', value: b.googlePlaceId ?? '',
+      placeholder: 'ChIJ… أو رابط فيه placeid=', hint: reviewHint,
+    },
+    { type: 'heading', label: 'بطاقة الختم' },
+    featureToggle(b, 'loyalty', 'ختم مع كل طلب', 'العميل بياخد ختم لما يستلم، وهدية كل كام طلب'),
+    { type: 'heading', label: 'عرض وقت الانتظار' },
+    featureToggle(b, 'promo', 'عرض تحت رقم الطلب', 'بيظهر بس وهو مستني طلبه'),
+  ];
+}
+
+function featureBody(b, v) {
+  const features = {};
+  for (const f of ['review', 'loyalty', 'promo']) {
+    if (!b.forcedOff.includes(f)) features[f] = v[`ff_${f}`] === 'on';
+  }
+  return { features, googlePlaceId: v.googlePlaceId ?? '' };
+}
+
+function openFeatures(b) {
+  openForm({
+    title: `خصائص ${b.name}`,
+    intro: 'كل خاصية تقدر تشغلها أو تقفلها في أي وقت، والبيانات بتفضل محفوظة.',
+    fields: featureFields(b),
+    onSubmit: async (v) => {
+      await api(`${base}/branches/${encodeURIComponent(b.id)}/settings`, { method: 'POST', body: featureBody(b, v) });
+      toast('اتحفظ');
+      await refresh();
+    },
+  });
 }
 
 async function refresh() {
@@ -90,9 +137,13 @@ async function boot() {
     location.reload();
   });
   $('branches').addEventListener('click', (e) => {
-    const el = e.target.closest('[data-act="rename"]');
+    const el = e.target.closest('[data-act]');
     if (!el) return;
     const branch = data.branches.find((b) => b.id === el.dataset.branch);
+    if (el.dataset.act === 'features') {
+      openFeatures(branch);
+      return;
+    }
     openForm({
       title: 'اسم الفرع',
       intro: 'الاسم ده بيظهر للعملاء على شاشة الطلب وشاشة الكود.',

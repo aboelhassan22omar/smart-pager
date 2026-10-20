@@ -264,11 +264,56 @@
   color: var(--accent);
 }
 
-.review-stars .icon {
-  width: 26px;
-  height: 26px;
-  fill: currentColor;
+.review-stars .star {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 120ms var(--ease), color 160ms var(--ease);
+}
+
+.review-stars .star:active {
+  transform: scale(0.9);
+}
+
+.review-stars .star .icon {
+  width: 30px;
+  height: 30px;
   stroke-width: 1.5;
+}
+
+.review-stars .star.is-on {
+  color: var(--accent);
+}
+
+.review-stars .star.is-on .icon {
+  fill: currentColor;
+}
+
+.review-stars .star:disabled {
+  cursor: default;
+}
+
+.review-comment {
+  width: 100%;
+  min-height: 64px;
+  margin-top: 4px;
+  resize: vertical;
+}
+
+.review-thanks {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.review .btn {
+  margin-top: 6px;
 }
 
 .review-title {

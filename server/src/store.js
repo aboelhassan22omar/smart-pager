@@ -12,7 +12,9 @@ export const ORDER_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 const SETTING_COLUMNS = new Set([
   'logo', 'pin_hash', 'qr_mode', 'static_key', 'max_number', 'expire_hours',
   'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
+  'google_place_id',
 ]);
+export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
 // (device endpoints / tokens) still go 24h after their order closed.
 const ORDER_RETENTION_MS = 90 * 24 * 3600 * 1000;
@@ -69,7 +71,18 @@ export class BranchStore {
     const settings = this.sql.settings.get();
     const branch = this.control.getBranch(this.branchId);
     if (!settings || !branch) return undefined;
-    return { ...settings, id: branch.id, name: branch.name, brand_id: branch.brand_id, area: branch.area };
+    return {
+      ...settings,
+      id: branch.id,
+      name: branch.name,
+      brand_id: branch.brand_id,
+      area: branch.area,
+      // Feature flags live on the control row (owner toggles, super can force off).
+      ff_review: branch.ff_review,
+      ff_loyalty: branch.ff_loyalty,
+      ff_promo: branch.ff_promo,
+      forced_off: branch.forced_off,
+    };
   }
 
   initSettings({ pinHash, qrMode = 'dynamic', createdAt = Date.now() }) {
@@ -185,6 +198,24 @@ export class BranchStore {
     const subscriptions = Number(this.sql.purgeSubs.run(now - SUBSCRIPTION_RETENTION_MS).changes);
     const orders = Number(this.sql.purge.run(now - ORDER_RETENTION_MS).changes);
     return { orders, subscriptions };
+  }
+
+  // ---- feedback ----
+
+  getFeedback(orderId) {
+    return this.db.prepare('SELECT * FROM feedback WHERE order_id = ?').get(orderId);
+  }
+
+  /** One per order; returns false if it already exists. */
+  addFeedback(orderId, { rating, comment }) {
+    const res = this.db.prepare('INSERT OR IGNORE INTO feedback (order_id, rating, comment, created_at) VALUES (?, ?, ?, ?)')
+      .run(orderId, rating, comment, Date.now());
+    return Number(res.changes) === 1;
+  }
+
+  feedbackSince(since, until = Date.now()) {
+    return this.db.prepare('SELECT * FROM feedback WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC')
+      .all(since, until);
   }
 
   // ---- subscriptions ----
