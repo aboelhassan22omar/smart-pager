@@ -308,7 +308,7 @@ describe('loyalty card markup', () => {
   test('shows "N من M", the rule, and the waiting reward', () => {
     const card = { every: 5, stamps: 3, rewardText: 'قهوة <b>ببلاش</b>', rewards: 0 };
     const html = loyaltyHtml(card);
-    assert.match(html, /3 من 5/);
+    assert.ok(html.includes('<span class="num">3</span> من <span class="num">5</span>'));
     assert.equal((html.match(/class="stamp is-on"/g) ?? []).length, 3);
     assert.equal((html.match(/class="stamp( is-on)?"/g) ?? []).length, 5);
     assert.ok(!html.includes('<b>'), 'reward text is escaped');

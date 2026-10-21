@@ -164,7 +164,7 @@ function renderTable(el, branches) {
     </table>`;
 }
 
-const fmtWhen = (ts) => new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' }).format(ts);
+const fmtWhen = (ts) => new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' }).format(ts);
 
 /** Latest internal ratings; 1-2 stars are marked so the owner can follow up. */
 function renderFeedback(el, fb, showBranch) {

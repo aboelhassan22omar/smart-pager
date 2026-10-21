@@ -25,7 +25,7 @@ export function loyaltyHtml(card, { orderReward = null, closed = false } = {}) {
   return `
     <div class="loyalty-head">
       <p class="loyalty-title">بطاقة الختم</p>
-      <p class="loyalty-count num">${stamps} من ${every}</p>
+      <p class="loyalty-count"><span class="num">${stamps}</span> من <span class="num">${every}</span></p>
     </div>
     <div class="stamps" role="img" aria-label="${stamps} ختم من ${every}">${dots}</div>
     <p class="loyalty-rule">كل ${every} طلبات: ${esc(card.rewardText)}</p>

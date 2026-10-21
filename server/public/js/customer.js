@@ -262,9 +262,12 @@ function acknowledge() {
 // ---------- live updates ----------
 
 function apply(next) {
+  const wasOpen = order && !CLOSED.includes(order.status);
   order = next;
   render();
   if (CLOSED.includes(order.status)) {
+    // The stream closes here, so the pickup stamp is fetched rather than awaited as an event.
+    if (wasOpen && order.status === 'picked') loadLoyalty();
     events?.close();
     events = null;
     stopPolling();

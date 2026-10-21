@@ -150,7 +150,7 @@ export default async function brandRoutes(app, deps) {
 
       if (Object.keys(fields).length) {
         ctx.store.updateShop(fields);
-        audit(fields.name ? 'branch.rename' : 'branch.owner_settings', { fields: Object.keys(fields) });
+        audit(fields.name ? 'branch.rename' : 'branch.owner_settings', { fields: Object.keys(fields), name: fields.name });
       }
       for (const [feature, on] of toggles) {
         control.setFeature(ctx.branch.id, feature, Boolean(on));

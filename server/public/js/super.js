@@ -97,7 +97,7 @@ function attentionItems() {
 
 function renderBackupLine() {
   const b = overview.backup;
-  const when = b ? new Intl.DateTimeFormat('ar-EG', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' }).format(b.at) : null;
+  const when = b ? new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' }).format(b.at) : null;
   const offsite = b?.offsite ? (b.offsite.ok ? '، ونسخة برّه السيرفر' : '، والرفع برّه السيرفر فشل') : '';
   $('backup-line').textContent = b
     ? `آخر نسخة احتياطية ${when}، ${b.branches} فرع${offsite}. بتتعمل كل يوم 3:30 الفجر وبتفضل 7 أيام.`
@@ -169,6 +169,11 @@ const ACTION_TEXT = {
   'feature.force_off': (e) => `قفل خاصية: ${FEATURE_LABEL[e.detail?.feature] ?? e.detail?.feature ?? ''}`,
   'feature.release': (e) => `رجّع خاصية لصاحب البراند: ${FEATURE_LABEL[e.detail?.feature] ?? ''}`,
   'branch.impersonate': () => 'دخول الفرع من لوحة الإدارة',
+  'branch.owner_settings': () => 'تعديل خصائص الفرع',
+  'feature.enable': (e) => `تشغيل خاصية: ${FEATURE_LABEL[e.detail?.feature] ?? ''}`,
+  'feature.disable': (e) => `قفل خاصية: ${FEATURE_LABEL[e.detail?.feature] ?? ''}`,
+  'promo.image': () => 'صورة عرض جديدة',
+  'backup.run': (e) => `نسخة احتياطية${e.detail?.ok === false ? ' (فيها أخطاء)' : ''}`,
 };
 
 function actorText(actor, e) {
