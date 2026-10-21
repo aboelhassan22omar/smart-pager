@@ -17,6 +17,20 @@ export const DEFAULT_PUSH_HOSTS = [
   '*.notify.windows.com',
 ];
 
+// Off-site backups: on only when all five BACKUP_S3_* values are set.
+function backupS3(env) {
+  const s3 = {
+    endpoint: str(env.BACKUP_S3_ENDPOINT, ''),
+    bucket: str(env.BACKUP_S3_BUCKET, ''),
+    region: str(env.BACKUP_S3_REGION, ''),
+    accessKeyId: str(env.BACKUP_S3_ACCESS_KEY_ID, ''),
+    secretAccessKey: str(env.BACKUP_S3_SECRET_ACCESS_KEY, ''),
+  };
+  if (Object.values(s3).some((v) => !v)) return null;
+  const prefix = str(env.BACKUP_S3_PREFIX, 'smart-pager').replace(/^\/+|\/+$/g, '');
+  return { ...s3, prefix: prefix ? `${prefix}/` : '' };
+}
+
 export function loadConfig(env = process.env) {
   const port = int(env.PORT, 3000, 0, 65535);
   const publicUrl = str(env.PUBLIC_URL, `http://localhost:${port}`).replace(/\/+$/, '');
@@ -49,6 +63,7 @@ export function loadConfig(env = process.env) {
       pass: str(env.SMTP_PASS, ''),
       from: str(env.SMTP_FROM, 'Smart Pager <no-reply@aurexis.cc>'),
     },
+    backupS3: backupS3(env),
     cookieSecret: str(env.COOKIE_SECRET, ''),
     pushHosts: str(env.PUSH_ENDPOINT_HOSTS, DEFAULT_PUSH_HOSTS.join(','))
       .split(',')

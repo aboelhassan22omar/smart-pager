@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
-import { ADMIN_TOKEN, client, earlyRejectPost, PNG_1X1, sse, startServer } from './helpers.js';
+import { ADMIN_TOKEN, client, earlyRejectPost, PNG_1X1, setFeatureFlag, sse, startServer } from './helpers.js';
 
 let server;
 let api;
@@ -356,16 +356,26 @@ describe('shop accent + Google review', () => {
       headers: { 'content-type': 'text/plain;charset=UTF-8' },
     });
     await settings({ googleReviewUrl: 'https://g.page/r/CbX1abc/review' });
-    assert.equal((await click()).status, 409, 'not picked yet');
-
     await bar.post(`/api/bar/${SHOP}/orders/${order.id}/status`, { status: 'picked' });
-    assert.deepEqual((await click()).data, { ok: true, counted: true });
-    assert.deepEqual((await click()).data, { ok: true, counted: false });
+    assert.equal((await click()).status, 409, 'review feature off: no button, no counting');
+    assert.equal((await publicShop()).googleReviewUrl, null);
+    setFeatureFlag(server.dataDir, SHOP, 'review');
+
+    const fresh = await claimDynamic();
+    const clickFresh = () => api.request('POST', `/api/b/${SHOP}/orders/${fresh.id}/review-click`, {
+      body: '',
+      headers: { 'content-type': 'text/plain;charset=UTF-8' },
+    });
+    assert.equal((await clickFresh()).status, 409, 'not picked yet');
+    await bar.post(`/api/bar/${SHOP}/orders/${fresh.id}/status`, { status: 'picked' });
+
+    assert.deepEqual((await clickFresh()).data, { ok: true, counted: true });
+    assert.deepEqual((await clickFresh()).data, { ok: true, counted: false });
     assert.equal((await barState()).shop.reviewClicks, 1);
     assert.equal((await publicShop()).googleReviewUrl, 'https://g.page/r/CbX1abc/review');
 
     await settings({ googleReviewUrl: '' });
-    assert.equal((await click()).status, 409, 'no link, no counting');
+    assert.equal((await clickFresh()).status, 409, 'no link, no counting');
   });
 });
 

@@ -1,5 +1,5 @@
 // Brand analytics: filters, stat tiles, orders-per-day columns, peak-hours heatmap,
-// per-branch table, CSV link. Plain HTML/SVG, RTL (time runs right-to-left).
+// per-branch table, customer feedback, CSV link. Plain HTML/SVG, RTL (time runs right-to-left).
 
 import { api, esc } from './util.js';
 
@@ -164,6 +164,28 @@ function renderTable(el, branches) {
     </table>`;
 }
 
+const fmtWhen = (ts) => new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'numeric', hour: 'numeric', minute: '2-digit' }).format(ts);
+
+/** Latest internal ratings; 1-2 stars are marked so the owner can follow up. */
+function renderFeedback(el, fb, showBranch) {
+  if (!fb?.count) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  const lowNote = fb.low ? `، ${fmtInt(fb.low)} منهم نجمة أو اتنين` : '';
+  el.innerHTML = `
+    <h3>آراء العملاء</h3>
+    <p class="muted small">متوسط <span class="num">${fb.avg.toFixed(1)}</span> من 5 من ${fmtInt(fb.count)} تقييم${lowNote}</p>
+    <ul class="feedback-list">${fb.latest.map((f) => `
+      <li ${f.rating <= 2 ? 'data-low' : ''}>
+        <span class="fb-rating num" aria-label="${f.rating} من 5">★ ${f.rating}</span>
+        <p>${f.comment ? esc(f.comment) : '<span class="muted">من غير تعليق</span>'}</p>
+        <small>${showBranch ? `${esc(f.branchName)} · ` : ''}${esc(fmtWhen(f.at))}</small>
+      </li>`).join('')}
+    </ul>`;
+}
+
 // ---------- section ----------
 
 export function mountAnalytics(root, { base, branches }) {
@@ -196,7 +218,8 @@ export function mountAnalytics(root, { base, branches }) {
       <p class="muted small">كل مربع عدد الطلبات في ساعة من يوم في الأسبوع. اللون الأفتح يعني طلبات أكتر.</p>
       <div id="an-heat"></div>
     </div>
-    <div class="chart-card table-card" id="an-table"></div>`;
+    <div class="chart-card table-card" id="an-table"></div>
+    <div class="chart-card" id="an-feedback" hidden></div>`;
 
   const $ = (id) => root.querySelector(`#${id}`);
   const from = $('an-from');
@@ -221,6 +244,7 @@ export function mountAnalytics(root, { base, branches }) {
       renderHeatmap($('an-heat'), last.heatmap);
       renderTable($('an-table'), branch.value ? [] : last.branches);
       $('an-table').hidden = Boolean(branch.value) || last.branches.length < 2;
+      renderFeedback($('an-feedback'), last.feedback, !branch.value && last.branches.length > 1);
     } catch (err) {
       $('an-error').textContent = err.message;
       $('an-error').hidden = false;

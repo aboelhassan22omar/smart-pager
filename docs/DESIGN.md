@@ -192,7 +192,7 @@ Store functions only receive `ctx`, and no module imports a global branch store.
 | `POST /api/subscribe {orderId,…}` | `POST /api/b/:branch/subscribe` |
 | `POST /api/orders/:id/review-click` | `POST /api/b/:branch/orders/:id/review-click` |
 | (new) | `POST /api/b/:branch/orders/:id/feedback`, `GET /api/b/:branch/loyalty` |
-| `/api/bar/:shop/*` | Unchanged shape (`/api/bar/:branch/*`), now resolved through `ctx` |
+| `/api/bar/:shop/*` | Unchanged shape (`/api/bar/:branch/*`), now resolved through `ctx`; new `POST /api/bar/:branch/orders/:id/redeem` (loyalty) |
 | `/media/logos/:file` | `/media/b/:branch/:file` |
 
 - **Orders across branches:** order ids are only looked up in the branch's own DB, so branch A's order id `404`s under branch B automatically.
@@ -227,7 +227,7 @@ Store functions only receive `ctx`, and no module imports a global branch store.
 |---|---|---|---|
 | Customer | `/s/:branch` | QR nonce or static key (as today) + loyalty device token | `/api/b/:branch/*` |
 | Staff | `/bar/:branch`, `/qr/:branch`, `/settings/:branch` | Branch PIN | `/api/bar/:branch/*` (as today) |
-| Brand owner | `/brand/:brand` | Username + password | `POST /api/brand/login`, `/api/brand/:brand/{overview,analytics,analytics.csv,feedback}`, `POST /api/brand/:brand/branches/:branch/settings` (features, place id, loyalty rule, promo text/dates), `POST/DELETE …/promo-image` |
+| Brand owner | `/brand/:brand` | Username + password | `POST /api/brand/login`, `/api/brand/:brand/{overview,analytics,analytics.csv}` (the analytics report carries the feedback list), `POST /api/brand/:brand/branches/:branch/settings` (features, place id, loyalty rule, promo text/dates), `POST/DELETE …/promo-image` |
 | Super | `/super` | `SUPER_PASSWORD_HASH` (scrypt), 12h, login limited to 5/min/IP | See below |
 
 **Super API** (every action is written to `audit_log`):
@@ -357,6 +357,7 @@ Feature flags live on the branch. The brand owner toggles them, and super can fo
 ## 20. Backups
 
 - **Nightly (03:30 `TZ`):** `VACUUM INTO` of `control.db` and every branch DB into `/data/backups/<YYYY-MM-DD>/…`. The media folders and `secrets.json` are copied too (Q10). Backups are kept for 7 days, and failures are logged and shown on the super dashboard.
+- **Run now:** super `POST /api/super/backup` ("اعمل نسخة دلوقتي") or `node src/cli.js backup`. The last run's status is in `/data/backups/status.json` and on `GET /api/super/overview` (`backup`).
 - **Before migrations:** at startup, any DB with pending migrations is backed up first, into `/data/backups/pre-migrate-<timestamp>/`.
 - **Off-site (optional):** if `BACKUP_S3_ENDPOINT`, `BACKUP_S3_BUCKET`, `BACKUP_S3_REGION`, `BACKUP_S3_ACCESS_KEY_ID`, and `BACKUP_S3_SECRET_ACCESS_KEY` are set, the day's folder is uploaded with in-house SigV4 `PUT`s (Q9). `secrets.json` is never uploaded off-site. This is off by default.
 - **Restore runbook (README):**

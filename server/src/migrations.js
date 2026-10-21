@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 export function tx(db, fn) {
+  // Nested call: run inside the outer transaction.
+  if (db.isTransaction === true) return fn();
   db.exec('BEGIN IMMEDIATE');
   try {
     const result = fn();

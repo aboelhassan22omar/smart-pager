@@ -1,5 +1,7 @@
 import { channels } from './bus.js';
 import { HttpError } from './errors.js';
+import { loyaltyEnabled, loyaltyView } from './loyalty.js';
+import { etaStats, queueFor } from './queue.js';
 import { rollupBranch } from './rollups.js';
 import { OPEN_STATUSES } from './store.js';
 import { barShop, publicOrder, qrInfo } from './views.js';
@@ -10,21 +12,51 @@ const NEXT_STATUS = { preparing: 'ready', ready: 'picked' };
 // branch context it was resolved for; events only ever go to that branch's channels.
 export function createService({ control, tenants, bus, notifier, screens, config, log }) {
   let jobCursor = 0;
+  const etaCache = new Map(); // branchId -> {key, at, stats}
+  const lastQueue = new Map(); // branchId -> Map(orderId -> sent key)
+
+  /** What the customer sees: the public order plus its queue position / ETA. */
+  function customerView(ctx, order, shop) {
+    const stats = order.status === 'preparing' ? etaStats(ctx, { tz: config.tz, cache: etaCache }) : null;
+    const fb = order.status === 'picked' ? ctx.store.getFeedback(order.id) : null;
+    return { ...publicOrder(order, shop), queue: queueFor(ctx, order, stats), feedback: fb ? { rating: fb.rating } : null };
+  }
+
+  // After any change in a branch, push a `queue` event only to the orders whose
+  // position (or ETA basis) actually changed.
+  function publishQueue(ctx) {
+    const ch = channels(ctx.branch.id);
+    const sent = lastQueue.get(ctx.branch.id) ?? new Map();
+    lastQueue.set(ctx.branch.id, sent);
+    const stats = etaStats(ctx, { tz: config.tz, cache: etaCache });
+    const live = new Set();
+    for (const order of ctx.store.openOrders()) {
+      if (order.status !== 'preparing') continue;
+      live.add(order.id);
+      const queue = queueFor(ctx, order, stats);
+      const key = `${queue.ahead}|${queue.eta?.lowAt ?? ''}|${queue.eta?.highAt ?? ''}`;
+      if (sent.get(order.id) === key) continue;
+      sent.set(order.id, key);
+      bus.emit(ch.order(order.id), 'queue', queue);
+    }
+    for (const id of sent.keys()) if (!live.has(id)) sent.delete(id);
+  }
 
   function publishOrder(ctx, order, shop, { action = 'updated', renotify = false } = {}) {
-    const view = publicOrder(order, shop);
+    const view = customerView(ctx, order, shop);
     const ch = channels(ctx.branch.id);
     bus.emit(ch.order(order.id), 'order', view);
     if (renotify) bus.emit(ch.order(order.id), 'renotify', view);
-    bus.emit(ch.bar, 'order', { action, order: view });
+    bus.emit(ch.bar, 'order', { action, order: publicOrder(order, shop) });
     notifier.orderChanged(ctx, order, shop, { renotify });
+    publishQueue(ctx);
   }
 
   const publishNonce = (ctx, shop) => bus.emit(channels(ctx.branch.id).bar, 'nonce', qrInfo(shop, config));
   const publishShop = (ctx, shop) => bus.emit(channels(ctx.branch.id).bar, 'shop', barShop(shop));
 
-  function claim(ctx, codes) {
-    const { order, shop, rotated } = ctx.store.claim(codes);
+  function claim(ctx, codes, { deviceHash = null } = {}) {
+    const { order, shop, rotated } = ctx.store.claim(codes, { deviceHash });
     if (rotated) publishNonce(ctx, shop);
     publishOrder(ctx, order, shop, { action: 'created' });
     control.touch(ctx.branch.id);
@@ -35,6 +67,20 @@ export function createService({ control, tenants, bus, notifier, screens, config
     if (!OPEN_STATUSES.includes(order.status)) throw new HttpError(409, 'الطلب ده اتقفل خلاص');
     if (order.status === status) return order;
     const updated = ctx.store.setStatus(order, status);
+    publishOrder(ctx, updated, shop);
+    // Loyalty: a stamp only when staff hand the order over (never on claim, expiry or review).
+    if (status === 'picked' && loyaltyEnabled(shop) && updated.device_hash) {
+      ctx.store.stamp(updated, shop.loyalty_every);
+      const card = loyaltyView(shop, ctx.store.loyaltyCard(updated.device_hash));
+      bus.emit(channels(ctx.branch.id).order(order.id), 'loyalty', card);
+    }
+    return updated;
+  }
+
+  function redeem(ctx, shop, order) {
+    if (!OPEN_STATUSES.includes(order.status)) throw new HttpError(409, 'الطلب ده اتقفل خلاص');
+    if (!loyaltyEnabled(shop) || !ctx.store.redeem(order)) throw new HttpError(409, 'مفيش مكافأة على الطلب ده');
+    const updated = ctx.store.getOrder(order.id);
     publishOrder(ctx, updated, shop);
     return updated;
   }
@@ -98,5 +144,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
     rollupCursor = ids.length ? (rollupCursor + count) % ids.length : 0;
   }
 
-  return { claim, setStatus, advance, renotify, publishNonce, publishShop, rotateDue, runJobs, runRollups };
+  return {
+    claim, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+  };
 }

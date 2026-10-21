@@ -1,6 +1,18 @@
 // Shapes the API exposes. Never leak pin_hash, nonces or keys outside bar-only views.
 
 import { readableAccent } from '../public/js/color.js';
+import { loyaltyEnabled } from './loyalty.js';
+import { featureFlags } from './plans.js';
+
+/** Google review link: from the place id (preferred), else the v1 free-form link. */
+export function reviewUrl(shop) {
+  if (shop.google_place_id) {
+    return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(shop.google_place_id)}`;
+  }
+  return shop.google_review_url ?? null;
+}
+
+export const reviewEnabled = (shop) => featureFlags(shop).review;
 
 export const DONE_MESSAGES = {
   picked: 'بالهنا والشفا',
@@ -16,7 +28,18 @@ export function statusMessage(order, shop) {
 
 export const logoUrl = (shop) => (shop.logo ? `/media/b/${shop.id}/${shop.logo}` : null);
 
-export const publicShop = (shop) => ({
+export const promoEnabled = (shop) => featureFlags(shop).promo;
+
+/** The promo while the feature is on and `today` (local YYYY-MM-DD) is inside its dates. */
+export function promoView(shop, today) {
+  if (!promoEnabled(shop) || (!shop.promo_text && !shop.promo_image)) return null;
+  if (shop.promo_starts_at && today < shop.promo_starts_at) return null;
+  if (shop.promo_ends_at && today > shop.promo_ends_at) return null;
+  return { text: shop.promo_text ?? '', imageUrl: shop.promo_image ? `/media/b/${shop.id}/${shop.promo_image}` : null };
+}
+
+// `today` (local day) is only passed for the customer page, the one place the promo shows.
+export const publicShop = (shop, { today } = {}) => ({
   id: shop.id,
   name: shop.name,
   logoUrl: logoUrl(shop),
@@ -24,8 +47,18 @@ export const publicShop = (shop) => ({
   readyMessage: shop.ready_message,
   // {color, ink} already adjusted for contrast; null = default latte accent.
   accent: shop.accent_color ? readableAccent(shop.accent_color) : null,
-  googleReviewUrl: shop.google_review_url ?? null,
+  // Post-pickup review (phase 5): internal stars + the Google button, together.
+  feedback: reviewEnabled(shop),
+  googleReviewUrl: reviewEnabled(shop) ? reviewUrl(shop) : null,
+  // Stamp card rule (phase 6); the device's own count comes from GET /loyalty.
+  loyalty: loyaltyEnabled(shop) ? { every: shop.loyalty_every, rewardText: shop.loyalty_reward_text ?? '' } : null,
+  promo: today ? promoView(shop, today) : null,
 });
+
+/** A loyalty reward attached to this order (shown on the bar and to the customer). */
+const orderReward = (order, shop) => (order.reward_id && loyaltyEnabled(shop)
+  ? { text: shop.loyalty_reward_text ?? '', redeemed: Boolean(order.reward_redeemed_at) }
+  : null);
 
 export const publicOrder = (order, shop) => ({
   id: order.id,
@@ -38,6 +71,7 @@ export const publicOrder = (order, shop) => ({
   readyAt: order.ready_at ?? null,
   closedAt: order.closed_at ?? null,
   notifyCount: order.notify_count,
+  reward: orderReward(order, shop),
 });
 
 export const barShop = (shop) => ({

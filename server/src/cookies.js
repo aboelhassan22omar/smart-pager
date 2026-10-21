@@ -7,7 +7,7 @@ import crypto from 'node:crypto';
 const SALT = 'smart-pager/v2';
 const keys = new Map();
 
-function keyFor(secret, info) {
+export function deriveKey(secret, info) {
   const id = `${info}|${secret}`;
   let key = keys.get(id);
   if (!key) {
@@ -19,7 +19,7 @@ function keyFor(secret, info) {
 
 export function signValue(secret, info, payload) {
   const body = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const mac = crypto.createHmac('sha256', keyFor(secret, info)).update(body).digest('base64url');
+  const mac = crypto.createHmac('sha256', deriveKey(secret, info)).update(body).digest('base64url');
   return `${body}.${mac}`;
 }
 
@@ -30,7 +30,7 @@ export function verifyValue(secret, info, value) {
   if (dot <= 0) return null;
   const body = value.slice(0, dot);
   const given = Buffer.from(value.slice(dot + 1), 'base64url');
-  const expected = crypto.createHmac('sha256', keyFor(secret, info)).update(body).digest();
+  const expected = crypto.createHmac('sha256', deriveKey(secret, info)).update(body).digest();
   if (given.length !== expected.length || !crypto.timingSafeEqual(given, expected)) return null;
   try {
     return JSON.parse(Buffer.from(body, 'base64url').toString('utf8'));

@@ -18,8 +18,8 @@ export class ApiError extends Error {
   }
 }
 
-export async function api(path, { method = 'GET', body, raw, contentType } = {}) {
-  const init = { method, headers: {}, credentials: 'same-origin' };
+export async function api(path, { method = 'GET', body, raw, contentType, headers = {} } = {}) {
+  const init = { method, headers: { ...headers }, credentials: 'same-origin' };
   if (raw !== undefined) {
     init.body = raw;
     init.headers['content-type'] = contentType;

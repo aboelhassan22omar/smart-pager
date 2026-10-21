@@ -1,7 +1,10 @@
 import { Chime } from './chime.js';
 import { applyAccent } from './color.js';
 import { icons } from './icons.js';
-import { api, base64UrlToBytes, elapsedLabel, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
+import { loyaltyHtml } from './loyalty-card.js';
+import { aheadText, etaText } from './queue-text.js';
+import { reviewHtml } from './review.js';
+import { api, base64UrlToBytes, elapsedLabel, esc, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
 import { keepAwake, releaseAwake } from './wakelock.js';
 
 const CLOSED = ['picked', 'expired', 'cancelled'];
@@ -13,6 +16,8 @@ const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
 const params = new URLSearchParams(location.search);
 const storageKey = `sp:order:${shopId}`;
+// Loyalty device token: lives in an httpOnly cookie, mirrored here in case the cookie is lost.
+const deviceKey = `sp:dev:${shopId}`;
 // Every customer call is scoped to this branch; an order id is only valid under its own branch.
 const branchApi = `/api/b/${encodeURIComponent(shopId)}`;
 const chime = new Chime();
@@ -24,6 +29,7 @@ let events = null;
 let pollTimer = null;
 let bannerTimer = null;
 let ringing = false;
+let loyalty = null; // {every, stamps, rewardText, rewards} while the branch runs a stamp card
 
 const store = {
   get(key) {
@@ -79,6 +85,37 @@ function fatal(message) {
 
 // ---------- rendering ----------
 
+function renderQueue() {
+  const el = $('card-queue');
+  const q = order?.status === 'preparing' ? order.queue : null;
+  el.hidden = !q;
+  if (!q) return;
+  const eta = etaText(q.eta);
+  el.innerHTML = `<strong>${esc(aheadText(q.ahead))}</strong>${eta ? `، ${esc(eta)}` : ''}`;
+}
+
+// Promo (owner-set): only while preparing, under the number, plain text + image, no links.
+function renderPromo() {
+  const box = $('card-promo');
+  const promo = order?.status === 'preparing' ? shop?.promo : null;
+  box.hidden = !promo;
+  if (!promo || box.dataset.painted === '1') return;
+  box.dataset.painted = '1';
+  box.textContent = '';
+  if (promo.imageUrl) {
+    const img = new Image();
+    img.alt = '';
+    img.decoding = 'async';
+    img.src = promo.imageUrl;
+    box.append(img);
+  }
+  if (promo.text) {
+    const p = document.createElement('p');
+    p.textContent = promo.text;
+    box.append(p);
+  }
+}
+
 function render() {
   const card = $('card');
   card.dataset.status = order.status;
@@ -93,27 +130,85 @@ function render() {
   $('enable').hidden = closed || order.status === 'ready';
   $('ios-hint').hidden = closed || order.status === 'ready' || !isIOS(navigator) || isStandalone();
   renderReview();
+  renderQueue();
+  renderPromo();
+  renderLoyalty();
 
   if (order.status === 'ready') showReady();
   else hideReady();
 }
 
-// After pickup, every customer is asked (Google forbids asking only happy ones).
-function renderReview() {
-  const show = order.status === 'picked' && Boolean(shop?.googleReviewUrl);
-  const box = $('review');
-  if (!show) {
-    box.hidden = true;
-    return;
+const deviceHeaders = () => {
+  const token = store.get(deviceKey);
+  return token ? { 'x-device-token': token } : {};
+};
+
+function renderLoyalty() {
+  const box = $('loyalty');
+  box.hidden = !loyalty || !order;
+  if (box.hidden) return;
+  box.innerHTML = loyaltyHtml(loyalty, { orderReward: order.reward, closed: CLOSED.includes(order.status) });
+}
+
+async function loadLoyalty() {
+  if (!shop?.loyalty) return;
+  try {
+    const card = await api(`${branchApi}/loyalty`, { headers: deviceHeaders() });
+    loyalty = card.enabled ? card : null;
+  } catch {
+    loyalty = null;
   }
-  if (!box.hidden) return;
-  $('review-stars').innerHTML = icons.star(26).repeat(5);
-  const link = $('review-link');
-  link.href = shop.googleReviewUrl;
-  link.addEventListener('click', () => {
-    navigator.sendBeacon?.(`${branchApi}/orders/${encodeURIComponent(order.id)}/review-click`, '');
-  }, { once: true });
-  box.hidden = false;
+  renderLoyalty();
+}
+
+// After pickup, every customer is asked (Google forbids asking only happy ones).
+// Stars + comment + the Google button, all at once (no review gating; see review.js).
+const review = { rating: 0, comment: '', sent: false, bound: false };
+
+function renderReview() {
+  const box = $('review');
+  const show = order.status === 'picked' && Boolean(shop?.feedback || shop?.googleReviewUrl);
+  box.hidden = !show;
+  if (!show) return;
+  if (order.feedback) {
+    review.sent = true;
+    review.rating = order.feedback.rating;
+  }
+  box.innerHTML = reviewHtml({
+    googleUrl: shop.googleReviewUrl, feedback: shop.feedback, rating: review.rating, sent: review.sent, comment: review.comment,
+  });
+  if (review.bound) return;
+  review.bound = true;
+  box.addEventListener('click', async (e) => {
+    const star = e.target.closest('[data-rating]');
+    if (star && !review.sent) {
+      review.rating = Number(star.dataset.rating);
+      renderReview();
+      $('review-comment')?.focus();
+      return;
+    }
+    if (e.target.closest('#review-link')) {
+      navigator.sendBeacon?.(`${branchApi}/orders/${encodeURIComponent(order.id)}/review-click`, '');
+      return;
+    }
+    const send = e.target.closest('#review-send');
+    if (send) {
+      send.disabled = true;
+      try {
+        await api(`${branchApi}/orders/${encodeURIComponent(order.id)}/feedback`, {
+          method: 'POST', body: { rating: review.rating, comment: review.comment },
+        });
+        review.sent = true;
+      } catch (err) {
+        if (err.status === 409) review.sent = true;
+        else send.disabled = false;
+      }
+      renderReview();
+    }
+  });
+  box.addEventListener('input', (e) => {
+    if (e.target.id === 'review-comment') review.comment = e.target.value;
+  });
 }
 
 function showReady() {
@@ -167,9 +262,12 @@ function acknowledge() {
 // ---------- live updates ----------
 
 function apply(next) {
+  const wasOpen = order && !CLOSED.includes(order.status);
   order = next;
   render();
   if (CLOSED.includes(order.status)) {
+    // The stream closes here, so the pickup stamp is fetched rather than awaited as an event.
+    if (wasOpen && order.status === 'picked') loadLoyalty();
     events?.close();
     events = null;
     stopPolling();
@@ -215,6 +313,15 @@ function connect() {
     if (events?.readyState === EventSource.CLOSED) setTimeout(connect, 4000);
   });
   events.addEventListener('order', (e) => apply(JSON.parse(e.data)));
+  events.addEventListener('queue', (e) => {
+    if (!order) return;
+    order.queue = JSON.parse(e.data);
+    renderQueue();
+  });
+  events.addEventListener('loyalty', (e) => {
+    loyalty = JSON.parse(e.data);
+    renderLoyalty();
+  });
   events.addEventListener('renotify', (e) => {
     const next = JSON.parse(e.data);
     apply(next);
@@ -284,7 +391,10 @@ async function resolveOrder() {
   const n = params.get('n');
   const k = params.get('k');
   if ((!current || CLOSED.includes(current.status)) && (n || k)) {
-    current = await api(`${branchApi}/claim`, { method: 'POST', body: { n: n ?? undefined, k: k ?? undefined } });
+    current = await api(`${branchApi}/claim`, {
+      method: 'POST', body: { n: n ?? undefined, k: k ?? undefined }, headers: deviceHeaders(),
+    });
+    if (current.deviceToken) store.set(deviceKey, current.deviceToken);
   }
   return current;
 }
@@ -320,10 +430,13 @@ async function boot() {
   order = resolved;
   render();
   connect();
+  loadLoyalty();
 
   $('enable').addEventListener('click', onEnable);
   setInterval(() => {
-    if (order) $('card-when').textContent = elapsedLabel(order.createdAt);
+    if (!order) return;
+    $('card-when').textContent = elapsedLabel(order.createdAt);
+    renderQueue();
   }, 30_000);
   document.addEventListener('visibilitychange', () => {
     if (document.visibilityState === 'visible' && order && !CLOSED.includes(order.status)) refresh();

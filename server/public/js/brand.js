@@ -55,9 +55,81 @@ function render() {
   $('branches').innerHTML = data.branches.length
     ? `<div class="cards">${data.branches.map((b) => branchCardHtml(b, {
       now,
-      actions: `<button class="btn btn-sm" data-act="rename" data-branch="${esc(b.id)}" type="button">غيّر الاسم</button>`,
+      actions: `<button class="btn btn-sm" data-act="features" data-branch="${esc(b.id)}" type="button">الخصائص</button>
+        <button class="btn btn-sm" data-act="rename" data-branch="${esc(b.id)}" type="button">غيّر الاسم</button>`,
     })).join('')}</div>`
     : '<p class="empty-note">لسه مفيش فروع. كلّم Aurexis عشان نضيفها.</p>';
+}
+
+const FORCED_HINT = 'مقفولة من الإدارة';
+
+/** One feature switch; a feature the super forced off is shown but can't be changed. */
+function featureToggle(b, feature, label, hint) {
+  const forced = b.forcedOff.includes(feature);
+  return { name: `ff_${feature}`, type: 'toggle', label, hint: forced ? FORCED_HINT : hint, value: b.toggles[feature], disabled: forced };
+}
+
+/** Extra fields per feature, filled in by the loyalty and promo phases. */
+function featureFields(b) {
+  const reviewHint = !b.googlePlaceId && b.legacyReviewUrl ? 'شغال دلوقتي بالرابط القديم' : 'من Google Business Profile ← اطلب تقييمات';
+  return [
+    { type: 'heading', label: 'التقييم' },
+    featureToggle(b, 'review', 'التقييم بعد الاستلام', 'نجوم لينا وزرار تقييم جوجل، لكل العملاء'),
+    {
+      name: 'googlePlaceId', label: 'Google Place ID', dir: 'ltr', value: b.googlePlaceId ?? '',
+      placeholder: 'ChIJ… أو رابط فيه placeid=', hint: reviewHint,
+    },
+    { type: 'heading', label: 'بطاقة الختم' },
+    featureToggle(b, 'loyalty', 'ختم مع كل طلب', 'العميل بياخد ختم لما يستلم، وهدية كل كام طلب'),
+    { name: 'loyaltyEvery', label: 'الهدية كل كام طلب', type: 'number', inputmode: 'numeric', dir: 'ltr', value: b.loyaltyEvery, hint: 'من 2 لـ 20' },
+    { name: 'loyaltyRewardText', label: 'الهدية', value: b.loyaltyRewardText, placeholder: 'مثلًا: مشروب ببلاش', maxlength: 60 },
+    { type: 'heading', label: 'عرض وقت الانتظار' },
+    featureToggle(b, 'promo', 'عرض تحت رقم الطلب', 'بيظهر بس وهو مستني طلبه'),
+    { name: 'promoText', label: 'نص العرض', type: 'textarea', value: b.promoText, maxlength: 120, placeholder: 'مثلًا: جرّب الكرواسون الجديد' },
+    {
+      name: 'promoImage', label: 'صورة العرض', type: 'file', accept: 'image/png,image/jpeg,image/webp',
+      hint: b.promoImageUrl ? 'فيه صورة دلوقتي. اختار صورة تانية عشان تغيّرها' : 'PNG أو JPG أو WEBP، أقل من 500 كيلوبايت',
+    },
+    ...(b.promoImageUrl ? [{ name: 'promoImageRemove', type: 'toggle', label: 'شيل الصورة', value: false }] : []),
+    { name: 'promoStartsAt', label: 'يبدأ من (اختياري)', type: 'date', dir: 'ltr', value: b.promoStartsAt ?? '' },
+    { name: 'promoEndsAt', label: 'لحد (اختياري)', type: 'date', dir: 'ltr', value: b.promoEndsAt ?? '' },
+  ];
+}
+
+function featureBody(b, v) {
+  const features = {};
+  for (const f of ['review', 'loyalty', 'promo']) {
+    if (!b.forcedOff.includes(f)) features[f] = v[`ff_${f}`] === 'on';
+  }
+  return {
+    features,
+    googlePlaceId: v.googlePlaceId ?? '',
+    loyaltyEvery: Number(v.loyaltyEvery),
+    loyaltyRewardText: v.loyaltyRewardText ?? '',
+    promoText: v.promoText ?? '',
+    promoStartsAt: v.promoStartsAt ?? '',
+    promoEndsAt: v.promoEndsAt ?? '',
+  };
+}
+
+function openFeatures(b) {
+  openForm({
+    title: `خصائص ${b.name}`,
+    intro: 'كل خاصية تقدر تشغلها أو تقفلها في أي وقت، والبيانات بتفضل محفوظة.',
+    fields: featureFields(b),
+    onSubmit: async (v) => {
+      const branchBase = `${base}/branches/${encodeURIComponent(b.id)}`;
+      const image = v.promoImage instanceof File && v.promoImage.size ? v.promoImage : null;
+      if (image && image.size > 500 * 1024) {
+        throw Object.assign(new Error('الصورة لازم تكون أقل من 500 كيلوبايت'), { data: { field: 'promoImage' } });
+      }
+      await api(`${branchBase}/settings`, { method: 'POST', body: featureBody(b, v) });
+      if (image) await api(`${branchBase}/promo-image`, { method: 'POST', raw: image, contentType: image.type });
+      else if (v.promoImageRemove === 'on') await api(`${branchBase}/promo-image`, { method: 'DELETE', body: {} });
+      toast('اتحفظ');
+      await refresh();
+    },
+  });
 }
 
 async function refresh() {
@@ -90,9 +162,13 @@ async function boot() {
     location.reload();
   });
   $('branches').addEventListener('click', (e) => {
-    const el = e.target.closest('[data-act="rename"]');
+    const el = e.target.closest('[data-act]');
     if (!el) return;
     const branch = data.branches.find((b) => b.id === el.dataset.branch);
+    if (el.dataset.act === 'features') {
+      openFeatures(branch);
+      return;
+    }
     openForm({
       title: 'اسم الفرع',
       intro: 'الاسم ده بيظهر للعملاء على شاشة الطلب وشاشة الكود.',

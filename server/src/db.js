@@ -68,6 +68,46 @@ export const BRANCH_MIGRATIONS = [
   );
   CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
   `,
+  // 3: Google place id + internal post-pickup feedback (phase 5).
+  `
+  ALTER TABLE branch_settings ADD COLUMN google_place_id TEXT;
+  CREATE TABLE feedback (
+    order_id TEXT PRIMARY KEY REFERENCES orders (id) ON DELETE CASCADE,
+    rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX feedback_created_at ON feedback (created_at);
+  `,
+  // 4: loyalty stamp card (phase 6). Devices are only known by an HMAC of their token.
+  `
+  ALTER TABLE branch_settings ADD COLUMN loyalty_every INTEGER NOT NULL DEFAULT 5;
+  ALTER TABLE branch_settings ADD COLUMN loyalty_reward_text TEXT;
+  ALTER TABLE orders ADD COLUMN device_hash TEXT;
+  ALTER TABLE orders ADD COLUMN stamped INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE orders ADD COLUMN reward_id INTEGER;
+  CREATE TABLE loyalty_devices (
+    token_hash TEXT PRIMARY KEY,
+    stamps INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL
+  );
+  CREATE TABLE loyalty_rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    token_hash TEXT NOT NULL REFERENCES loyalty_devices (token_hash),
+    earned_at INTEGER NOT NULL,
+    attached_order_id TEXT,
+    redeemed_at INTEGER
+  );
+  CREATE INDEX loyalty_rewards_open ON loyalty_rewards (token_hash, redeemed_at);
+  `,
+  // 5: promo space shown while an order is preparing (phase 7). Dates are local YYYY-MM-DD.
+  `
+  ALTER TABLE branch_settings ADD COLUMN promo_text TEXT;
+  ALTER TABLE branch_settings ADD COLUMN promo_image TEXT;
+  ALTER TABLE branch_settings ADD COLUMN promo_starts_at TEXT;
+  ALTER TABLE branch_settings ADD COLUMN promo_ends_at TEXT;
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

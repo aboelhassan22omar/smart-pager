@@ -1,4 +1,5 @@
 import { hashPin, PIN_RE } from './auth.js';
+import { runBackup } from './backup.js';
 import { openStorage } from './bootstrap.js';
 import { loadConfig } from './config.js';
 import { HttpError } from './errors.js';
@@ -22,6 +23,7 @@ const USAGE = `Smart Pager CLI
   node src/cli.js branch resume <branch>
   node src/cli.js owner create <brand> <username> [password] [email]
   node src/cli.js owner reset <username> [password]
+  node src/cli.js backup                                            back up now into $DATA_DIR/backups/<day>
   node src/cli.js hash-password <password>                          value for SUPER_PASSWORD_HASH
 `;
 
@@ -131,6 +133,11 @@ async function main([command, sub, ...rest]) {
     control.resetOwnerPassword(owner.id, await hashPin(password));
     audit('owner.reset', { brandId: owner.brand_id, detail: { username } });
     console.log(`Password reset for "${username}" (other sessions signed out)\n  password: ${password}`);
+  } else if (command === 'backup') {
+    const status = await runBackup({ config, control, tenants });
+    console.log(`Backup ${status.day}: ${status.branches} branches`);
+    for (const e of status.errors) console.error(`  error: ${e}`);
+    if (!status.ok) process.exitCode = 1;
   } else {
     console.log(USAGE);
     process.exitCode = command ? 1 : 0;

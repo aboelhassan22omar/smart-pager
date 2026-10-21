@@ -169,6 +169,41 @@
   color: var(--muted);
 }
 
+.card-queue {
+  margin: 6px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.card-queue strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+/* Owner promo while preparing: below the number, never over it, no links. */
+.card-promo {
+  display: grid;
+  gap: 8px;
+  margin-top: 14px;
+  padding: 10px;
+  border-radius: var(--r-tile);
+  background: var(--bg);
+}
+
+.card-promo img {
+  display: block;
+  width: 100%;
+  max-height: 180px;
+  object-fit: cover;
+  border-radius: var(--r-control);
+}
+
+.card-promo p {
+  margin: 0;
+  font-size: var(--fs-sm);
+  overflow-wrap: anywhere;
+}
+
 .progress {
   position: relative;
   height: 6px;
@@ -253,11 +288,56 @@
   color: var(--accent);
 }
 
-.review-stars .icon {
-  width: 26px;
-  height: 26px;
-  fill: currentColor;
+.review-stars .star {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: transform 120ms var(--ease), color 160ms var(--ease);
+}
+
+.review-stars .star:active {
+  transform: scale(0.9);
+}
+
+.review-stars .star .icon {
+  width: 30px;
+  height: 30px;
   stroke-width: 1.5;
+}
+
+.review-stars .star.is-on {
+  color: var(--accent);
+}
+
+.review-stars .star.is-on .icon {
+  fill: currentColor;
+}
+
+.review-stars .star:disabled {
+  cursor: default;
+}
+
+.review-comment {
+  width: 100%;
+  min-height: 64px;
+  margin-top: 4px;
+  resize: vertical;
+}
+
+.review-thanks {
+  margin: 4px 0 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.review .btn {
+  margin-top: 6px;
 }
 
 .review-title {
@@ -357,4 +437,85 @@
   border: 1px solid rgb(255 255 255 / 0.35);
   border-radius: 999px;
   font-size: var(--fs-sm);
+}
+
+/* ---------- loyalty stamp card ---------- */
+
+.loyalty {
+  display: grid;
+  gap: 10px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  animation: rise 520ms var(--ease) 80ms both;
+}
+
+.loyalty-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.loyalty-title,
+.loyalty-count,
+.loyalty-rule,
+.loyalty-note {
+  margin: 0;
+}
+
+.loyalty-title {
+  font-weight: 600;
+}
+
+.loyalty-count {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.stamps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.stamp {
+  width: 22px;
+  height: 22px;
+  border: 1.5px solid var(--line-strong);
+  border-radius: 50%;
+  transition: background 240ms var(--ease), border-color 240ms var(--ease);
+}
+
+.stamp.is-on {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+
+.loyalty-rule {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.loyalty-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--bg);
+  font-size: var(--fs-sm);
+}
+
+.loyalty-note .icon {
+  flex: none;
+}
+
+.loyalty-note.is-reward {
+  color: var(--accent);
+}
+
+.loyalty-note.is-reward strong {
+  color: var(--text);
 }

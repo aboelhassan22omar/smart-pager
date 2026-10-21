@@ -31,7 +31,7 @@ export function parseGoogleReviewUrl(value) {
   }
   return url.href;
 }
-const MEDIA_FILE_RE = /^logo-\d+\.(png|jpg|webp)$/;
+const MEDIA_FILE_RE = /^(logo|promo)-\d+\.(png|jpg|webp)$/;
 
 export function sniffImage(buf) {
   if (!Buffer.isBuffer(buf) || buf.length < 12) return null;
@@ -160,6 +160,9 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
     });
 
     bar.post('/orders/:id/renotify', async (req) => publicOrder(service.renotify(req.ctx, req.shop, shopOrder(req)), req.shop));
+
+    // Loyalty: staff confirm they gave the customer the reward attached to this order.
+    bar.post('/orders/:id/redeem', async (req) => publicOrder(service.redeem(req.ctx, req.shop, shopOrder(req)), req.shop));
 
     bar.post('/settings', async (req, reply) => {
       const body = req.body ?? {};

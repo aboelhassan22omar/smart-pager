@@ -1,9 +1,57 @@
+import fs from 'node:fs';
+import path from 'node:path';
 import { verifyPin } from '../auth.js';
 import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
 import { HttpError } from '../errors.js';
+import { LOYALTY_EVERY, REWARD_TEXT_MAX } from '../loyalty.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { OWNER_COOKIE, requireJson, requireOwner, setOwnerSession } from '../sessions.js';
+import { FEATURES } from '../plans.js';
+import { parsePlaceId } from '../upgrades.js';
+import { sniffImage } from './bar.js';
 import { cleanBranchName } from './super.js';
+
+const PROMO_TEXT_MAX = 120;
+export const PROMO_IMAGE_MAX_BYTES = 500 * 1024;
+const IMAGE_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+function promoDay(body, key) {
+  const value = typeof body[key] === 'string' ? body[key].trim() : '';
+  if (!value) return null;
+  if (!DAY_RE.test(value) || Number.isNaN(Date.parse(value))) {
+    throw new HttpError(400, 'التاريخ لازم يكون بالشكل 2026-01-31', { field: key });
+  }
+  return value;
+}
+
+// Loyalty rule and promo fields of the owner settings body -> branch_settings columns.
+export function ownerExtraFields(body) {
+  const fields = {};
+  if ('loyaltyEvery' in body) {
+    const every = Number(body.loyaltyEvery);
+    if (!Number.isInteger(every) || every < LOYALTY_EVERY.min || every > LOYALTY_EVERY.max) {
+      throw new HttpError(400, `عدد الطلبات من ${LOYALTY_EVERY.min} لـ ${LOYALTY_EVERY.max}`, { field: 'loyaltyEvery' });
+    }
+    fields.loyalty_every = every;
+  }
+  if ('loyaltyRewardText' in body) {
+    const text = typeof body.loyaltyRewardText === 'string' ? body.loyaltyRewardText.trim() : '';
+    if (text.length > REWARD_TEXT_MAX) throw new HttpError(400, `الهدية لحد ${REWARD_TEXT_MAX} حرف`, { field: 'loyaltyRewardText' });
+    fields.loyalty_reward_text = text || null;
+  }
+  if ('promoText' in body) {
+    const text = typeof body.promoText === 'string' ? body.promoText.trim() : '';
+    if (text.length > PROMO_TEXT_MAX) throw new HttpError(400, `نص العرض لحد ${PROMO_TEXT_MAX} حرف`, { field: 'promoText' });
+    fields.promo_text = text || null;
+  }
+  if ('promoStartsAt' in body) fields.promo_starts_at = promoDay(body, 'promoStartsAt');
+  if ('promoEndsAt' in body) fields.promo_ends_at = promoDay(body, 'promoEndsAt');
+  if (fields.promo_starts_at && fields.promo_ends_at && fields.promo_ends_at < fields.promo_starts_at) {
+    throw new HttpError(400, 'تاريخ النهاية لازم يكون بعد البداية', { field: 'promoEndsAt' });
+  }
+  return fields;
+}
 
 // Brand owner: sees and manages the branches of their own brand only.
 export default async function brandRoutes(app, deps) {
@@ -36,7 +84,7 @@ export default async function brandRoutes(app, deps) {
   await app.register(async (b) => {
     b.addHook('onRequest', async (req) => {
       req.owner = requireOwner(req, deps, req.params.brand);
-      requireJson(req);
+      requireJson(req, req.url.split('?')[0].endsWith('/promo-image') ? IMAGE_TYPES : []);
     });
 
     // A branch of THIS brand, or 404 (never reveals other brands' branches).
@@ -54,7 +102,6 @@ export default async function brandRoutes(app, deps) {
     // ?from=YYYY-MM-DD&to=YYYY-MM-DD[&branch=<id>]  (at most 366 days)
     function analyticsQuery(req) {
       const { from, to, branch } = req.query;
-      const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
       if (!DAY_RE.test(from ?? '') || !DAY_RE.test(to ?? '') || Number.isNaN(Date.parse(from)) || Number.isNaN(Date.parse(to))) {
         throw new HttpError(400, 'التاريخ لازم يكون بالشكل 2026-01-31', { field: 'from' });
       }
@@ -77,15 +124,64 @@ export default async function brandRoutes(app, deps) {
       return analyticsCsv(report);
     });
 
+    // Owner settings of one branch: name, feature toggles, Google place id (+ loyalty/promo).
     b.post('/branches/:branch/settings', async (req) => {
       const ctx = ownBranch(req);
-      const name = cleanBranchName(req.body?.name);
-      ctx.store.updateShop({ name });
-      control.audit({
-        actor: `owner:${req.owner.id}`, action: 'branch.rename', brandId: req.params.brand, branchId: ctx.branch.id,
-        detail: { name }, ip: req.ip,
+      const body = req.body ?? {};
+      const audit = (action, detail) => control.audit({
+        actor: `owner:${req.owner.id}`, action, brandId: req.params.brand, branchId: ctx.branch.id, detail, ip: req.ip,
       });
+      const fields = {};
+      if ('name' in body) fields.name = cleanBranchName(body.name);
+      if ('googlePlaceId' in body) {
+        const id = parsePlaceId(body.googlePlaceId);
+        if (id === undefined) throw new HttpError(400, 'الـ Place ID مش مظبوط (أو الصق رابط فيه placeid=)', { field: 'googlePlaceId' });
+        fields.google_place_id = id;
+      }
+      Object.assign(fields, ownerExtraFields(body));
+      const features = body.features && typeof body.features === 'object' ? body.features : {};
+      const toggles = Object.entries(features).filter(([f]) => FEATURES.includes(f));
+      if (!Object.keys(fields).length && !toggles.length) throw new HttpError(400, 'مفيش تغييرات تتحفظ');
+      // A stamp card needs a reward to promise.
+      const rewardText = 'loyalty_reward_text' in fields ? fields.loyalty_reward_text : ctx.store.getShop().loyalty_reward_text;
+      if (features.loyalty === true && !rewardText) {
+        throw new HttpError(400, 'اكتب الهدية الأول (مثلًا: مشروب ببلاش)', { field: 'loyaltyRewardText' });
+      }
+
+      if (Object.keys(fields).length) {
+        ctx.store.updateShop(fields);
+        audit(fields.name ? 'branch.rename' : 'branch.owner_settings', { fields: Object.keys(fields), name: fields.name });
+      }
+      for (const [feature, on] of toggles) {
+        control.setFeature(ctx.branch.id, feature, Boolean(on));
+        audit(on ? 'feature.enable' : 'feature.disable', { feature });
+      }
       return { ok: true };
+    });
+
+    // Promo image: PNG/JPG/WEBP (checked by magic bytes), up to 500 KB, in the branch's media.
+    b.post('/branches/:branch/promo-image', async (req) => {
+      const ctx = ownBranch(req);
+      if (Buffer.isBuffer(req.body) && req.body.length > PROMO_IMAGE_MAX_BYTES) {
+        throw new HttpError(413, 'الصورة لازم تكون أقل من 500 كيلوبايت', { field: 'promoImage' });
+      }
+      const ext = sniffImage(req.body);
+      if (!ext) throw new HttpError(400, 'الصورة لازم تكون PNG أو JPG أو WEBP', { field: 'promoImage' });
+      const old = ctx.store.getShop().promo_image;
+      const file = `promo-${Date.now()}.${ext}`;
+      await fs.promises.writeFile(path.join(ctx.mediaDir, file), req.body);
+      if (old) await fs.promises.rm(path.join(ctx.mediaDir, old), { force: true });
+      ctx.store.updateShop({ promo_image: file });
+      control.audit({ actor: `owner:${req.owner.id}`, action: 'promo.image', brandId: req.params.brand, branchId: ctx.branch.id, ip: req.ip });
+      return { imageUrl: `/media/b/${ctx.branch.id}/${file}` };
+    });
+
+    b.delete('/branches/:branch/promo-image', async (req) => {
+      const ctx = ownBranch(req);
+      const old = ctx.store.getShop().promo_image;
+      if (old) await fs.promises.rm(path.join(ctx.mediaDir, old), { force: true });
+      ctx.store.updateShop({ promo_image: null });
+      return { imageUrl: null };
     });
   }, { prefix: '/api/brand/:brand' });
 }

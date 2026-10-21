@@ -195,10 +195,6 @@ function renderShop() {
   numbers.expireHours.value = shop.expireHours;
   numbers.lateAfterMinutes.value = shop.lateAfterMinutes;
   for (const radio of document.querySelectorAll('input[name="qrMode"]')) radio.checked = radio.value === shop.qrMode;
-  const review = $('form-review').elements;
-  review.googleReviewUrl.value = shop.googleReviewUrl ?? '';
-  $('review-stats').hidden = !shop.googleReviewUrl;
-  $('review-stats').textContent = `${shop.reviewClicks} عميل فتح صفحة التقييم لحد دلوقتي`;
   const printable = shop.qrMode !== 'dynamic';
   $('static-actions').hidden = !printable;
   $('rotate-help').hidden = !printable;
@@ -215,13 +211,6 @@ function bindForms() {
       readyMessage: f.readyMessage.value,
     }, e.target);
     if (ok) toast('الرسايل اتحفظت');
-  });
-
-  $('form-review').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const value = e.target.elements.googleReviewUrl.value;
-    const ok = await save({ googleReviewUrl: value }, e.target);
-    if (ok) toast(value.trim() ? 'رابط التقييم اتحفظ' : 'زرار التقييم اتشال');
   });
 
   $('form-numbers').addEventListener('submit', async (e) => {
