@@ -227,13 +227,18 @@ jobs:
     name: CI - iOS build
     needs: ios-changes
     if: needs.ios-changes.outputs.ios == 'true'
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 45
     defaults:
       run:
         working-directory: ios
     steps:
       - uses: actions/checkout@v7
+      - name: Xcode 26+ (App Store requires the iOS 26 SDK since 2026-04-28)
+        run: |
+          xcodebuild -version
+          major=$(xcodebuild -version | awk 'NR==1 {split($2, v, "."); print v[1]}')
+          [ "$major" -ge 26 ] || { echo "::error::Xcode $major is too old; App Store uploads need Xcode 26+"; exit 1; }
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
