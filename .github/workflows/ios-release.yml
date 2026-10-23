@@ -38,12 +38,15 @@ jobs:
           for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID; do
             [ -n "${!name}" ] || { echo "::error::secret $name is not set"; exit 1; }
           done
-      - name: Xcode 27.1+ (iOS 27.1 SDK = optimized for iPhone Duo)
+      # App Store needs Xcode 26+; Xcode 27.1+ (iOS 27.1 SDK) also makes the app fill iPhone Duo.
+      - name: Select newest Xcode
         run: |
-          latest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          latest=$(find /Applications -maxdepth 1 -name 'Xcode_*.app' | sort -V | tail -1)
           sudo xcode-select -s "$latest"
           xcodebuild -version
-          xcodebuild -version | awk 'NR==1 {split($2, v, "."); exit !(v[1] > 27 || (v[1] == 27 && v[2] >= 1))}'             || { echo "::error::$latest is older than Xcode 27.1 (needed for iPhone Duo)"; exit 1; }
+          version=$(xcodebuild -version | awk 'NR==1 {print $2}')
+          echo "$version" | awk '{split($1, v, "."); exit !(v[1] >= 26)}'             || { echo "::error::Xcode $version is older than 26; App Store Connect rejects it"; exit 1; }
+          echo "$version" | awk '{split($1, v, "."); exit !(v[1] > 27 || (v[1] == 27 && v[2] >= 1))}'             || echo "::warning::Xcode $version on this runner: builds run, but iPhone Duo optimization needs Xcode 27.1+"
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
