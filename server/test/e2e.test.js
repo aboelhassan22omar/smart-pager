@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
 import { ADMIN_TOKEN, client, earlyRejectPost, PNG_1X1, setFeatureFlag, sse, startServer } from './helpers.js';
+import { appleAppSiteAssociation } from '../src/views.js';
 
 let server;
 let api;
@@ -468,6 +469,15 @@ describe('misc', () => {
     assert.match(page.headers.get('content-security-policy'), /default-src 'self'/);
   });
 
+  test('privacy page is served and /support points at its contact section', async () => {
+    const page = await api.get('/privacy');
+    assert.equal(page.status, 200);
+    assert.ok(page.data.includes('hello@aurexis.cc'));
+    const support = await fetch(`${server.url}/support`, { redirect: 'manual' });
+    assert.equal(support.status, 302);
+    assert.equal(support.headers.get('location'), '/privacy#contact');
+  });
+
   test('VAPID key is generated and persisted', async () => {
     const res = await api.get('/api/vapid-key');
     assert.match(res.data.key, /^[A-Za-z0-9_-]{80,}$/);
@@ -519,6 +529,13 @@ describe('Apple env + timer rotation', () => {
     assert.deepEqual(aasa.data.applinks.details[0].appIDs, ['TEAM123456.cc.aurexis.pager']);
     const page = await c.get('/s/any-shop');
     assert.match(page.data, /<meta name="apple-itunes-app" content="app-id=1234567890, app-clip-bundle-id=cc.aurexis.pager.Clip, app-clip-display=card">/);
+  });
+
+  test('AASA also lists the previous team after an app transfer', () => {
+    const config = { apple: { teamId: 'NEWTEAM123', previousTeamId: 'OLDTEAM456', appBundleId: 'a.b', clipBundleId: 'a.b.Clip' } };
+    const aasa = appleAppSiteAssociation(config);
+    assert.deepEqual(aasa.applinks.details[0].appIDs, ['NEWTEAM123.a.b', 'OLDTEAM456.a.b']);
+    assert.deepEqual(aasa.appclips.apps, ['NEWTEAM123.a.b.Clip', 'OLDTEAM456.a.b.Clip']);
   });
 
   test('nonce rotates on a timer and the bar is told', async () => {

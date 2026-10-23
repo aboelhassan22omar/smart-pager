@@ -29,6 +29,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cc.aurexis.pager
         PRODUCT_NAME: SmartPager
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Generated/App-Info.plist
       properties:
@@ -41,9 +42,13 @@ targets:
         UIUserInterfaceStyle: Dark
         NSSupportsLiveActivities: true
         PagerBaseURL: "https://${PAGER_DOMAIN}"
+        # HTTPS only (exempt): skips the export-compliance question on every upload.
+        ITSAppUsesNonExemptEncryption: false
     entitlements:
       path: Generated/SmartPager.entitlements
       properties:
+        # Push Notifications capability: ActivityKit only hands out Live Activity push tokens with it.
+        aps-environment: development
         com.apple.developer.associated-domains:
           - "applinks:${PAGER_DOMAIN}"
           - "appclips:${PAGER_DOMAIN}"
@@ -61,6 +66,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: cc.aurexis.pager.Clip
         PRODUCT_NAME: SmartPagerClip
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: Generated/Clip-Info.plist
       properties:
@@ -73,6 +79,8 @@ targets:
         UIUserInterfaceStyle: Dark
         NSSupportsLiveActivities: true
         PagerBaseURL: "https://${PAGER_DOMAIN}"
+        # HTTPS only (exempt): skips the export-compliance question on every upload.
+        ITSAppUsesNonExemptEncryption: false
         NSAppClip:
           NSAppClipRequestEphemeralUserNotification: true
           NSAppClipRequestLocationConfirmation: false
@@ -80,6 +88,7 @@ targets:
       path: Generated/SmartPagerClip.entitlements
       properties:
         com.apple.developer.on-demand-install-capable: true
+        aps-environment: development
         com.apple.developer.parent-application-identifiers:
           - "$(AppIdentifierPrefix)cc.aurexis.pager"
         com.apple.developer.associated-domains:

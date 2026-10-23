@@ -13,7 +13,7 @@ const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
 const PAGES = [
   'public/s.html', 'public/bar.html', 'public/qr.html', 'public/settings.html', 'public/index.html',
-  'public/super.html', 'public/brand.html',
+  'public/super.html', 'public/brand.html', 'public/privacy.html',
 ];
 
 // Tiny DOM stand-in, enough for powered.js.
