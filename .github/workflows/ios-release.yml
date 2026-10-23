@@ -50,6 +50,8 @@ jobs:
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project
+        env:
+          ALLOW_XCODE_26: "1"
         run: bash generate.sh
       - name: API key
         env:
