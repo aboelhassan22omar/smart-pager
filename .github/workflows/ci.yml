@@ -234,11 +234,12 @@ jobs:
         working-directory: ios
     steps:
       - uses: actions/checkout@v7
-      - name: Xcode 26+ (App Store requires the iOS 26 SDK since 2026-04-28)
+      - name: Xcode 27.1+ (iOS 27.1 SDK = optimized for iPhone Duo)
         run: |
+          latest=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          sudo xcode-select -s "$latest"
           xcodebuild -version
-          major=$(xcodebuild -version | awk 'NR==1 {split($2, v, "."); print v[1]}')
-          [ "$major" -ge 26 ] || { echo "::error::Xcode $major is too old; App Store uploads need Xcode 26+"; exit 1; }
+          xcodebuild -version | awk 'NR==1 {split($2, v, "."); exit !(v[1] > 27 || (v[1] == 27 && v[2] >= 1))}'             || { echo "::error::$latest is older than Xcode 27.1 (needed for iPhone Duo)"; exit 1; }
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project

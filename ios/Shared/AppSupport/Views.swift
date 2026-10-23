@@ -2,10 +2,19 @@ import AudioToolbox
 import SwiftUI
 import UIKit
 
+/// Card width follows the available space (size class), never the device: on iPhone Duo's
+/// inner display an iPhone app gets a regular width, so the card grows instead of floating small.
+enum Layout {
+    static func cardWidth(_ sizeClass: UserInterfaceSizeClass?) -> CGFloat {
+        sizeClass == .regular ? 560 : 420
+    }
+}
+
 /// Root of both the full app and the App Clip.
 struct RootView: View {
     @ObservedObject var model: OrderModel
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         ZStack(alignment: .bottom) {
@@ -57,7 +66,7 @@ struct RootView: View {
                         }
                     }
                     .padding(.horizontal, 16)
-                    .frame(maxWidth: 420)
+                    .frame(maxWidth: Layout.cardWidth(sizeClass))
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
             }
@@ -209,6 +218,7 @@ struct ReviewPrompt: View {
 struct MessageView: View {
     let symbol: String
     let text: String
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
     var body: some View {
         VStack(spacing: 14) {
@@ -221,7 +231,7 @@ struct MessageView: View {
                 .multilineTextAlignment(.center)
         }
         .padding(28)
-        .frame(maxWidth: 420)
+        .frame(maxWidth: Layout.cardWidth(sizeClass))
         .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(Theme.surface))
         .padding(.horizontal, 16)
     }
