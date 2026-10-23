@@ -76,6 +76,8 @@ export function loadConfig(env = process.env) {
     },
     apple: {
       teamId: str(env.APPLE_TEAM_ID, ''),
+      // Old team after an App Store transfer: builds already installed still carry its prefix.
+      previousTeamId: str(env.APPLE_PREVIOUS_TEAM_ID, ''),
       appId: str(env.APPLE_APP_ID, ''),
       appBundleId: str(env.APPLE_APP_BUNDLE_ID, 'cc.aurexis.pager'),
       clipBundleId: str(env.APPLE_CLIP_BUNDLE_ID, 'cc.aurexis.pager.Clip'),

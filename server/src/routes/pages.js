@@ -23,6 +23,11 @@ export default async function pageRoutes(app, { config }) {
   const index = read('index.html');
   app.get('/', (_req, reply) => sendHtml(reply, index));
 
+  // App Store privacy policy + support URL (one page, #contact anchors support).
+  const privacy = read('privacy.html');
+  app.get('/privacy', (_req, reply) => sendHtml(reply, privacy));
+  app.get('/support', (_req, reply) => reply.redirect('/privacy#contact'));
+
   app.get('/.well-known/apple-app-site-association', (_req, reply) => {
     const aasa = appleAppSiteAssociation(config);
     if (!aasa) return reply.code(404).send({ error: 'مش موجود' });

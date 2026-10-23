@@ -396,11 +396,13 @@ curl -X POST https://pager.example.com/api/admin/branches -H "x-admin-token: $AD
 5. **توليد المشروع** (على Mac عليه Xcode 16 و `brew install xcodegen`):
    ```bash
    cd ios
-   PAGER_DOMAIN=pager.example.com APPLE_TEAM_ID=ABCDE12345 ./generate.sh
+   PAGER_DOMAIN=pager.example.com APPLE_TEAM_ID=ABCDE12345 ./generate.sh   # الدومين الافتراضي pager.aurexis.cc
    open SmartPager.xcodeproj
    ```
-6. **App Store Connect:** ارفع التطبيق ومعاه الـ App Clip، واعمل **App Clip Experience** بالرابط `https://pager.example.com/s/`. لما الـ App Clip يتنشر، Safari هيعرض بانر التشغيل تلقائي، لأن السيرفر بيحط `apple-itunes-app` في صفحة العميل.
+6. **App Store Connect:** ارفع التطبيق ومعاه الـ App Clip، واعمل **App Clip Experience** بالرابط `https://pager.example.com/s/`. رابط سياسة الخصوصية `https://DOMAIN/privacy`، ورابط الدعم `https://DOMAIN/support`. لما الـ App Clip يتنشر، Safari هيعرض بانر التشغيل تلقائي، لأن السيرفر بيحط `apple-itunes-app` في صفحة العميل.
 7. **التجربة:** في Xcode اختار scheme اسمه `SmartPagerClip`، وفي *Edit Scheme ← Run ← Environment* حط `_XCAppClipURL=https://pager.example.com/s/demo-cafe?k=...`.
+
+8. **بعد نقل التطبيق لحساب تاني (App Transfer):** الـ Team ID بيتغير. حط الجديد في `APPLE_TEAM_ID` والقديم في `APPLE_PREVIOUS_TEAM_ID` عشان النسخ اللي على موبايلات الناس تفضل تفتح الروابط، واعمل مفتاح APNs جديد من الحساب الجديد (`APNS_KEY_ID` و `AuthKey.p8`). لما الناس تحدّث، امسح `APPLE_PREVIOUS_TEAM_ID`.
 
 > الـ App Clip بيطلب `Activity.request(pushType: .token)` وبيبعت التوكن لـ `/api/subscribe`. بعدها السيرفر بيحدّث الـ Live Activity مع كل تغيير في الحالة، وبيرن على شاشة القفل لما الطلب يجهز.
 

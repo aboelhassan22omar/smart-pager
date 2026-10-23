@@ -116,12 +116,13 @@ export function appleMeta(config) {
 }
 
 export function appleAppSiteAssociation(config) {
-  const { teamId, appBundleId, clipBundleId } = config.apple;
+  const { teamId, previousTeamId, appBundleId, clipBundleId } = config.apple;
   if (!teamId) return null;
+  const teams = previousTeamId ? [teamId, previousTeamId] : [teamId];
   return {
     applinks: {
-      details: [{ appIDs: [`${teamId}.${appBundleId}`], components: [{ '/': '/s/*' }] }],
+      details: [{ appIDs: teams.map((t) => `${t}.${appBundleId}`), components: [{ '/': '/s/*' }] }],
     },
-    appclips: { apps: [`${teamId}.${clipBundleId}`] },
+    appclips: { apps: teams.map((t) => `${t}.${clipBundleId}`) },
   };
 }

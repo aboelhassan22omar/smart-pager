@@ -1,0 +1,38 @@
+/* Privacy & support page: one readable column on the graphite base. */
+
+.legal {
+  width: min(100% - 2 * var(--gutter), 640px);
+  margin-inline: auto;
+  padding-block: calc(32px + env(safe-area-inset-top)) calc(var(--footer-h) + 32px);
+  line-height: 1.7;
+}
+
+.legal h1 {
+  margin: 0 0 4px;
+  font-size: var(--fs-2xl);
+}
+
+.legal h2 {
+  margin: 28px 0 8px;
+  font-size: var(--fs-lg);
+}
+
+.legal .lead {
+  margin: 0;
+  color: var(--muted);
+}
+
+.legal p,
+.legal ul {
+  margin: 0 0 8px;
+}
+
+.legal a {
+  color: var(--accent);
+}
+
+.legal hr {
+  margin: 32px 0 0;
+  border: 0;
+  border-top: 1px solid var(--line);
+}

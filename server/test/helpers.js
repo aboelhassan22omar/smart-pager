@@ -40,6 +40,7 @@ export async function startServer(env = {}, { dataDir: seeded, expectExit = fals
       ADMIN_TOKEN,
       PUSH_ENDPOINT_HOSTS: 'push.test.invalid',
       APPLE_TEAM_ID: '',
+      APPLE_PREVIOUS_TEAM_ID: '',
       APPLE_APP_ID: '',
       APNS_KEY_ID: '',
       APNS_KEY_PATH: '',

@@ -1,0 +1,86 @@
+name: iOS release
+
+# Manual: builds the app (+ App Clip + Live Activity extensions), signs it in the cloud with an
+# App Store Connect API key and uploads it to App Store Connect / TestFlight. No Mac needed.
+# Secrets (the team that owns the app; swap them after an App Store transfer):
+#   APPLE_TEAM_ID   Team ID (developer.apple.com > Membership details)
+#   ASC_KEY_ID      App Store Connect API key ID (Admin role: cloud signing needs it)
+#   ASC_ISSUER_ID   Issuer ID shown above the keys list
+#   ASC_KEY_P8      contents of AuthKey_<ID>.p8
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-release
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: iOS - Archive and upload
+    runs-on: macos-15
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ios
+    env:
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      # Every upload needs a higher build number; the run number only ever grows.
+      BUILD_NUMBER: ${{ github.run_number }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check secrets
+        run: |
+          for name in APPLE_TEAM_ID ASC_KEY_ID ASC_ISSUER_ID; do
+            [ -n "${!name}" ] || { echo "::error::secret $name is not set"; exit 1; }
+          done
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        run: bash generate.sh
+      - name: API key
+        env:
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          [ -n "$ASC_KEY_P8" ] || { echo "::error::secret ASC_KEY_P8 is not set"; exit 1; }
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/AuthKey.p8"
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+      - name: Archive
+        run: |
+          set -o pipefail
+          xcodebuild -project SmartPager.xcodeproj -scheme SmartPager -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/SmartPager.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" archive -quiet
+      - name: Upload to App Store Connect
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/SmartPager.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$RUNNER_TEMP/AuthKey.p8" \
+            -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID"
+          echo "### Uploaded build $BUILD_NUMBER" >> "$GITHUB_STEP_SUMMARY"
+          echo "It shows up in App Store Connect > TestFlight after Apple finishes processing (5-30 min)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove API key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
