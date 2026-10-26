@@ -108,6 +108,11 @@ export const BRANCH_MIGRATIONS = [
   ALTER TABLE branch_settings ADD COLUMN promo_starts_at TEXT;
   ALTER TABLE branch_settings ADD COLUMN promo_ends_at TEXT;
   `,
+  // 6: the PIN sealed with the vault key (vault.js), so the super can read it back.
+  //    NULL for PINs set before this; they show as unknown until the next change.
+  `
+  ALTER TABLE branch_settings ADD COLUMN pin_sealed TEXT;
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

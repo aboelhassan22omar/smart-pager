@@ -1,7 +1,12 @@
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
 import { hashPin } from '../src/auth.js';
+import { openControl } from '../src/control.js';
 import { DAY_MS, effectivePlan, featureFlags, planView } from '../src/plans.js';
+import { seal, unseal } from '../src/vault.js';
 import { ADMIN_TOKEN, client, startServer } from './helpers.js';
 
 const SUPER_PASSWORD = 'super-secret-pass';
@@ -44,9 +49,46 @@ describe('plan state machine', () => {
     assert.equal(planView({ paid_until: at(-1) }, now).daysLeft, 2, 'past_due counts down to suspension');
   });
 
+  test('a trashed branch is suspended whatever it paid', () => {
+    assert.deepEqual(effectivePlan({ deleted_at: now, paid_until: at(30) }, now), { status: 'suspended', reason: 'deleted', until: null });
+  });
+
   test('super can force a feature off over the owner toggle', () => {
     assert.deepEqual(featureFlags({ ff_review: 1, ff_loyalty: 1, ff_promo: 0, forced_off: '["loyalty"]' }),
       { review: true, loyalty: false, promo: false });
+  });
+});
+
+describe('vault and automatic trash', () => {
+  test('sealed values open with the same secret only', () => {
+    const sealed = seal('secret-a', '4821');
+    assert.notEqual(sealed, seal('secret-a', '4821'), 'random IV');
+    assert.equal(unseal('secret-a', sealed), '4821');
+    assert.equal(unseal('secret-b', sealed), null);
+    assert.equal(unseal('secret-a', `${sealed.slice(0, -2)}xx`), null, 'tampered');
+    assert.equal(unseal('secret-a', null), null);
+  });
+
+  test('a trial that ended unpaid moves to the trash; paid and live trials stay', () => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-control-'));
+    const control = openControl(path.join(dir, 'control.db'));
+    try {
+      control.createBrand({ id: 'tb', name: 'TB' });
+      control.createBranch({ id: 'tb-over', brandId: 'tb', name: 'over', trialEndsAt: Date.now() - 1000 });
+      control.createBranch({ id: 'tb-live', brandId: 'tb', name: 'live', trialEndsAt: Date.now() + DAY_MS });
+      control.createBranch({ id: 'tb-paid', brandId: 'tb', name: 'paid', trialEndsAt: Date.now() - 1000 });
+      control.recordPayment('tb-paid', { amountEgp: 1, periodStart: Date.now(), periodEnd: Date.now() + DAY_MS, actor: 'test' });
+
+      assert.deepEqual(control.refreshPlanStatuses(), ['tb-over']);
+      assert.equal(control.getBranch('tb-over').deleted_reason, 'trial_ended');
+      assert.equal(control.getBranch('tb-live').deleted_at, null);
+      assert.equal(control.getBranch('tb-paid').deleted_at, null);
+      assert.deepEqual(control.refreshPlanStatuses(), [], 'only once');
+      assert.equal(control.auditLog(5).filter((e) => e.action === 'branch.trash' && e.actor === 'system').length, 1);
+    } finally {
+      control.close();
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
   });
 });
 
@@ -236,6 +278,79 @@ describe('roles and plans', () => {
     assert.equal(imp.actor, 'super');
     assert.equal(imp.branch_id, 'brandx-a');
     assert.ok(entries.some((e) => e.action === 'branch.rename' && e.actor.startsWith('owner:')), 'owner actions too');
+  });
+
+  test('super reads the current staff PIN, also after the staff change it themselves', async () => {
+    const pinOf = async (id) => (await su.get('/api/super/overview')).data.brands.flatMap((b) => b.branches).find((b) => b.id === id).pin;
+    assert.equal(await pinOf('brandx-a'), '9876');
+    assert.equal(await pinOf('brandy-b'), '1234');
+    const staff = client(server.url);
+    await staff.post('/api/bar/login', { shopId: 'brandy-b', pin: '1234' });
+    assert.equal((await staff.post('/api/bar/brandy-b/settings', { currentPin: '1234', newPin: '24680' })).status, 200);
+    assert.equal(await pinOf('brandy-b'), '24680');
+    // Owners never get PINs; nothing sealed ends up in API shapes.
+    const mine = (await owners.x.get('/api/brand/brandx/overview')).data;
+    assert.ok(mine.branches.every((b) => !('pin' in b)));
+    const raw = JSON.stringify((await su.get('/api/super/overview')).data);
+    assert.ok(!/pin_hash|pin_sealed|password_sealed|scrypt\$/.test(raw));
+  });
+
+  test('super sees the owner login and edits username and password in place', async () => {
+    const brandOf = async () => (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'brandx');
+    let owner = (await brandOf()).owners[0];
+    assert.equal(owner.password, 'brand-new-pass');
+    assert.equal((await su.get('/api/super/overview')).data.publicUrl, server.url);
+
+    // Username only: the owner stays signed in.
+    assert.equal((await superPost(`/brands/brandx/owners/${owner.id}`, { username: 'owner.x2' })).status, 200);
+    assert.equal((await owners.x.get('/api/brand/brandx/overview')).status, 200);
+    assert.equal((await superPost(`/brands/brandx/owners/${owner.id}`, { username: 'owner.y' })).status, 409);
+    assert.equal((await superPost(`/brands/brandy/owners/${owner.id}`, { username: 'zzz' })).status, 404, 'owner of another brand');
+    assert.equal((await superPost(`/brands/brandx/owners/${owner.id}`, { password: 'short' })).data.field, 'password');
+
+    // New password: old session out, new one works and shows up for the super.
+    assert.equal((await superPost(`/brands/brandx/owners/${owner.id}`, { password: 'third-pass-123' })).status, 200);
+    assert.equal((await owners.x.get('/api/brand/brandx/overview')).status, 401);
+    assert.equal((await owners.x.post('/api/brand/login', { username: 'owner.x2', password: 'third-pass-123' })).status, 200);
+    owner = (await brandOf()).owners[0];
+    assert.deepEqual([owner.username, owner.password], ['owner.x2', 'third-pass-123']);
+  });
+
+  test('trash: a branch leaves the dashboards and stops claims until restored', async () => {
+    await superPost('/brands/brandx/branches', { id: 'brandx-t', name: 'X Trash', pin: '1111' });
+    const staff = client(server.url);
+    await staff.post('/api/bar/login', { shopId: 'brandx-t', pin: '1111' });
+    const claim = async () => anon.post('/api/b/brandx-t/claim', { n: nonceOf((await staff.get('/api/bar/brandx-t/state')).data) });
+
+    assert.equal((await superPost('/branches/brandx-t/trash')).status, 200);
+    const card = (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'brandx').branches.find((b) => b.id === 'brandx-t');
+    assert.equal(card.deletedReason, 'manual');
+    assert.ok(card.deletedAt);
+    assert.equal(card.plan.reason, 'deleted');
+    assert.ok(!(await owners.x.get('/api/brand/brandx/overview')).data.branches.some((b) => b.id === 'brandx-t'));
+    assert.equal((await owners.x.post('/api/brand/brandx/branches/brandx-t/settings', { name: 'n' })).status, 404);
+    assert.equal((await claim()).status, 402);
+
+    assert.equal((await superPost('/branches/brandx-t/restore')).data.plan.status, 'trial');
+    assert.equal((await claim()).status, 200);
+    assert.ok((await owners.x.get('/api/brand/brandx/overview')).data.branches.some((b) => b.id === 'brandx-t'));
+  });
+
+  test('trash: a brand takes its branches and its owner login with it', async () => {
+    assert.equal((await superPost('/brands/brandx/trash')).status, 200);
+    const brand = (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'brandx');
+    assert.ok(brand.deletedAt);
+    assert.ok(brand.branches.every((b) => b.deletedReason === 'brand'));
+    assert.equal((await owners.x.get('/api/brand/brandx/overview')).status, 401);
+    const login = await client(server.url).post('/api/brand/login', { username: 'owner.x2', password: 'third-pass-123' });
+    assert.equal(login.status, 403);
+    assert.equal((await superPost('/branches/brandx-a/restore')).status, 409, 'restore the brand first');
+
+    assert.equal((await superPost('/brands/brandx/restore')).status, 200);
+    const back = (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'brandx');
+    assert.equal(back.deletedAt, null);
+    assert.ok(back.branches.every((b) => !b.deletedAt));
+    assert.equal((await owners.x.post('/api/brand/login', { username: 'owner.x2', password: 'third-pass-123' })).status, 200);
   });
 
   test('admin API calls are audited as admin-token', async () => {

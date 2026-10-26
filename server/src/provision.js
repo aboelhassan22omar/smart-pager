@@ -1,4 +1,4 @@
-import { hashPin, PIN_RE } from './auth.js';
+import { pinFields, PIN_RE } from './auth.js';
 import { HttpError } from './errors.js';
 import { DAY_MS } from './plans.js';
 import { QR_MODES, SHOP_ID_RE } from './store.js';
@@ -42,11 +42,11 @@ export async function provisionBranch({ control, tenants, config }, { brandId, i
   if (!QR_MODES.includes(qrMode)) throw bad('qrMode', 'نوع الكود ده مش معروف');
   if (control.getBranch(id)) throw new HttpError(409, 'فيه فرع بنفس المعرّف ده', { field: 'id' });
 
-  const pinHash = await hashPin(pin);
+  const pinCols = await pinFields(config.cookieSecret, pin);
   // New branches start on a trial (TRIAL_DAYS, default 3).
-  const trialEndsAt = Date.now() + (config?.trialDays ?? 3) * DAY_MS;
+  const trialEndsAt = Date.now() + (config.trialDays ?? 3) * DAY_MS;
   control.createBranch({ id, brandId, name: branchName, area: cleanArea, trialEndsAt });
-  return tenants.get(id).store.initSettings({ pinHash, qrMode });
+  return tenants.get(id).store.initSettings({ pinHash: pinCols.pin_hash, pinSealed: pinCols.pin_sealed, qrMode });
 }
 
 export function branchUrls(config, id) {

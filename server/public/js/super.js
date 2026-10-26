@@ -17,6 +17,11 @@ const post = (path, body = {}) => api(`/api/super${path}`, { method: 'POST', bod
 const today = () => new Date().toISOString().slice(0, 10);
 const plusDays = (d) => new Date(Date.now() + d * 86400000).toISOString().slice(0, 10);
 const allBranches = () => overview.brands.flatMap((b) => b.branches);
+// The main view shows live brands and branches only; trashed ones live behind the trash icon.
+const liveBrands = () => overview.brands.filter((b) => !b.deletedAt);
+const liveBranches = (brand) => brand.branches.filter((b) => !b.deletedAt);
+const trashedBranches = () => liveBrands().flatMap((brand) => brand.branches.filter((b) => b.deletedAt));
+const TRASH_REASON = { manual: 'إنت مسحته', trial_ended: 'التجربة خلصت من غير دفع', brand: 'مع البراند' };
 const findBranch = (id) => allBranches().find((b) => b.id === id);
 const findBrand = (id) => overview.brands.find((b) => b.id === id);
 
@@ -55,14 +60,14 @@ function showLogin() {
 
 function attentionItems() {
   const items = [];
-  for (const brand of overview.brands) {
+  for (const brand of liveBrands()) {
     if (!brand.owners.length) {
       items.push({ text: `${brand.name}: مفيش حساب لصاحب البراند`, act: 'owner', id: brand.id, label: 'اعمل حساب' });
     }
     if (!brand.branches.length) {
       items.push({ text: `${brand.name}: البراند لسه ملوش فروع`, act: 'branch', id: brand.id, label: 'ضيف فرع' });
     }
-    for (const b of brand.branches) {
+    for (const b of liveBranches(brand)) {
       const { status, daysLeft, reason } = b.plan;
       if (status === 'suspended') {
         const why = reason === 'manual' ? 'إنت موقّفه' : reason === 'trial_ended' ? 'التجربة خلصت' : 'الدفع اتأخر';
@@ -80,6 +85,14 @@ function attentionItems() {
         items.push({ text: `${b.name}: ${low.length === 1 ? 'تقييم واطي' : `${low.length} تقييمات واطية`} الأسبوع ده${quote ? ` («${quote.slice(0, 60)}»)` : ''}` });
       }
     }
+  }
+  // Trials that ended unpaid go to the trash by themselves; say so for a day.
+  const autoTrashed = trashedBranches().filter((b) => b.deletedReason === 'trial_ended' && Date.now() - b.deletedAt < 86400000);
+  if (autoTrashed.length) {
+    items.push({
+      text: `${autoTrashed.map((b) => b.name).join('، ')}: التجربة خلصت من غير دفع، فاتنقل لسلة المهملات`,
+      act: 'trash', id: '', label: 'افتح السلة',
+    });
   }
   // Backups: nightly at 03:30; a failure or a gap of more than a day and a half needs a look.
   const backup = overview.backup;
@@ -118,36 +131,149 @@ function renderAttention() {
 
 // ---------- brands ----------
 
+const copyBtn = (value) => `<button class="link-btn" data-copy="${esc(value)}" type="button">انسخ</button>`;
+
+/** Owner login: link, username and password, always on screen, with an edit button. */
+function ownerCredsHtml(brand) {
+  const owner = brand.owners[0];
+  if (!owner) {
+    return `
+      <div class="creds">
+        <p class="muted">مفيش حساب لصاحب البراند لسه.</p>
+        <button class="btn btn-sm" data-act="owner" data-id="${esc(brand.id)}" type="button">اعمل حساب</button>
+      </div>`;
+  }
+  const url = `${overview.publicUrl}/brand/${brand.id}`;
+  const password = owner.password
+    ? `<span>${esc(owner.password)}</span>${copyBtn(owner.password)}`
+    : '<span class="muted" dir="rtl">مش معروفة (اتعملت قبل ما نحفظها). دوس تعديل وغيّرها مرة</span>';
+  return `
+    <div class="creds">
+      <dl class="creds-list">
+        <div><dt>رابط الدخول</dt><dd dir="ltr"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ''))}</a>${copyBtn(url)}</dd></div>
+        <div><dt>اسم المستخدم</dt><dd dir="ltr"><span>${esc(owner.username)}</span>${copyBtn(owner.username)}</dd></div>
+        <div><dt>كلمة السر</dt><dd dir="ltr">${password}</dd></div>
+      </dl>
+      <button class="btn btn-sm" data-act="owner" data-id="${esc(brand.id)}" type="button">تعديل</button>
+    </div>`;
+}
+
+function pinLineHtml(b) {
+  const pin = b.pin
+    ? `<strong class="num" dir="ltr">${esc(b.pin)}</strong>${copyBtn(b.pin)}`
+    : '<span class="muted">مش معروف (اتعمل قبل ما نحفظه)</span>';
+  return `
+    <p class="cred-line">
+      <span class="muted">الرقم السري للموظفين</span>
+      ${pin}
+      <button class="link-btn" data-act="pin" data-id="${esc(b.id)}" type="button">تعديل</button>
+    </p>`;
+}
+
 function renderBrands() {
   const now = overview.serverNow;
-  if (!overview.brands.length) {
+  const brands = liveBrands();
+  if (!brands.length) {
     $('brands').innerHTML = '<p class="empty-note">مفيش براندات لسه. ابدأ بـ «براند جديد» فوق.</p>';
     return;
   }
-  $('brands').innerHTML = overview.brands.map((brand) => {
-    const owner = brand.owners[0];
-    const cards = brand.branches.map((b) => branchCardHtml(b, {
+  $('brands').innerHTML = brands.map((brand) => {
+    const cards = liveBranches(brand).map((b) => branchCardHtml(b, {
       now,
+      extra: pinLineHtml(b),
       actions: `
         <button class="btn btn-sm btn-primary" data-act="enter" data-id="${esc(b.id)}" data-page="bar" type="button">ادخل الفرع</button>
         <button class="btn btn-sm" data-act="enter" data-id="${esc(b.id)}" data-page="settings" type="button">الإعدادات</button>
         <button class="btn btn-sm btn-quiet" data-act="menu" data-id="${esc(b.id)}" type="button">المزيد</button>`,
     })).join('');
+    const empty = brand.branches.length ? 'كل فروع البراند ده في سلة المهملات.' : 'البراند ده لسه ملوش فروع.';
     return `
       <section class="brand-section">
         <div class="dash-head">
-          <div>
-            <h2>${esc(brand.name)}</h2>
-            <p class="sub">${owner ? `صاحب البراند: <span dir="ltr">${esc(owner.username)}</span>` : 'مفيش حساب لصاحب البراند'}</p>
-          </div>
+          <h2>${esc(brand.name)}</h2>
           <div class="actions">
-            <button class="btn btn-sm btn-quiet" data-act="owner" data-id="${esc(brand.id)}" type="button">${owner ? 'كلمة سر صاحب البراند' : 'حساب صاحب البراند'}</button>
             <button class="btn btn-sm" data-act="branch" data-id="${esc(brand.id)}" type="button">فرع جديد</button>
+            <button class="icon-link icon-sm" data-act="trash-brand" data-id="${esc(brand.id)}" type="button"
+                    aria-label="انقل البراند لسلة المهملات" title="انقل البراند لسلة المهملات">${icons.trash(18)}</button>
           </div>
         </div>
-        ${cards ? `<div class="cards">${cards}</div>` : '<p class="empty-note">البراند ده لسه ملوش فروع.</p>'}
+        ${ownerCredsHtml(brand)}
+        ${cards ? `<div class="cards">${cards}</div>` : `<p class="empty-note">${empty}</p>`}
       </section>`;
   }).join('');
+}
+
+// ---------- trash ----------
+
+function renderTrashButton() {
+  const n = overview.brands.filter((b) => b.deletedAt).length + trashedBranches().length;
+  $('trash').innerHTML = `${icons.trash(22)}${n ? `<span class="badge num">${n}</span>` : ''}`;
+  $('trash').setAttribute('aria-label', n ? `سلة المهملات (${n})` : 'سلة المهملات');
+}
+
+const dayText = (ts) => new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'numeric', year: 'numeric' }).format(ts);
+
+function openTrash() {
+  const rows = [
+    ...overview.brands.filter((b) => b.deletedAt).map((brand) => ({
+      kind: 'brand', id: brand.id, name: brand.name, at: brand.deletedAt,
+      sub: `براند، ومعاه ${brand.branches.filter((b) => b.deletedReason === 'brand').length} فرع`,
+    })),
+    ...trashedBranches().map((b) => ({
+      kind: 'branch', id: b.id, name: b.name, at: b.deletedAt,
+      sub: `${findBrand(b.brandId)?.name ?? ''}، ${TRASH_REASON[b.deletedReason] ?? ''}`,
+    })),
+  ].sort((a, b) => b.at - a.at);
+  const backdrop = document.createElement('div');
+  backdrop.className = 'sheet-backdrop';
+  backdrop.innerHTML = `
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+      <h2 id="sheet-title">سلة المهملات</h2>
+      <p class="muted">كل البيانات محفوظة. اللي هنا مش بيظهر في اللوحة، والعملاء مش بياخدوا منه أرقام لحد ما ترجّعه.</p>
+      <ul class="trash-list">
+        ${rows.map((r) => `
+          <li>
+            <div><strong>${esc(r.name)}</strong><span class="muted">${esc(r.sub)}، ${esc(dayText(r.at))}</span></div>
+            <button class="btn btn-sm" data-restore="${r.kind}" data-id="${esc(r.id)}" type="button">رجّع</button>
+          </li>`).join('') || '<li class="muted">السلة فاضية.</li>'}
+      </ul>
+      <div class="sheet-actions"><button class="btn btn-quiet btn-block" data-close type="button">رجوع</button></div>
+    </div>`;
+  document.body.append(backdrop);
+  backdrop.addEventListener('click', (e) => {
+    const restore = e.target.closest('[data-restore]');
+    if (e.target === backdrop || e.target.closest('[data-close]') || restore) backdrop.remove();
+    if (restore) restoreItem(restore.dataset.restore, restore.dataset.id);
+  });
+  backdrop.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') backdrop.remove();
+  });
+  backdrop.querySelector('[data-close]').focus();
+}
+
+function restoreItem(kind, id) {
+  const fail = (err) => toast(err.message, 'error');
+  if (kind === 'brand') {
+    post(`/brands/${encodeURIComponent(id)}/restore`).then(() => done('البراند رجع')).catch(fail);
+    return;
+  }
+  const b = findBranch(id);
+  // A trial that ended needs more days, or the branch goes straight back to the trash.
+  const trialOver = b && b.paidUntil == null && b.trialEndsAt != null && b.trialEndsAt <= Date.now();
+  if (!trialOver) {
+    post(`/branches/${encodeURIComponent(id)}/restore`).then(() => done('الفرع رجع')).catch(fail);
+    return;
+  }
+  openForm({
+    title: `رجّع ${b.name}`,
+    intro: 'التجربة بتاعته خلصت. اديله أيام تجربة زيادة، وبعد كده سجّل الدفعة من «المزيد».',
+    fields: [{ name: 'trialDays', label: 'أيام تجربة زيادة', type: 'number', value: '7', dir: 'ltr' }],
+    submit: 'رجّع الفرع',
+    onSubmit: async (v) => {
+      await post(`/branches/${encodeURIComponent(id)}/restore`, { trialDays: Number(v.trialDays) });
+      await done('الفرع رجع');
+    },
+  });
 }
 
 // ---------- activity ----------
@@ -159,7 +285,12 @@ const ACTION_TEXT = {
   'branch.create': (e) => `فرع جديد${e.detail?.name ? `: ${e.detail.name}` : ''}`,
   'owner.create': (e) => `حساب صاحب البراند (${e.detail?.username ?? ''})`,
   'owner.reset': (e) => `كلمة سر جديدة لصاحب البراند (${e.detail?.username ?? ''})`,
+  'owner.rename': (e) => `اسم مستخدم جديد لصاحب البراند (${e.detail?.username ?? ''})`,
   'owner.login': () => 'دخول صفحة البراند',
+  'branch.trash': (e) => (e.detail?.reason === 'trial_ended' ? 'التجربة خلصت من غير دفع، فالفرع اتنقل لسلة المهملات' : 'نقل الفرع لسلة المهملات'),
+  'branch.restore': (e) => `رجوع الفرع من سلة المهملات${e.detail?.trialDays ? ` (تجربة ${e.detail.trialDays} يوم)` : ''}`,
+  'brand.trash': () => 'نقل البراند لسلة المهملات',
+  'brand.restore': () => 'رجوع البراند من سلة المهملات',
   'branch.rename': (e) => `تغيير اسم الفرع لـ «${e.detail?.name ?? ''}»`,
   'branch.pin_reset': () => 'رقم سري جديد للموظفين',
   'branch.trial_extend': (e) => `مدّ التجربة ${e.detail?.days ?? ''} يوم`,
@@ -181,6 +312,7 @@ function actorText(actor, e) {
   if (e.action === 'super.login_failed') return e.ip ? `حد من ${e.ip}` : 'حد';
   if (actor === 'super') return 'إنت';
   if (actor === 'cli') return 'سطر الأوامر';
+  if (actor === 'system') return 'تلقائي';
   if (actor === 'admin-token') return 'Admin API';
   if (actor.startsWith('owner:')) {
     const id = Number(actor.slice(6));
@@ -222,6 +354,7 @@ async function refresh() {
     activity = a.entries;
     renderAttention();
     renderBrands();
+    renderTrashButton();
     renderActivity();
   } catch (err) {
     if (err.status === 401) location.reload();
@@ -300,23 +433,46 @@ function newBranch(brandId) {
 
 function ownerAccount(brandId) {
   const owner = findBrand(brandId)?.owners[0];
+  if (owner) {
+    editOwner(brandId, owner);
+    return;
+  }
   openForm({
-    title: owner ? 'كلمة سر جديدة لصاحب البراند' : 'حساب صاحب البراند',
-    intro: owner
-      ? 'الجلسات القديمة هتقفل. سيب كلمة السر فاضية عشان تتعمل تلقائي.'
-      : 'صاحب البراند بيدخل يشوف فروعه بس. سيب كلمة السر فاضية عشان تتعمل تلقائي.',
+    title: 'حساب صاحب البراند',
+    intro: 'صاحب البراند بيدخل يشوف فروعه بس. سيب كلمة السر فاضية عشان تتعمل تلقائي.',
     fields: [
-      { name: 'username', label: 'اسم المستخدم', dir: 'ltr', value: owner?.username ?? '' },
-      ...(owner ? [] : [{ name: 'email', label: 'الإيميل (اختياري)', type: 'email', dir: 'ltr' }]),
+      { name: 'username', label: 'اسم المستخدم', dir: 'ltr' },
+      { name: 'email', label: 'الإيميل (اختياري)', type: 'email', dir: 'ltr' },
       { name: 'password', label: 'كلمة السر (اختياري)', type: 'text', dir: 'ltr' },
     ],
     submit: 'احفظ',
     onSubmit: async (v) => {
       const body = { username: v.username.trim(), email: v.email || null };
       if (v.password) body.password = v.password;
-      const res = await post(`/brands/${encodeURIComponent(brandId)}/owners`, body);
+      await post(`/brands/${encodeURIComponent(brandId)}/owners`, body);
+      await done('الحساب اتعمل، وبياناته ظاهرة تحت اسم البراند');
+    },
+  });
+}
+
+// Username and password in place. Only a new password signs the owner out.
+function editOwner(brandId, owner) {
+  openForm({
+    title: 'بيانات صاحب البراند',
+    intro: 'لو غيّرت كلمة السر، صاحب البراند هيخرج ويدخل بالجديدة.',
+    fields: [
+      { name: 'username', label: 'اسم المستخدم', dir: 'ltr', value: owner.username },
+      {
+        name: 'password', label: 'كلمة السر (8 حروف على الأقل)', type: 'text', dir: 'ltr',
+        value: owner.password ?? '', placeholder: owner.password ? '' : 'اكتب كلمة سر جديدة',
+      },
+    ],
+    submit: 'احفظ',
+    onSubmit: async (v) => {
+      const body = { username: v.username.trim() };
+      if (v.password && v.password !== owner.password) body.password = v.password;
+      await post(`/brands/${encodeURIComponent(brandId)}/owners/${owner.id}`, body);
       await done('اتحفظ');
-      showResult({ title: 'بيانات دخول صاحب البراند', lines: [['الرابط', res.loginUrl], ['اسم المستخدم', res.owner.username], ['كلمة السر', res.password]] });
     },
   });
 }
@@ -330,9 +486,9 @@ function branchMenu(id) {
     ['trial', 'مدّ التجربة'],
     ['qr', 'افتح شاشة الكود'],
     ['rename', 'غيّر الاسم'],
-    ['pin', 'رقم سري جديد للموظفين'],
     ['features', 'الخصائص'],
     [manualStop ? 'resume' : 'suspend', manualStop ? 'شغّل الفرع تاني' : 'وقّف الفرع'],
+    ['trash', 'انقل لسلة المهملات'],
   ];
   const backdrop = document.createElement('div');
   backdrop.className = 'sheet-backdrop';
@@ -340,7 +496,7 @@ function branchMenu(id) {
     <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
       <h2 id="sheet-title">${esc(b.name)}</h2>
       <div class="sheet-actions menu-list">
-        ${items.map(([k, label]) => `<button class="btn btn-block ${k === 'suspend' ? 'btn-danger' : ''}" data-op="${k}" type="button">${esc(label)}</button>`).join('')}
+        ${items.map(([k, label]) => `<button class="btn btn-block ${k === 'suspend' || k === 'trash' ? 'btn-danger' : ''}" data-op="${k}" type="button">${esc(label)}</button>`).join('')}
         <button class="btn btn-quiet btn-block" data-op="close" type="button">رجوع</button>
       </div>
     </div>`;
@@ -364,9 +520,20 @@ function branchAction(op, b) {
     });
   } else if (op === 'pin') {
     openForm({
-      title: 'رقم سري جديد للموظفين', intro: 'كل أجهزة البار هتخرج وتحتاج الرقم الجديد.',
-      fields: [{ name: 'pin', label: 'الرقم السري (4–8 أرقام)', inputmode: 'numeric', dir: 'ltr' }],
-      onSubmit: async (v) => { await post(`${path}/pin`, v); await done('الرقم السري اتغيّر'); },
+      title: 'الرقم السري للموظفين', intro: 'لو غيّرته، كل أجهزة البار هتخرج وتحتاج الرقم الجديد.',
+      fields: [{ name: 'pin', label: 'الرقم السري (4–8 أرقام)', inputmode: 'numeric', dir: 'ltr', value: b.pin ?? '' }],
+      onSubmit: async (v) => {
+        if (v.pin.trim() === b.pin) return;
+        await post(`${path}/pin`, { pin: v.pin.trim() });
+        await done('الرقم السري اتغيّر');
+      },
+    });
+  } else if (op === 'trash') {
+    openForm({
+      title: `انقل ${b.name} لسلة المهملات؟`,
+      intro: 'الفرع هيختفي من هنا ومن صفحة صاحب البراند، والعملاء مش هيقدروا ياخدوا أرقام. كل بياناته محفوظة وتقدر ترجّعه من السلة.',
+      submit: 'انقل للسلة', danger: true,
+      onSubmit: async () => { await post(`${path}/trash`); await done('الفرع اتنقل لسلة المهملات'); },
     });
   } else if (op === 'trial') {
     openForm({
@@ -417,9 +584,31 @@ function branchAction(op, b) {
   }
 }
 
+function trashBrand(id) {
+  const brand = findBrand(id);
+  openForm({
+    title: `انقل ${brand.name} لسلة المهملات؟`,
+    intro: 'البراند وكل فروعه هيختفوا من هنا، وصاحب البراند مش هيقدر يدخل، والعملاء مش هياخدوا أرقام. كل البيانات محفوظة وتقدر ترجّعه من السلة.',
+    submit: 'انقل للسلة', danger: true,
+    onSubmit: async () => { await post(`/brands/${encodeURIComponent(id)}/trash`); await done('البراند اتنقل لسلة المهملات'); },
+  });
+}
+
+async function copyValue(value) {
+  await navigator.clipboard?.writeText(value).catch(() => {});
+  toast('اتنسخ');
+}
+
 function onAction(el) {
   const { act, id, page } = el.dataset;
-  if (act === 'enter') enterBranch(id, page);
+  if (el.dataset.copy !== undefined) copyValue(el.dataset.copy);
+  else if (act === 'enter') enterBranch(id, page);
+  else if (act === 'trash-brand') trashBrand(id);
+  else if (act === 'trash') openTrash();
+  else if (act === 'pin') {
+    const b = findBranch(id);
+    if (b) branchAction('pin', b);
+  }
   else if (act === 'menu') branchMenu(id);
   else if (act === 'branch') newBranch(id);
   else if (act === 'owner') ownerAccount(id);
@@ -448,6 +637,7 @@ async function boot() {
   setInterval(refresh, POLL_MS);
 
   $('new-brand').addEventListener('click', newBrand);
+  $('trash').addEventListener('click', openTrash);
   $('logout').addEventListener('click', async () => {
     await api('/api/super/logout', { method: 'POST' });
     location.reload();
@@ -455,7 +645,7 @@ async function boot() {
   $('backup-now').addEventListener('click', (e) => backupNow(e.currentTarget));
   for (const id of ['brands', 'attention']) {
     $(id).addEventListener('click', (e) => {
-      const el = e.target.closest('[data-act]');
+      const el = e.target.closest('[data-act], [data-copy]');
       if (el) onAction(el);
     });
   }

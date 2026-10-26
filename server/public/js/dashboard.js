@@ -36,7 +36,7 @@ function metaLine(b, now) {
   return parts.join('، ');
 }
 
-export function branchCardHtml(b, { now, actions = '' } = {}) {
+export function branchCardHtml(b, { now, actions = '', extra = '' } = {}) {
   return `
     <article class="branch-card" data-plan="${esc(b.plan.status)}" data-id="${esc(b.id)}">
       <div class="branch-top">
@@ -53,6 +53,7 @@ export function branchCardHtml(b, { now, actions = '' } = {}) {
         <div><dt>متأخر</dt><dd class="num ${b.lateToday ? 'is-alert' : ''}">${b.lateToday}</dd></div>
       </dl>
       <p class="branch-meta"><span class="dot" data-online="${b.screens > 0}"></span>${esc(metaLine(b, now))}</p>
+      ${extra}
       ${actions ? `<div class="card-actions">${actions}</div>` : ''}
     </article>`;
 }

@@ -4,6 +4,7 @@
 import { featureFlags, planView } from './plans.js';
 import { median, rollupBranch, summarize } from './rollups.js';
 import { dayIn, dayStartIn, localSlot, startOfDayIn } from './util.js';
+import { unseal } from './vault.js';
 import { logoUrl } from './views.js';
 
 function branchStats(ctx, shop, { since, now }) {
@@ -33,7 +34,8 @@ function ratingSummary(ctx, now) {
   return { avg, count: rows.length, low };
 }
 
-function branchSummary({ tenants, screens, config }, branch, now) {
+/** `withPin`: the super's view also carries the current staff PIN (null when not known). */
+function branchSummary({ tenants, screens, config }, branch, now, { withPin = false } = {}) {
   const ctx = tenants.get(branch.id);
   const shop = ctx?.store.getShop();
   const stats = shop ? branchStats(ctx, shop, { since: startOfDayIn(config.tz, now), now }) : null;
@@ -59,6 +61,9 @@ function branchSummary({ tenants, screens, config }, branch, now) {
     promoStartsAt: shop?.promo_starts_at ?? null,
     promoEndsAt: shop?.promo_ends_at ?? null,
     screens: screens.count(branch.id),
+    deletedAt: branch.deleted_at ?? null,
+    deletedReason: branch.deleted_reason ?? null,
+    ...(withPin ? { pin: shop ? unseal(config.cookieSecret, shop.pin_sealed) : null } : {}),
     lastActivityAt: branch.last_activity_at ?? stats?.lastOrderAt ?? null,
     avgRating7d: ratings.avg,
     ratings7d: ratings.count,
@@ -67,24 +72,34 @@ function branchSummary({ tenants, screens, config }, branch, now) {
   };
 }
 
-/** Branches of one brand (brand-owner dashboard). */
+/** Branches of one brand (brand-owner dashboard). Trashed branches are not shown. */
 export function brandOverview(deps, brandId, now = Date.now()) {
   const brand = deps.control.getBrand(brandId);
   if (!brand) return null;
   return {
     brand: { id: brand.id, name: brand.name },
-    branches: deps.control.branchesOfBrand(brandId).map((b) => branchSummary(deps, b, now)),
+    branches: deps.control.branchesOfBrand(brandId).filter((b) => !b.deleted_at).map((b) => branchSummary(deps, b, now)),
   };
 }
 
-/** Every brand with its branches (super dashboard). */
+/**
+ * Every brand with its branches (super dashboard), trashed ones included (the page files them
+ * under the trash). The super also gets the readable credentials: staff PINs, owner passwords.
+ */
 export function superOverview(deps, now = Date.now()) {
-  const byBrand = new Map(deps.control.listBrands().map((b) => [b.id, { id: b.id, name: b.name, owners: [], branches: [] }]));
-  for (const branch of deps.control.listBranches()) byBrand.get(branch.brand_id)?.branches.push(branchSummary(deps, branch, now));
-  for (const brand of byBrand.values()) {
-    brand.owners = deps.control.ownersOfBrand(brand.id).map((o) => ({ id: o.id, username: o.username, email: o.email }));
+  const secret = deps.config.cookieSecret;
+  const byBrand = new Map(deps.control.listBrands().map((b) => [b.id, {
+    id: b.id, name: b.name, deletedAt: b.deleted_at ?? null, owners: [], branches: [],
+  }]));
+  for (const branch of deps.control.listBranches()) {
+    byBrand.get(branch.brand_id)?.branches.push(branchSummary(deps, branch, now, { withPin: true }));
   }
-  return { brands: [...byBrand.values()], serverNow: now };
+  for (const brand of byBrand.values()) {
+    brand.owners = deps.control.ownersOfBrand(brand.id).map((o) => ({
+      id: o.id, username: o.username, email: o.email, password: unseal(secret, o.password_sealed),
+    }));
+  }
+  return { brands: [...byBrand.values()], publicUrl: deps.config.publicUrl, serverNow: now };
 }
 
 // ---------------------------------------------------------------------------

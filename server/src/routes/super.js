@@ -1,8 +1,8 @@
-import { hashPin, PIN_RE, verifyPin } from '../auth.js';
+import { passwordFields, pinFields, PIN_RE, verifyPin } from '../auth.js';
 import { superOverview } from '../aggregate.js';
 import { backupStatus, runBackup } from '../backup.js';
 import { HttpError } from '../errors.js';
-import { DAY_MS, FEATURES, planView } from '../plans.js';
+import { DAY_MS, effectivePlan, FEATURES, planView } from '../plans.js';
 import { branchUrls, provisionBrand, provisionBranch } from '../provision.js';
 import { createRateLimiter } from '../ratelimit.js';
 import {
@@ -96,29 +96,101 @@ export default async function superRoutes(app, deps) {
       return reply.code(201).send({ shop: barShop(shop), urls: branchUrls(config, shop.id) });
     });
 
+    function checkUsername(username) {
+      if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
+        throw bad('username', 'اسم المستخدم من 3 لـ 32 حرف إنجليزي صغير أو أرقام أو . _ -');
+      }
+      return username;
+    }
+
+    const ownerResult = (owner, brandId, password) => ({
+      owner: { id: owner.id, username: owner.username, brandId },
+      password,
+      loginUrl: `${config.publicUrl}/brand/${brandId}`,
+    });
+
     // Creates the owner, or resets the password of an existing owner of this brand.
     // Without a password one is generated and returned once.
     s.post('/brands/:brand/owners', async (req, reply) => {
       const brandId = req.params.brand;
       if (!control.getBrand(brandId)) throw new HttpError(404, 'البراند ده مش موجود');
       const { username, email = null } = req.body ?? {};
-      if (typeof username !== 'string' || !USERNAME_RE.test(username)) {
-        throw bad('username', 'اسم المستخدم من 3 لـ 32 حرف إنجليزي صغير أو أرقام أو . _ -');
-      }
+      checkUsername(username);
       const cleanEmail = typeof email === 'string' && email.trim() ? email.trim().slice(0, 200) : null;
       const password = req.body?.password ? checkPassword(req.body.password) : randomId(9);
-      const passwordHash = await hashPin(password);
+      const fields = await passwordFields(config.cookieSecret, password);
       const existing = control.ownerByUsername(username);
       if (existing && existing.brand_id !== brandId) throw new HttpError(409, 'اسم المستخدم ده مستخدم في براند تاني', { field: 'username' });
       const owner = existing
-        ? control.resetOwnerPassword(existing.id, passwordHash)
-        : control.createOwner({ brandId, username, email: cleanEmail, passwordHash });
+        ? control.resetOwnerPassword(existing.id, fields)
+        : control.createOwner({ brandId, username, email: cleanEmail, ...fields });
       audit(req, existing ? 'owner.reset' : 'owner.create', { brandId, detail: { username } });
-      return reply.code(existing ? 200 : 201).send({
-        owner: { id: owner.id, username: owner.username, brandId },
-        password,
-        loginUrl: `${config.publicUrl}/brand/${brandId}`,
-      });
+      return reply.code(existing ? 200 : 201).send(ownerResult(owner, brandId, password));
+    });
+
+    // Edit an owner in place: username and/or password. Only a new password signs them out.
+    s.post('/brands/:brand/owners/:owner', async (req) => {
+      const brandId = req.params.brand;
+      const owner = control.getOwner(Number(req.params.owner));
+      if (!owner || owner.brand_id !== brandId) throw new HttpError(404, 'الحساب ده مش موجود');
+      const body = req.body ?? {};
+      let updated = owner;
+      if (body.username !== undefined && body.username !== owner.username) {
+        const username = checkUsername(body.username);
+        if (control.ownerByUsername(username)) throw new HttpError(409, 'اسم المستخدم ده مستخدم قبل كده', { field: 'username' });
+        updated = control.renameOwner(owner.id, username);
+        audit(req, 'owner.rename', { brandId, detail: { from: owner.username, username } });
+      }
+      const password = body.password ? checkPassword(body.password) : null;
+      if (password) {
+        updated = control.resetOwnerPassword(owner.id, await passwordFields(config.cookieSecret, password));
+        audit(req, 'owner.reset', { brandId, detail: { username: updated.username } });
+      }
+      return ownerResult(updated, brandId, password);
+    });
+
+    // ---- trash ----
+
+    s.post('/brands/:brand/trash', async (req) => {
+      const brand = control.getBrand(req.params.brand);
+      if (!brand) throw new HttpError(404, 'البراند ده مش موجود');
+      control.trashBrand(brand.id);
+      audit(req, 'brand.trash', { brandId: brand.id, detail: { name: brand.name } });
+      return { ok: true };
+    });
+
+    s.post('/brands/:brand/restore', async (req) => {
+      const brand = control.getBrand(req.params.brand);
+      if (!brand) throw new HttpError(404, 'البراند ده مش موجود');
+      control.restoreBrand(brand.id);
+      audit(req, 'brand.restore', { brandId: brand.id, detail: { name: brand.name } });
+      return { ok: true };
+    });
+
+    s.post('/branches/:branch/trash', async (req) => {
+      const ctx = branchCtx(req);
+      control.trashBranch(ctx.branch.id, 'manual');
+      audit(req, 'branch.trash', { ...req.audit, detail: { reason: 'manual' } });
+      return { ok: true };
+    });
+
+    // A branch whose trial ended needs more trial days (or a payment right after), or the
+    // hourly job would put it straight back in the trash.
+    s.post('/branches/:branch/restore', async (req) => {
+      const ctx = branchCtx(req);
+      if (control.getBrand(ctx.branch.brand_id)?.deleted_at) {
+        throw new HttpError(409, 'البراند نفسه في سلة المهملات. رجّع البراند الأول');
+      }
+      const days = req.body?.trialDays == null || req.body.trialDays === '' ? 0 : Number(req.body.trialDays);
+      if (!Number.isInteger(days) || days < 0 || days > 90) throw bad('trialDays', 'عدد الأيام من 1 لـ 90');
+      if (days) control.setTrialEnd(ctx.branch.id, Date.now() + days * DAY_MS);
+      const after = effectivePlan({ ...control.getBranch(ctx.branch.id), deleted_at: null });
+      if (after.reason === 'trial_ended') {
+        throw bad('trialDays', 'التجربة خلصت: اكتب كام يوم تجربة زيادة عشان الفرع يرجع');
+      }
+      const branch = control.restoreBranch(ctx.branch.id);
+      audit(req, 'branch.restore', { ...req.audit, detail: days ? { trialDays: days } : null });
+      return { plan: planView(branch) };
     });
 
     s.post('/branches/:branch/rename', async (req) => {
@@ -133,7 +205,7 @@ export default async function superRoutes(app, deps) {
       const ctx = branchCtx(req);
       const pin = req.body?.pin;
       if (typeof pin !== 'string' || !PIN_RE.test(pin)) throw bad('pin', 'الرقم السري لازم يكون من 4 لـ 8 أرقام');
-      ctx.store.updateShop({ pin_hash: await hashPin(pin) });
+      ctx.store.updateShop(await pinFields(config.cookieSecret, pin));
       audit(req, 'branch.pin_reset', req.audit);
       return { ok: true };
     });
