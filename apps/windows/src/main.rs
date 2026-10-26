@@ -125,12 +125,16 @@ $ico = Join-Path $env:PAGER_DIR 'icon.ico'
 try { Invoke-WebRequest -UseBasicParsing -Uri $env:PAGER_ICON -OutFile $ico } catch {}
 if (-not (Test-Path $ico)) { $ico = $env:PAGER_EXE }
 $shell = New-Object -ComObject WScript.Shell
+# WScript.Shell can't save a non-ANSI file name (an Arabic brand on an English-locale PC):
+# save under an ASCII name, then rename (PowerShell itself is Unicode).
 foreach ($folder in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))) {
-  $lnk = $shell.CreateShortcut((Join-Path $folder ($env:PAGER_NAME + '.lnk')))
+  $tmp = Join-Path $folder 'pager-cashier-shortcut.lnk'
+  $lnk = $shell.CreateShortcut($tmp)
   $lnk.TargetPath = $env:PAGER_EXE
   $lnk.WorkingDirectory = $env:PAGER_DIR
   $lnk.IconLocation = "$ico,0"
   $lnk.Save()
+  Move-Item -LiteralPath $tmp -Destination (Join-Path $folder ($env:PAGER_NAME + '.lnk')) -Force
 }
 "#;
     let name: String = config.name.chars().filter(|c| !"\\/:*?\"<>|".contains(*c)).collect();
