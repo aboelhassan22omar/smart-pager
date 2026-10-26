@@ -5,10 +5,16 @@ import { HttpError } from './errors.js';
 // One cookie and one HKDF-derived key per role (and per branch / brand). See DESIGN §15.
 
 const OWNER_MAX_AGE = 14 * 24 * 3600;
+// Cashier apps: browsers cap cookie lifetimes at 400 days; every app start renews it.
+const DEVICE_MAX_AGE = 400 * 24 * 3600;
+const DOWNLOAD_TOKEN_MS = 2 * 3600 * 1000;
 const SUPER_MAX_AGE = 12 * 3600;
 const IMPERSONATE_MAX_AGE = 3600;
 
 export const OWNER_COOKIE = 'sp_owner';
+export const DEVICE_COOKIE = 'sp_device';
+// Readable by the page: "this is the cashier app" (no "Powered by", no browser-only hints).
+export const APP_COOKIE = 'sp_app';
 export const SUPER_COOKIE = 'sp_super';
 
 const cookieOptions = (config, maxAge) => ({
@@ -21,18 +27,60 @@ const cookieOptions = (config, maxAge) => ({
 
 // ---- branch staff ----
 
-/** `impersonated` = a 1h session opened by super ("open as branch"). */
-export function setStaffSession(reply, config, shop, { impersonated = false } = {}) {
+/**
+ * `impersonated` = a 1h session opened by super ("open as branch").
+ * `deviceId` = a session of a linked cashier app: it ends as soon as the device is unlinked.
+ */
+export function setStaffSession(reply, config, shop, { impersonated = false, deviceId = null } = {}) {
   const payload = { b: shop.id, iat: Date.now(), fp: pinFingerprint(shop.pin_hash) };
   if (impersonated) payload.imp = 1;
+  if (deviceId) payload.dv = deviceId;
   const value = signValue(config.cookieSecret, staffKeyInfo(shop.id), payload);
   reply.setCookie(staffCookieName(shop.id), value, cookieOptions(config, impersonated ? IMPERSONATE_MAX_AGE : SESSION_MAX_AGE));
 }
 
-export function verifyStaffSession(req, config, shop) {
+export function verifyStaffSession(req, config, shop, { deviceLinked = () => true } = {}) {
   const s = verifyValue(config.cookieSecret, staffKeyInfo(shop.id), req.cookies[staffCookieName(shop.id)]);
   const maxAge = (s?.imp ? IMPERSONATE_MAX_AGE : SESSION_MAX_AGE) * 1000;
-  return Boolean(s) && s.b === shop.id && Date.now() - Number(s.iat) < maxAge && s.fp === pinFingerprint(shop.pin_hash);
+  return Boolean(s) && s.b === shop.id && Date.now() - Number(s.iat) < maxAge && s.fp === pinFingerprint(shop.pin_hash)
+    && (!s.dv || deviceLinked(s.dv));
+}
+
+// ---- cashier app devices ----
+
+// Lax, not Strict: the apps reach /app/<brand>/start from their own offline/boot page, whose
+// origin is opaque, and Strict cookies are not sent on that navigation. It only opens GET /start.
+export function setDeviceSession(reply, config, device) {
+  const value = signValue(config.cookieSecret, 'device', { d: device.id, br: device.brand_id, iat: Date.now() });
+  reply.setCookie(DEVICE_COOKIE, value, { ...cookieOptions(config, DEVICE_MAX_AGE), sameSite: 'lax' });
+}
+
+/** The linked (not revoked) device this request comes from, or null. */
+export function deviceFromRequest(req, { config, control }) {
+  const s = verifyValue(config.cookieSecret, 'device', req.cookies[DEVICE_COOKIE]);
+  const device = s ? control.getDevice(s.d) : null;
+  if (!device || device.revoked_at || device.brand_id !== s.br) return null;
+  return device;
+}
+
+export function setAppCookie(reply, config, platform) {
+  reply.setCookie(APP_COOKIE, platform, { sameSite: 'strict', secure: config.secureCookies, path: '/', maxAge: DEVICE_MAX_AGE });
+}
+
+// ---- app downloads: a short-lived token in the link, so any download manager can fetch it ----
+
+const downloadKey = (brandId) => `download:${brandId}`;
+
+export function downloadToken(config, brand) {
+  return signValue(config.cookieSecret, downloadKey(brand.id), {
+    exp: Date.now() + DOWNLOAD_TOKEN_MS, fp: pinFingerprint(brand.app_password_hash),
+  });
+}
+
+/** Valid until it expires or the download password changes. */
+export function verifyDownloadToken(config, brand, token) {
+  const s = verifyValue(config.cookieSecret, downloadKey(brand.id), token);
+  return Boolean(s) && Date.now() < Number(s.exp) && Boolean(brand.app_password_hash) && s.fp === pinFingerprint(brand.app_password_hash);
 }
 
 // ---- brand owner ----

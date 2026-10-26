@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The whole icon is one square bitmap (logo inside the safe zone), so the server only swaps PNGs. -->
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@drawable/app_icon" />
+    <foreground android:drawable="@android:color/transparent" />
+</adaptive-icon>

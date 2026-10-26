@@ -11,7 +11,9 @@ import { ensureSecrets } from './secrets.js';
 import { createService } from './service.js';
 import { scheduleBackups } from './backup.js';
 import { runWeeklySummaries } from './summary.js';
+import { createPackages } from './native/packages.js';
 import adminRoutes from './routes/admin.js';
+import appRoutes from './routes/app.js';
 import barRoutes from './routes/bar.js';
 import brandRoutes from './routes/brand.js';
 import customerRoutes from './routes/customer.js';
@@ -50,7 +52,8 @@ export async function buildApp(config) {
   const screens = createScreens();
   const notifier = createNotifier({ tenants, config, log: app.log });
   const service = createService({ control, tenants, bus, notifier, screens, config, log: app.log });
-  const ctx = { config, control, tenants, bus, screens, notifier, service };
+  const packages = createPackages({ config });
+  const ctx = { config, control, tenants, bus, screens, notifier, service, packages };
 
   app.addContentTypeParser(LOGO_TYPES, { parseAs: 'buffer', bodyLimit: LOGO_MAX_BYTES }, (_req, body, done) => {
     done(null, body);
@@ -99,6 +102,7 @@ export async function buildApp(config) {
   await app.register(adminRoutes, ctx);
   await app.register(superRoutes, ctx);
   await app.register(brandRoutes, ctx);
+  await app.register(appRoutes, ctx);
   await app.register(pageRoutes, ctx);
 
   const rotation = setInterval(() => service.rotateDue(), 1000);

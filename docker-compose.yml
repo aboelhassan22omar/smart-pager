@@ -6,9 +6,12 @@ services:
     env_file: .env
     environment:
       DATA_DIR: /data
+      NATIVE_DIR: /native
     volumes:
       - pager-data:/data
       - ./secrets:/secrets:ro
+      # Cashier app templates, copied here by CD (see apps/ and .github/workflows/apps-build.yml)
+      - ./native:/native:ro
     # Loopback only: reached through Caddy (below) or an existing host Nginx.
     ports:
       - "127.0.0.1:${APP_PORT:-3000}:3000"

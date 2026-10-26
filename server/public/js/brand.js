@@ -1,5 +1,5 @@
 import { mountAnalytics } from './analytics.js';
-import { branchCardHtml } from './dashboard.js';
+import { appInviteText, branchCardHtml, devicesHtml } from './dashboard.js';
 import { openForm } from './forms.js';
 import { icons } from './icons.js';
 import { toast } from './staff.js';
@@ -10,6 +10,7 @@ const $ = (id) => document.getElementById(id);
 const brandId = shopIdFromPath(location.pathname);
 const base = `/api/brand/${encodeURIComponent(brandId)}`;
 let data = null;
+let appView = null;
 
 function showLogin() {
   const root = $('login-root');
@@ -59,6 +60,83 @@ function render() {
         <button class="btn btn-sm" data-act="rename" data-branch="${esc(b.id)}" type="button">غيّر الاسم</button>`,
     })).join('')}</div>`
     : '<p class="empty-note">لسه مفيش فروع. كلّم Aurexis عشان نضيفها.</p>';
+}
+
+// ---------- cashier app: link + password to forward, and where it is installed ----------
+
+const copyBtn = (value) => `<button class="link-btn" data-copy="${esc(value)}" type="button">انسخ</button>`;
+
+function renderApp() {
+  const section = $('app-section');
+  if (!appView) {
+    section.hidden = true;
+    return;
+  }
+  section.hidden = false;
+  if (!appView.enabled) {
+    $('app-body').innerHTML = '<p class="empty-note">تطبيق الكاشير لسه مش متفعّل لبراندك. كلّم Aurexis عشان يتفعّل.</p>';
+    return;
+  }
+  $('app-body').innerHTML = `
+    <div class="creds">
+      <dl class="creds-list">
+        <div><dt>لينك التحميل</dt><dd dir="ltr"><a href="${esc(appView.url)}" target="_blank" rel="noopener">${esc(appView.url.replace(/^https?:\/\//, ''))}</a>${copyBtn(appView.url)}</dd></div>
+        <div><dt>الباسورد</dt><dd dir="ltr">${appView.password ? `<span>${esc(appView.password)}</span>${copyBtn(appView.password)}` : '<span class="muted">اسأل Aurexis</span>'}</dd></div>
+      </dl>
+      <button class="btn btn-sm btn-primary" data-act="invite" type="button">انسخ رسالة لمديرين الفروع</button>
+    </div>
+    <p class="muted">ابعت الرسالة دي لمديرين الفروع. كل فرع بينزّل التطبيق على جهاز الكاشير (أندرويد أو ويندوز)، ويختار فرعه ويكتب الرقم السري بتاعه. أي جهاز تفصله بيرجع يطلب الفرع والرقم السري.</p>
+    ${devicesHtml(appView, data.branches, {
+      actions: (d) => `
+        <button class="link-btn" data-act="device-rename" data-device="${esc(d.id)}" type="button">غيّر الاسم</button>
+        <button class="link-btn" data-act="device-revoke" data-device="${esc(d.id)}" type="button">افصل</button>`,
+    })}`;
+}
+
+async function loadApp() {
+  try {
+    appView = await api(`${base}/app`);
+  } catch {
+    appView = null;
+  }
+  renderApp();
+}
+
+function appAction(el) {
+  const act = el.dataset.act;
+  if (el.dataset.copy !== undefined) {
+    navigator.clipboard?.writeText(el.dataset.copy).then(() => toast('اتنسخ'), () => {});
+    return;
+  }
+  if (act === 'invite') {
+    navigator.clipboard?.writeText(appInviteText(appView, data.brand.name)).then(() => toast('الرسالة اتنسخت'), () => {});
+    return;
+  }
+  const device = appView.devices.find((d) => d.id === el.dataset.device);
+  if (!device) return;
+  const path = `${base}/devices/${encodeURIComponent(device.id)}`;
+  if (act === 'device-rename') {
+    openForm({
+      title: 'اسم الجهاز',
+      fields: [{ name: 'name', label: 'الاسم', value: device.name, placeholder: 'مثلًا: كاشير 1', maxlength: 40 }],
+      onSubmit: async (v) => {
+        await api(`${path}/rename`, { method: 'POST', body: { name: v.name } });
+        await loadApp();
+      },
+    });
+  } else if (act === 'device-revoke') {
+    openForm({
+      title: `افصل «${device.name}»؟`,
+      intro: 'التطبيق على الجهاز ده هيرجع يطلب الفرع والرقم السري. استخدمها لو الجهاز اتسرق أو اتغيّر.',
+      submit: 'افصل',
+      danger: true,
+      onSubmit: async () => {
+        await api(`${path}/revoke`, { method: 'POST', body: {} });
+        toast('الجهاز اتفصل');
+        await loadApp();
+      },
+    });
+  }
 }
 
 const FORCED_HINT = 'مقفولة من الإدارة';
@@ -136,6 +214,7 @@ async function refresh() {
   try {
     data = await api(`${base}/overview`);
     render();
+    await loadApp();
   } catch (err) {
     if (err.status === 401) location.reload();
   }
@@ -154,7 +233,12 @@ async function boot() {
   $('app').hidden = false;
   $('logout').innerHTML = icons.logout(22);
   render();
+  await loadApp();
   mountAnalytics($('analytics'), { base, branches: data.branches });
+  $('app-body').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-act], [data-copy]');
+    if (el) appAction(el);
+  });
   setInterval(refresh, POLL_MS);
 
   $('logout').addEventListener('click', async () => {

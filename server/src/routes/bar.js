@@ -5,7 +5,7 @@ import { pinFields, PIN_RE, verifyPin } from '../auth.js';
 import { channels } from '../bus.js';
 import { staffCookieName } from '../cookies.js';
 import { planView } from '../plans.js';
-import { setStaffSession, verifyStaffSession } from '../sessions.js';
+import { deviceFromRequest, setStaffSession, verifyStaffSession } from '../sessions.js';
 import { HttpError } from '../errors.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
@@ -55,7 +55,8 @@ function integer(body, key, min, max) {
   return value;
 }
 
-export default async function barRoutes(app, { config, tenants, bus, notifier, service, screens }) {
+export default async function barRoutes(app, deps) {
+  const { config, control, tenants, bus, notifier, service, screens } = deps;
   const loginLimiter = createRateLimiter({ limit: config.loginRatePerMin });
   app.addHook('onClose', async () => loginLimiter.close());
 
@@ -65,7 +66,12 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
   function requireBar(req) {
     const ctx = tenants.resolve(req.params.shop);
     const shop = ctx.store.getShop();
-    if (!verifyStaffSession(req, config, shop)) throw new HttpError(401, 'سجّل دخول الأول');
+    // An app session ends the moment its device is unlinked (or moved to another branch).
+    const deviceLinked = (id) => {
+      const device = control.getDevice(id);
+      return Boolean(device) && !device.revoked_at && device.branch_id === shop.id;
+    };
+    if (!verifyStaffSession(req, config, shop, { deviceLinked })) throw new HttpError(401, 'سجّل دخول الأول');
     req.ctx = ctx;
     req.shop = shop;
   }
@@ -126,9 +132,20 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
       const listener = (event, data) => sse.send(event, data);
       bus.on(channel, listener);
       screens.add(branchId);
+      // A linked cashier app: "online now" on the dashboards while this stream is open.
+      const device = deviceFromRequest(req, deps);
+      const appDevice = device?.branch_id === branchId ? device.id : null;
+      if (appDevice) {
+        screens.addDevice(appDevice);
+        control.touchDevice(appDevice);
+      }
       sse.onClose(() => {
         bus.off(channel, listener);
         screens.remove(branchId);
+        if (appDevice) {
+          screens.removeDevice(appDevice);
+          control.touchDevice(appDevice);
+        }
       });
     });
 

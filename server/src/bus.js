@@ -13,10 +13,23 @@ export const channels = (branchId) => ({
   bar: `b:${branchId}:bar`,
 });
 
-/** Open bar/QR streams per branch: drives nonce rotation and the "connected screens" count. */
+/**
+ * Open bar/QR streams per branch: drives nonce rotation and the "connected screens" count.
+ * Streams from a linked cashier app also count per device ("online now" on the dashboards).
+ */
 export function createScreens() {
   const counts = new Map();
+  const devices = new Map();
   return {
+    addDevice(id) {
+      devices.set(id, (devices.get(id) ?? 0) + 1);
+    },
+    removeDevice(id) {
+      const n = (devices.get(id) ?? 1) - 1;
+      if (n > 0) devices.set(id, n);
+      else devices.delete(id);
+    },
+    deviceOnline: (id) => (devices.get(id) ?? 0) > 0,
     add(branchId) {
       counts.set(branchId, (counts.get(branchId) ?? 0) + 1);
     },

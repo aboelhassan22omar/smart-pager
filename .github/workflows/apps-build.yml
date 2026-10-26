@@ -1,0 +1,126 @@
+name: Cashier apps
+
+# Builds the cashier app templates (apps/android, apps/windows) and proves them on real platforms.
+# Called by ci.yml on PRs that touch the apps, and by cd.yml to ship new templates.
+# Artifacts: cashier-android (cashier-template.apk), cashier-windows (cashier-template.exe).
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: "22"
+  BUILD_TOOLS: "35.0.1"
+  PLATFORM: "android-35"
+
+jobs:
+  android:
+    name: Apps - Android build + apksigner
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - name: SDK packages
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "build-tools;$BUILD_TOOLS" "platforms;$PLATFORM" > /dev/null
+      - name: Build template
+        run: |
+          ANDROID_JAR="$ANDROID_HOME/platforms/$PLATFORM/android.jar" \
+          BUILD_TOOLS="$ANDROID_HOME/build-tools/$BUILD_TOOLS" \
+            bash apps/android/build.sh "$RUNNER_TEMP/cashier-template.apk"
+      - run: npm ci --omit=dev
+        working-directory: server
+      - name: Brand apk passes Google's apksigner, aapt2 and zipalign
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+          node apps/brand-package.mjs android "$RUNNER_TEMP/cashier-template.apk" "$RUNNER_TEMP/brand.apk"
+          "$BT/apksigner" verify --verbose --min-sdk-version 24 "$RUNNER_TEMP/brand.apk" | tee "$RUNNER_TEMP/verify.txt"
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$RUNNER_TEMP/verify.txt"
+          "$BT/aapt2" dump badging "$RUNNER_TEMP/brand.apk" | tee "$RUNNER_TEMP/badging.txt" | head -12
+          grep -q "application-label:'كافيه التجربة'" "$RUNNER_TEMP/badging.txt"
+          grep -q "minSdkVersion:'24'" "$RUNNER_TEMP/badging.txt"
+          "$BT/zipalign" -c -p 4 "$RUNNER_TEMP/brand.apk"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cashier-android
+          path: ${{ runner.temp }}/cashier-template.apk
+          if-no-files-found: error
+
+  android-device:
+    name: Apps - Android emulator run
+    needs: android
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --omit=dev
+        working-directory: server
+      - uses: actions/download-artifact@v8
+        with:
+          name: cashier-android
+          path: ${{ runner.temp }}/android
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      # Install the brand apk the way a branch would get it, launch it, and wait for its page to run.
+      - uses: ReactiveCircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none
+          script: node apps/smoke.mjs android "$RUNNER_TEMP/android/cashier-template.apk"
+
+  windows:
+    name: Apps - Windows build + run
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/windows
+      - name: Build template
+        working-directory: apps/windows
+        run: cargo build --release --locked
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: server/package-lock.json
+      - run: npm ci --omit=dev
+        working-directory: server
+      # First run from the download, like a branch: installs itself, makes the shortcut, opens the page.
+      - name: Run the brand app (WebView2)
+        shell: bash
+        env:
+          SMOKE_INSTALL: "1"
+        run: node apps/smoke.mjs windows apps/windows/target/release/cashier.exe
+      - name: Template
+        shell: bash
+        run: cp apps/windows/target/release/cashier.exe "$RUNNER_TEMP/cashier-template.exe"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: cashier-windows
+          path: ${{ runner.temp }}/cashier-template.exe
+          if-no-files-found: error

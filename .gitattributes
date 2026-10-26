@@ -1,0 +1,6 @@
+# LF everywhere (files edited on Windows must not turn into whole-file CRLF diffs).
+* text=auto eol=lf
+*.png binary
+*.ico binary
+*.woff2 binary
+*.p8 binary

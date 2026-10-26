@@ -1,0 +1,101 @@
+/* Cashier app pages: the download page (/app/<brand>) and the in-app setup.
+   Private label: the brand's icon and name only. Same tokens, 60/30/10. */
+
+.get-app {
+  display: grid;
+  gap: 18px;
+  width: min(100% - 2 * var(--gutter), 520px);
+  margin: 0 auto;
+  padding: 40px 0 calc(32px + env(safe-area-inset-bottom));
+}
+
+.app-head {
+  display: grid;
+  justify-items: center;
+  gap: 6px;
+  text-align: center;
+}
+
+.app-icon {
+  width: 88px;
+  height: 88px;
+  margin-bottom: 8px;
+  border-radius: 22px;
+  background: var(--surface);
+  box-shadow: 0 0 0 1px var(--line);
+  object-fit: cover;
+}
+
+.app-head h1 {
+  margin: 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
+}
+
+.app-head p {
+  margin: 0;
+}
+
+.panel {
+  margin: 0;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.get-app .stack {
+  display: grid;
+  gap: 14px;
+}
+
+.platforms {
+  display: grid;
+  gap: 10px;
+}
+
+.platform {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.platform[data-active='true'] {
+  border-color: var(--line-strong);
+}
+
+.platform h2 {
+  margin: 0;
+  font-size: var(--fs-lg);
+  font-weight: 600;
+}
+
+.platform p {
+  margin: 2px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.panel h2 {
+  margin: 0 0 10px;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.steps {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding-inline-start: 22px;
+  color: var(--text);
+  font-size: var(--fs-sm);
+  line-height: 1.7;
+}
+
+.steps li::marker {
+  color: var(--accent);
+  font-weight: 600;
+}

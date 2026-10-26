@@ -934,3 +934,155 @@
 .trash-list li span {
   font-size: var(--fs-xs);
 }
+
+/* ---------- cashier app (super sheet + owner section) ---------- */
+
+.apps-section,
+.stack-lg {
+  display: grid;
+  gap: 14px;
+}
+
+.app-sheet {
+  max-height: 92vh;
+  overflow-y: auto;
+}
+
+.app-sheet > p {
+  margin: 0 0 12px;
+}
+
+.app-sheet .note {
+  padding: 10px 12px;
+  border-inline-start: 3px solid var(--accent);
+  border-radius: var(--r-control);
+  background: var(--bg);
+  font-size: var(--fs-sm);
+}
+
+.app-creds {
+  margin-bottom: 12px;
+}
+
+.app-icon-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.app-icon-row p {
+  margin: 0 0 6px;
+  font-size: var(--fs-sm);
+}
+
+.app-icon-row .actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.app-icon-preview {
+  width: 64px;
+  height: 64px;
+  flex: none;
+  border-radius: 16px;
+  box-shadow: 0 0 0 1px var(--line);
+  object-fit: cover;
+}
+
+.apps-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.apps-summary strong {
+  color: var(--text);
+}
+
+.device-branches {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.app-sheet .device-branches {
+  grid-template-columns: 1fr;
+}
+
+.device-branch {
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface);
+}
+
+.app-sheet .device-branch {
+  background: var(--bg);
+}
+
+.device-branch[data-empty='true'] {
+  border-style: dashed;
+}
+
+.device-branch h4 {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.device-branch > p {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.device-list {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.device-list li {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 4px 10px;
+  padding-top: 8px;
+  border-top: 1px solid var(--line);
+}
+
+.device-list li div {
+  display: grid;
+  min-width: 0;
+}
+
+.device-list li span.muted {
+  font-size: var(--fs-xs);
+}
+
+.device-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.device-state[data-tone='ok'] {
+  color: var(--text);
+}
+
+.device-state[data-tone='alert'] {
+  color: var(--danger);
+}
+
+.device-actions {
+  grid-column: 1 / -1;
+  display: flex;
+  gap: 4px;
+}

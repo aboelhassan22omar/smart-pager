@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Placeholder: the server swaps it for the brand name when it builds the brand's APK. -->
+    <string name="app_name">PAGER_APP_LABEL</string>
+</resources>

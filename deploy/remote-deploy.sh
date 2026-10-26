@@ -19,7 +19,7 @@ if [ ! -f .env ]; then
   echo "::error::$DEPLOY_PATH/.env is missing. Copy .env.example to .env and fill it in (see README)."
   exit 1
 fi
-mkdir -p secrets
+mkdir -p secrets native
 
 if [ "$NEW_IMAGE" = "-" ] && [ "$INFRA_CHANGED" != "true" ]; then
   echo "Nothing to deploy."

@@ -1,5 +1,7 @@
 import { passwordFields, pinFields, PIN_RE, verifyPin } from '../auth.js';
+import fs from 'node:fs';
 import { superOverview } from '../aggregate.js';
+import { appKeyOf, appView, brandAppDir, iconFile } from '../apps.js';
 import { backupStatus, runBackup } from '../backup.js';
 import { HttpError } from '../errors.js';
 import { DAY_MS, effectivePlan, FEATURES, planView } from '../plans.js';
@@ -10,6 +12,7 @@ import {
 } from '../sessions.js';
 import { randomId } from '../util.js';
 import { barShop } from '../views.js';
+import { sniffImage } from './bar.js';
 
 export const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
 const bad = (field, message) => new HttpError(400, message, { field });
@@ -63,7 +66,7 @@ export default async function superRoutes(app, deps) {
   await app.register(async (s) => {
     s.addHook('onRequest', async (req) => {
       requireSuper(req, config);
-      requireJson(req);
+      requireJson(req, req.url.split('?')[0].endsWith('/app-icon') ? ['image/png'] : []);
     });
 
     function branchCtx(req) {
@@ -147,6 +150,60 @@ export default async function superRoutes(app, deps) {
         audit(req, 'owner.reset', { brandId, detail: { username: updated.username } });
       }
       return ownerResult(updated, brandId, password);
+    });
+
+    // ---- cashier app ----
+
+    function liveBrand(req) {
+      const brand = control.getBrand(req.params.brand);
+      if (!brand) throw new HttpError(404, 'البراند ده مش موجود');
+      return brand;
+    }
+
+    s.get('/brands/:brand/app', async (req) => appView(deps, liveBrand(req)));
+
+    // The download password (8+ characters; empty = generate one). Turns the download link on.
+    s.post('/brands/:brand/app', async (req) => {
+      const brand = liveBrand(req);
+      const password = req.body?.password ? checkPassword(req.body.password) : randomId(6);
+      control.setAppPassword(brand.id, await passwordFields(config.cookieSecret, password));
+      appKeyOf(control, brand.id);
+      audit(req, 'app.password', { brandId: brand.id });
+      return appView(deps, control.getBrand(brand.id));
+    });
+
+    // App icon: square PNGs the dashboard renders from the logo, ?size=432 (Android) and 256 (Windows).
+    s.post('/brands/:brand/app-icon', async (req) => {
+      const brand = liveBrand(req);
+      const size = Number(req.query.size) === 256 ? 256 : 432;
+      if (sniffImage(req.body) !== 'png' || req.body.readUInt32BE(16) !== size || req.body.readUInt32BE(20) !== size) {
+        throw bad('icon', `الأيقونة لازم تكون PNG مربعة ${size}×${size}`);
+      }
+      fs.mkdirSync(brandAppDir(config, brand.id), { recursive: true });
+      await fs.promises.writeFile(iconFile(config, brand.id, size), req.body);
+      control.setAppIcon(brand.id, Date.now());
+      if (size === 432) audit(req, 'app.icon', { brandId: brand.id });
+      return { ok: true };
+    });
+
+    s.delete('/brands/:brand/app-icon', async (req) => {
+      const brand = liveBrand(req);
+      for (const size of [432, 256]) await fs.promises.rm(iconFile(config, brand.id, size), { force: true });
+      control.setAppIcon(brand.id, null);
+      return { ok: true };
+    });
+
+    function brandDevice(req) {
+      const device = control.getDevice(req.params.device);
+      if (!device || device.brand_id !== req.params.brand || device.revoked_at) throw new HttpError(404, 'الجهاز ده مش موجود');
+      return device;
+    }
+
+    s.post('/brands/:brand/devices/:device/revoke', async (req) => {
+      const device = brandDevice(req);
+      control.revokeDevice(device.id);
+      audit(req, 'device.revoke', { brandId: device.brand_id, branchId: device.branch_id, detail: { name: device.name } });
+      return { ok: true };
     });
 
     // ---- trash ----
