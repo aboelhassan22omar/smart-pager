@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { verifyPin } from '../auth.js';
 import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
+import { appView } from '../apps.js';
 import { HttpError } from '../errors.js';
 import { LOYALTY_EVERY, REWARD_TEXT_MAX } from '../loyalty.js';
 import { createRateLimiter } from '../ratelimit.js';
@@ -157,6 +158,36 @@ export default async function brandRoutes(app, deps) {
         control.setFeature(ctx.branch.id, feature, Boolean(on));
         audit(on ? 'feature.enable' : 'feature.disable', { feature });
       }
+      return { ok: true };
+    });
+
+    // ---- cashier app: the download link to pass on, and the devices it is installed on ----
+
+    b.get('/app', async (req) => appView(deps, control.getBrand(req.params.brand)));
+
+    function ownDevice(req) {
+      const device = control.getDevice(req.params.device);
+      if (!device || device.brand_id !== req.params.brand || device.revoked_at) throw new HttpError(404, 'الجهاز ده مش موجود');
+      return device;
+    }
+    const deviceAudit = (req, device, action, detail) => control.audit({
+      actor: `owner:${req.owner.id}`, action, brandId: device.brand_id, branchId: device.branch_id, detail, ip: req.ip,
+    });
+
+    b.post('/devices/:device/rename', async (req) => {
+      const device = ownDevice(req);
+      const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+      if (name.length < 1 || name.length > 40) throw new HttpError(400, 'الاسم من 1 لـ 40 حرف', { field: 'name' });
+      control.renameDevice(device.id, name);
+      deviceAudit(req, device, 'device.rename', { name });
+      return { ok: true };
+    });
+
+    // The app on that device goes back to "pick your branch + PIN" right away.
+    b.post('/devices/:device/revoke', async (req) => {
+      const device = ownDevice(req);
+      control.revokeDevice(device.id);
+      deviceAudit(req, device, 'device.revoke', { name: device.name });
       return { ok: true };
     });
 

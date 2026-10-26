@@ -82,6 +82,7 @@ jobs:
       app: ${{ steps.filter.outputs.app }}
       infra: ${{ steps.filter.outputs.infra }}
       ios: ${{ steps.filter.outputs.ios }}
+      apps: ${{ steps.filter.outputs.apps }}
     steps:
       - uses: actions/checkout@v7
       - uses: dorny/paths-filter@v4
@@ -102,11 +103,14 @@ jobs:
               - 'deploy/**'
             ios:
               - 'ios/**'
+            apps:
+              - 'apps/**'
       - name: Summary
         env:
           APP: ${{ steps.filter.outputs.app }}
           INFRA: ${{ steps.filter.outputs.infra }}
           IOS: ${{ steps.filter.outputs.ios }}
+          APPS: ${{ steps.filter.outputs.apps }}
         run: |
           {
             echo "### Changed services"
@@ -115,6 +119,7 @@ jobs:
             echo "| app | $APP |"
             echo "| infra | $INFRA |"
             echo "| ios | $IOS |"
+            echo "| cashier apps | $APPS |"
           } >> "$GITHUB_STEP_SUMMARY"
 
   publish-app:
@@ -164,9 +169,20 @@ jobs:
           cache-from: type=gha,scope=app-release
           cache-to: type=gha,mode=max,scope=app-release
 
+  # New cashier app templates (apps/ changed, or a manual full deploy). The server builds each
+  # brand's download from them, so shipping them is just copying two files.
+  apps-build:
+    name: CD - Build cashier apps
+    needs: changes
+    if: >-
+      always()
+      && needs.changes.result == 'success'
+      && (needs.changes.outputs.apps == 'true' || github.event_name == 'workflow_dispatch')
+    uses: ./.github/workflows/apps-build.yml
+
   release-gate:
     name: CD - All release images published
-    needs: [changes, publish-app]
+    needs: [changes, publish-app, apps-build]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -175,22 +191,28 @@ jobs:
         env:
           CHANGES: ${{ needs.changes.result }}
           PUBLISH: ${{ needs.publish-app.result }}
+          APPS: ${{ needs.apps-build.result }}
         run: |
-          echo "changes=$CHANGES publish-app=$PUBLISH"
+          echo "changes=$CHANGES publish-app=$PUBLISH apps-build=$APPS"
           [ "$CHANGES" = "success" ] || { echo "::error::change detection did not succeed"; exit 1; }
           case "$PUBLISH" in
             success|skipped) echo "All release images are published." ;;
             *) echo "::error::app image publish $PUBLISH"; exit 1 ;;
           esac
+          case "$APPS" in
+            success|skipped) echo "Cashier apps ready." ;;
+            *) echo "::error::cashier apps build $APPS"; exit 1 ;;
+          esac
 
   deploy:
     name: Stage 3 - Deploy production
-    needs: [changes, publish-app, release-gate]
+    needs: [changes, publish-app, apps-build, release-gate]
     if: >-
       always()
       && needs.release-gate.result == 'success'
       && vars.DEPLOY_PATH != ''
-      && (needs.changes.outputs.app == 'true' || needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch')
+      && (needs.changes.outputs.app == 'true' || needs.changes.outputs.infra == 'true'
+          || needs.changes.outputs.apps == 'true' || github.event_name == 'workflow_dispatch')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment:
@@ -243,6 +265,29 @@ jobs:
       - name: Copy compose files
         if: needs.changes.outputs.infra == 'true' || github.event_name == 'workflow_dispatch'
         run: scp docker-compose.yml Caddyfile .env.example "prod:$DEPLOY_PATH/"
+
+      - uses: actions/download-artifact@v8
+        if: needs.apps-build.result == 'success'
+        with:
+          pattern: cashier-*
+          merge-multiple: true
+          path: native
+
+      # Templates are read per download (no restart). Each file lands complete, then is renamed in.
+      - name: Copy cashier app templates
+        if: needs.apps-build.result == 'success'
+        run: |
+          android="$(tr -d '[:space:]' < apps/android/VERSION)"
+          windows="$(grep -m1 '^version' apps/windows/Cargo.toml | cut -d'"' -f2)"
+          printf '{"android":"%s","windows":"%s"}\n' "$android" "$windows" > native/versions.json
+          ls -la native
+          # shellcheck disable=SC2029
+          ssh prod "mkdir -p '$DEPLOY_PATH/native'"
+          for f in cashier-template.apk cashier-template.exe versions.json; do
+            scp "native/$f" "prod:$DEPLOY_PATH/native/$f.new"
+          done
+          # shellcheck disable=SC2029
+          ssh prod "cd '$DEPLOY_PATH/native' && for f in cashier-template.apk cashier-template.exe versions.json; do mv -f \"\$f.new\" \"\$f\"; done"
 
       - name: Update changed services
         env:

@@ -1,4 +1,7 @@
 // "Powered by AUREXIS" footer, fixed at the bottom of every page (splash included).
+// Not inside a brand's cashier app: that one carries the brand's name only.
+
+import { isCashierApp } from './util.js';
 
 export const AUREXIS_URL = 'https://aurexis.cc/';
 // The colored brand mark, same file the aurexis.cc header uses.
@@ -38,4 +41,4 @@ export function mountPoweredBy(doc) {
   return footer;
 }
 
-if (typeof document !== 'undefined') mountPoweredBy(document);
+if (typeof document !== 'undefined' && !isCashierApp(document)) mountPoweredBy(document);

@@ -1,4 +1,4 @@
-import { ago, branchCardHtml } from './dashboard.js';
+import { ago, appInviteText, branchCardHtml, devicesHtml, PLATFORM_LABEL } from './dashboard.js';
 import { openForm, showResult } from './forms.js';
 import { icons } from './icons.js';
 import { toast } from './staff.js';
@@ -192,6 +192,7 @@ function renderBrands() {
         <div class="dash-head">
           <h2>${esc(brand.name)}</h2>
           <div class="actions">
+            <button class="btn btn-sm" data-act="app" data-id="${esc(brand.id)}" type="button">تطبيق الكاشير${brand.appEnabled ? '' : ' (مقفول)'}</button>
             <button class="btn btn-sm" data-act="branch" data-id="${esc(brand.id)}" type="button">فرع جديد</button>
             <button class="icon-link icon-sm" data-act="trash-brand" data-id="${esc(brand.id)}" type="button"
                     aria-label="انقل البراند لسلة المهملات" title="انقل البراند لسلة المهملات">${icons.trash(18)}</button>
@@ -291,6 +292,12 @@ const ACTION_TEXT = {
   'branch.restore': (e) => `رجوع الفرع من سلة المهملات${e.detail?.trialDays ? ` (تجربة ${e.detail.trialDays} يوم)` : ''}`,
   'brand.trash': () => 'نقل البراند لسلة المهملات',
   'brand.restore': () => 'رجوع البراند من سلة المهملات',
+  'app.password': () => 'باسورد لينك تحميل التطبيق',
+  'app.icon': () => 'أيقونة تطبيق الكاشير',
+  'app.download': (e) => `تحميل التطبيق (${PLATFORM_LABEL[e.detail?.platform] ?? ''})`,
+  'device.link': (e) => `جهاز كاشير اتربط: ${e.detail?.name ?? ''} (${PLATFORM_LABEL[e.detail?.platform] ?? ''})`,
+  'device.rename': (e) => `اسم جهاز جديد: ${e.detail?.name ?? ''}`,
+  'device.revoke': (e) => `فصل جهاز: ${e.detail?.name ?? ''}`,
   'branch.rename': (e) => `تغيير اسم الفرع لـ «${e.detail?.name ?? ''}»`,
   'branch.pin_reset': () => 'رقم سري جديد للموظفين',
   'branch.trial_extend': (e) => `مدّ التجربة ${e.detail?.days ?? ''} يوم`,
@@ -313,6 +320,8 @@ function actorText(actor, e) {
   if (actor === 'super') return 'إنت';
   if (actor === 'cli') return 'سطر الأوامر';
   if (actor === 'system') return 'تلقائي';
+  if (actor === 'download') return 'صفحة التحميل';
+  if (actor.startsWith('device:')) return 'جهاز كاشير';
   if (actor === 'admin-token') return 'Admin API';
   if (actor.startsWith('owner:')) {
     const id = Number(actor.slice(6));
@@ -584,6 +593,156 @@ function branchAction(op, b) {
   }
 }
 
+// ---------- cashier app ----------
+
+const ICON_SIZES = [432, 256];
+
+/** Square PNG from the logo: background color, logo centered inside the adaptive-icon safe zone. */
+async function renderIcon(file, background, size) {
+  const url = URL.createObjectURL(file);
+  try {
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const g = canvas.getContext('2d');
+    g.fillStyle = background;
+    g.fillRect(0, 0, size, size);
+    // Android masks the outer third (circle, squircle); Windows shows the whole square.
+    const box = size * (size === 432 ? 0.56 : 0.78);
+    const scale = Math.min(box / img.naturalWidth, box / img.naturalHeight);
+    const w = img.naturalWidth * scale;
+    const h = img.naturalHeight * scale;
+    g.imageSmoothingQuality = 'high';
+    g.drawImage(img, (size - w) / 2, (size - h) / 2, w, h);
+    return await new Promise((resolve) => canvas.toBlob(resolve, 'image/png'));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+async function appSheet(brandId) {
+  const brand = findBrand(brandId);
+  const base = `/brands/${encodeURIComponent(brandId)}`;
+  let view;
+  try {
+    view = await api(`/api/super${base}/app`);
+  } catch (err) {
+    toast(err.message, 'error');
+    return;
+  }
+  const backdrop = document.createElement('div');
+  backdrop.className = 'sheet-backdrop';
+  const close = () => backdrop.remove();
+  const missing = Object.entries(view.platforms).filter(([, p]) => !p.available).map(([k]) => PLATFORM_LABEL[k]);
+
+  const render = () => {
+    const branches = liveBranches(findBrand(brandId) ?? brand);
+    backdrop.innerHTML = `
+      <div class="sheet app-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title">
+        <h2 id="sheet-title">تطبيق الكاشير: ${esc(brand.name)}</h2>
+        <p class="muted">صاحب البراند بيبعت اللينك والباسورد لمديرين الفروع، وكل فرع بينزّل التطبيق على جهاز الكاشير ويدخل بالرقم السري بتاعه.</p>
+        ${missing.length ? `<p class="note">نسخة ${esc(missing.join(' و'))} لسه مش على السيرفر، فزرارها مش هيظهر في صفحة التحميل.</p>` : ''}
+        ${view.enabled ? `
+          <dl class="creds-list app-creds">
+            <div><dt>لينك التحميل</dt><dd dir="ltr"><a href="${esc(view.url)}" target="_blank" rel="noopener">${esc(view.url.replace(/^https?:\/\//, ''))}</a>${copyBtn(view.url)}</dd></div>
+            <div><dt>الباسورد</dt><dd dir="ltr">${view.password ? `<span>${esc(view.password)}</span>${copyBtn(view.password)}` : '<span class="muted">مش معروف</span>'}
+              <button class="link-btn" data-op="password" type="button">تعديل</button></dd></div>
+          </dl>
+          <button class="btn btn-sm" data-op="invite" type="button">انسخ رسالة جاهزة لصاحب البراند</button>`
+        : `<p>اللينك مقفول لحد ما تحط له باسورد.</p>
+          <button class="btn btn-primary btn-sm" data-op="password" type="button">حط باسورد وشغّل اللينك</button>`}
+        <h3 class="form-heading">أيقونة واسم التطبيق</h3>
+        <div class="app-icon-row">
+          <img class="app-icon-preview" src="${esc(view.iconUrl)}" alt="" width="64" height="64">
+          <div>
+            <p>الاسم على الجهاز: <strong>${esc(brand.name)}</strong></p>
+            <p class="muted">${view.customIcon ? 'أيقونة البراند' : 'الأيقونة الافتراضية. ارفع لوجو البراند عشان تبقى باسمه وشكله.'}</p>
+            <div class="actions">
+              <button class="btn btn-sm" data-op="icon" type="button">ارفع اللوجو</button>
+              ${view.customIcon ? '<button class="btn btn-sm btn-quiet" data-op="icon-reset" type="button">رجّع الافتراضية</button>' : ''}
+            </div>
+          </div>
+        </div>
+        <h3 class="form-heading">الأجهزة</h3>
+        ${devicesHtml(view, branches, {
+          actions: (d) => `<button class="link-btn" data-op="revoke" data-device="${esc(d.id)}" type="button">افصل</button>`,
+        })}
+        <div class="sheet-actions"><button class="btn btn-quiet btn-block" data-op="close" type="button">رجوع</button></div>
+      </div>`;
+  };
+
+  const reload = async () => {
+    view = await api(`/api/super${base}/app`);
+    await refresh();
+    render();
+  };
+
+  backdrop.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') close();
+  });
+  backdrop.addEventListener('click', async (e) => {
+    if (e.target === backdrop) return close();
+    const copy = e.target.closest('[data-copy]');
+    if (copy) return copyValue(copy.dataset.copy);
+    const op = e.target.closest('[data-op]')?.dataset.op;
+    if (op === 'close') close();
+    else if (op === 'invite') copyValue(appInviteText(view, brand.name));
+    else if (op === 'password') {
+      openForm({
+        title: 'باسورد لينك التحميل',
+        intro: 'أي حد عايز ينزّل التطبيق لازم يكتبه. سيبه فاضي عشان يتعمل تلقائي. الأجهزة اللي متركبة مش بتتأثر.',
+        fields: [{ name: 'password', label: 'الباسورد (8 حروف على الأقل)', type: 'text', dir: 'ltr', value: view.password ?? '' }],
+        onSubmit: async (v) => {
+          view = await post(`${base}/app`, v.password ? { password: v.password } : {});
+          await refresh();
+          render();
+          toast('اتحفظ');
+        },
+      });
+    } else if (op === 'icon') {
+      openForm({
+        title: 'أيقونة التطبيق',
+        intro: 'اللوجو بيتحط في نص مربع بلون الخلفية اللي تختاره. الأحسن لوجو PNG بخلفية شفافة.',
+        fields: [
+          { name: 'logo', label: 'اللوجو', type: 'file', accept: 'image/png,image/jpeg,image/webp' },
+          { name: 'background', label: 'لون الخلفية', type: 'color', value: '#ffffff', dir: 'ltr' },
+        ],
+        submit: 'ارفع',
+        onSubmit: async (v) => {
+          if (!(v.logo instanceof File) || !v.logo.size) throw Object.assign(new Error('اختار صورة اللوجو'), { data: { field: 'logo' } });
+          for (const size of ICON_SIZES) {
+            const png = await renderIcon(v.logo, v.background || '#ffffff', size);
+            await api(`/api/super${base}/app-icon?size=${size}`, { method: 'POST', raw: png, contentType: 'image/png' });
+          }
+          await reload();
+          toast('الأيقونة اتحفظت. التحميلات الجاية هتبقى بيها');
+        },
+      });
+    } else if (op === 'icon-reset') {
+      await api(`/api/super${base}/app-icon`, { method: 'DELETE', body: {} });
+      await reload();
+    } else if (op === 'revoke') {
+      const id = e.target.closest('[data-device]').dataset.device;
+      const d = view.devices.find((x) => x.id === id);
+      openForm({
+        title: `افصل «${d.name}»؟`,
+        intro: 'التطبيق على الجهاز ده هيرجع لصفحة اختيار الفرع والرقم السري.',
+        submit: 'افصل', danger: true,
+        onSubmit: async () => {
+          await post(`${base}/devices/${encodeURIComponent(id)}/revoke`);
+          await reload();
+        },
+      });
+    }
+  });
+  render();
+  document.body.append(backdrop);
+  backdrop.querySelector('[data-op="close"]').focus();
+}
+
 function trashBrand(id) {
   const brand = findBrand(id);
   openForm({
@@ -604,6 +763,7 @@ function onAction(el) {
   if (el.dataset.copy !== undefined) copyValue(el.dataset.copy);
   else if (act === 'enter') enterBranch(id, page);
   else if (act === 'trash-brand') trashBrand(id);
+  else if (act === 'app') appSheet(id);
   else if (act === 'trash') openTrash();
   else if (act === 'pin') {
     const b = findBranch(id);

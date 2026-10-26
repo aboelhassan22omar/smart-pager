@@ -7,7 +7,7 @@ import vm from 'node:vm';
 import { BG, contrast, extractAccent, hexToRgb, readableAccent, rgbToHsl } from '../public/js/color.js';
 import { reviewHtml } from '../public/js/review.js';
 import { mountPoweredBy, AUREXIS_LOGO, AUREXIS_URL } from '../public/js/powered.js';
-import { esc, SPLASH_MIN_MS } from '../public/js/util.js';
+import { esc, isCashierApp, SPLASH_MIN_MS } from '../public/js/util.js';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const read = (p) => fs.readFileSync(path.join(root, p), 'utf8');
@@ -61,6 +61,25 @@ describe('pages', () => {
 
   test('customer page keeps the Apple meta placeholder for the server', () => {
     assert.ok(read('public/s.html').includes('<!--APPLE_META-->'));
+  });
+});
+
+describe('cashier app pages (private label)', () => {
+  for (const page of ['public/app.html', 'public/setup.html']) {
+    test(`${page}: Arabic RTL, no inline scripts, brand only (no Powered by, no Smart Pager)`, () => {
+      const html = read(page);
+      assert.match(html, /<html lang="ar" dir="rtl">/);
+      assert.doesNotMatch(html, /<script(?![^>]*\bsrc=)[^>]*>/);
+      assert.doesNotMatch(html, /powered\.js|Smart Pager|Aurexis|AUREXIS/i);
+    });
+  }
+
+  test('the app cookie is how pages know they run inside the cashier app', () => {
+    assert.equal(isCashierApp({ cookie: 'a=1; sp_app=android' }), true);
+    assert.equal(isCashierApp({ cookie: 'sp_app=windows' }), true);
+    assert.equal(isCashierApp({ cookie: 'xsp_app=1' }), false);
+    assert.equal(isCashierApp({ cookie: '' }), false);
+    assert.equal(isCashierApp(undefined), false);
   });
 });
 

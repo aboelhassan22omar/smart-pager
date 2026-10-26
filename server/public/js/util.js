@@ -42,6 +42,11 @@ export function shopIdFromPath(pathname) {
   return decodeURIComponent(pathname.split('/')[2] ?? '');
 }
 
+/** Running inside the brand's cashier app (cookie set by /app/<brand>/start). */
+export function isCashierApp(doc = globalThis.document) {
+  return Boolean(doc) && /(^|;\s*)sp_app=/.test(doc.cookie ?? '');
+}
+
 export function isIOS(nav) {
   return /iP(hone|ad|od)/.test(nav.userAgent) || (nav.platform === 'MacIntel' && nav.maxTouchPoints > 1);
 }

@@ -76,6 +76,28 @@ export const CONTROL_MIGRATIONS = [
   ALTER TABLE branches ADD COLUMN deleted_at INTEGER;
   ALTER TABLE branches ADD COLUMN deleted_reason TEXT;
   `,
+  // 5: cashier apps. Per brand: the download password (hash + sealed copy for the dashboards),
+  //    the key built into its apps, and the app icon version. One row per installed device.
+  `
+  ALTER TABLE brands ADD COLUMN app_password_hash TEXT;
+  ALTER TABLE brands ADD COLUMN app_password_sealed TEXT;
+  ALTER TABLE brands ADD COLUMN app_key TEXT;
+  ALTER TABLE brands ADD COLUMN app_icon_at INTEGER;
+  CREATE TABLE devices (
+    id TEXT PRIMARY KEY,
+    brand_id TEXT NOT NULL REFERENCES brands (id),
+    branch_id TEXT NOT NULL REFERENCES branches (id),
+    platform TEXT NOT NULL CHECK (platform IN ('android', 'windows')),
+    name TEXT NOT NULL,
+    model TEXT,
+    app_version TEXT,
+    pin_fp TEXT NOT NULL,
+    created_at INTEGER NOT NULL,
+    last_seen_at INTEGER NOT NULL,
+    revoked_at INTEGER
+  );
+  CREATE INDEX devices_brand ON devices (brand_id);
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -123,6 +145,19 @@ export class ControlStore {
       insertAudit: p('INSERT INTO audit_log (at, actor, action, brand_id, branch_id, detail, ip) VALUES (?, ?, ?, ?, ?, ?, ?)'),
       audit: p('SELECT * FROM audit_log ORDER BY id DESC LIMIT ?'),
       markSummary: p('UPDATE brands SET last_summary_week = ? WHERE id = ?'),
+      setAppPassword: p('UPDATE brands SET app_password_hash = ?, app_password_sealed = ? WHERE id = ?'),
+      setAppKey: p('UPDATE brands SET app_key = ? WHERE id = ? AND app_key IS NULL'),
+      setAppIcon: p('UPDATE brands SET app_icon_at = ? WHERE id = ?'),
+      device: p('SELECT * FROM devices WHERE id = ?'),
+      brandDevices: p('SELECT * FROM devices WHERE brand_id = ? AND revoked_at IS NULL ORDER BY created_at'),
+      insertDevice: p(`INSERT INTO devices (id, brand_id, branch_id, platform, name, model, app_version, pin_fp, created_at, last_seen_at)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      relinkDevice: p('UPDATE devices SET branch_id = ?, name = ?, model = ?, app_version = ?, pin_fp = ?, last_seen_at = ? WHERE id = ?'),
+      seenDevice: p('UPDATE devices SET last_seen_at = ?, app_version = COALESCE(?, app_version), model = COALESCE(?, model) WHERE id = ?'),
+      renameDevice: p('UPDATE devices SET name = ? WHERE id = ?'),
+      revokeDevice: p('UPDATE devices SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL'),
+      downloads: p(`SELECT json_extract(detail, '$.platform') AS platform, COUNT(*) AS n, MAX(at) AS last
+                    FROM audit_log WHERE brand_id = ? AND action = 'app.download' GROUP BY 1`),
     };
   }
 
@@ -288,6 +323,59 @@ export class ControlStore {
 
   markSummarySent(brandId, week) {
     this.sql.markSummary.run(week, brandId);
+  }
+
+  // ---- cashier apps ----
+
+  setAppPassword(brandId, { passwordHash, passwordSealed }) {
+    this.sql.setAppPassword.run(passwordHash, passwordSealed, brandId);
+  }
+
+  /** The brand's app key, created once (it is built into every app the brand downloads). */
+  ensureAppKey(brandId, newKey) {
+    this.sql.setAppKey.run(newKey, brandId);
+    return this.getBrand(brandId).app_key;
+  }
+
+  setAppIcon(brandId, at) {
+    this.sql.setAppIcon.run(at, brandId);
+  }
+
+  getDevice(id) {
+    return this.sql.device.get(id);
+  }
+
+  devicesOfBrand(brandId) {
+    return this.sql.brandDevices.all(brandId);
+  }
+
+  createDevice({ id, brandId, branchId, platform, name, model = null, version = null, pinFp, at = Date.now() }) {
+    this.sql.insertDevice.run(id, brandId, branchId, platform, name, model, version, pinFp, at, at);
+    return this.getDevice(id);
+  }
+
+  relinkDevice(id, { branchId, name, model = null, version = null, pinFp, at = Date.now() }) {
+    this.sql.relinkDevice.run(branchId, name, model, version, pinFp, at, id);
+    return this.getDevice(id);
+  }
+
+  touchDevice(id, { version = null, model = null, at = Date.now() } = {}) {
+    this.sql.seenDevice.run(at, version, model, id);
+  }
+
+  renameDevice(id, name) {
+    this.sql.renameDevice.run(name, id);
+  }
+
+  revokeDevice(id, at = Date.now()) {
+    this.sql.revokeDevice.run(at, id);
+  }
+
+  /** { android: { count, last }, windows: {...} } from the audit log. */
+  appDownloads(brandId) {
+    const out = { android: { count: 0, last: null }, windows: { count: 0, last: null } };
+    for (const r of this.sql.downloads.all(brandId)) if (out[r.platform]) out[r.platform] = { count: Number(r.n), last: r.last };
+    return out;
   }
 
   // ---- audit ----

@@ -34,8 +34,19 @@ function ratingSummary(ctx, now) {
   return { avg, count: rows.length, low };
 }
 
+/** Linked cashier apps per branch: { branchId: { linked, online } }. */
+function deviceCounts({ control, screens }, brandId) {
+  const out = {};
+  for (const d of control.devicesOfBrand(brandId)) {
+    const c = (out[d.branch_id] ??= { linked: 0, online: 0 });
+    c.linked++;
+    if (screens.deviceOnline(d.id)) c.online++;
+  }
+  return out;
+}
+
 /** `withPin`: the super's view also carries the current staff PIN (null when not known). */
-function branchSummary({ tenants, screens, config }, branch, now, { withPin = false } = {}) {
+function branchSummary({ tenants, screens, config }, branch, now, { withPin = false, apps = {} } = {}) {
   const ctx = tenants.get(branch.id);
   const shop = ctx?.store.getShop();
   const stats = shop ? branchStats(ctx, shop, { since: startOfDayIn(config.tz, now), now }) : null;
@@ -61,6 +72,7 @@ function branchSummary({ tenants, screens, config }, branch, now, { withPin = fa
     promoStartsAt: shop?.promo_starts_at ?? null,
     promoEndsAt: shop?.promo_ends_at ?? null,
     screens: screens.count(branch.id),
+    apps: apps[branch.id] ?? { linked: 0, online: 0 },
     deletedAt: branch.deleted_at ?? null,
     deletedReason: branch.deleted_reason ?? null,
     ...(withPin ? { pin: shop ? unseal(config.cookieSecret, shop.pin_sealed) : null } : {}),
@@ -76,9 +88,10 @@ function branchSummary({ tenants, screens, config }, branch, now, { withPin = fa
 export function brandOverview(deps, brandId, now = Date.now()) {
   const brand = deps.control.getBrand(brandId);
   if (!brand) return null;
+  const apps = deviceCounts(deps, brandId);
   return {
     brand: { id: brand.id, name: brand.name },
-    branches: deps.control.branchesOfBrand(brandId).filter((b) => !b.deleted_at).map((b) => branchSummary(deps, b, now)),
+    branches: deps.control.branchesOfBrand(brandId).filter((b) => !b.deleted_at).map((b) => branchSummary(deps, b, now, { apps })),
   };
 }
 
@@ -89,10 +102,11 @@ export function brandOverview(deps, brandId, now = Date.now()) {
 export function superOverview(deps, now = Date.now()) {
   const secret = deps.config.cookieSecret;
   const byBrand = new Map(deps.control.listBrands().map((b) => [b.id, {
-    id: b.id, name: b.name, deletedAt: b.deleted_at ?? null, owners: [], branches: [],
+    id: b.id, name: b.name, deletedAt: b.deleted_at ?? null, appEnabled: Boolean(b.app_password_hash), owners: [], branches: [],
   }]));
+  const apps = Object.assign({}, ...[...byBrand.keys()].map((id) => deviceCounts(deps, id)));
   for (const branch of deps.control.listBranches()) {
-    byBrand.get(branch.brand_id)?.branches.push(branchSummary(deps, branch, now, { withPin: true }));
+    byBrand.get(branch.brand_id)?.branches.push(branchSummary(deps, branch, now, { withPin: true, apps }));
   }
   for (const brand of byBrand.values()) {
     brand.owners = deps.control.ownersOfBrand(brand.id).map((o) => ({

@@ -38,6 +38,8 @@ export function loadConfig(env = process.env) {
     port,
     host: str(env.HOST, '0.0.0.0'),
     dataDir: path.resolve(str(env.DATA_DIR, './data')),
+    // Cashier app templates (built by CI from apps/), see src/native/packages.js
+    nativeDir: path.resolve(str(env.NATIVE_DIR, './native')),
     publicUrl,
     secureCookies: publicUrl.startsWith('https://'),
     tz: str(env.TZ, 'Africa/Cairo'),

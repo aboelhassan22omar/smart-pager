@@ -1,6 +1,6 @@
 // Shared bits for the PIN-protected staff pages (bar, qr, settings).
 
-import { api, esc } from './util.js';
+import { api, esc, isCashierApp } from './util.js';
 
 export function toast(message, tone = 'info') {
   let el = document.getElementById('toast');
@@ -57,13 +57,30 @@ export function showLogin(root, shopId, shopName) {
   });
 }
 
+// In the cashier app (a linked device) an expired staff session renews without the PIN.
+// When the PIN changed the app goes back to its setup page; anywhere else this is a no-op.
+async function renewFromApp(shopId) {
+  try {
+    await api('/api/app/renew', { method: 'POST', body: { shopId } });
+    return true;
+  } catch (err) {
+    if (err.data?.relink) location.replace(err.data.relink);
+    return false;
+  }
+}
+
 // Loads bar state, asking for the PIN first when there is no session.
 export async function loadStaffState(shopId, root) {
+  let renewed = false;
   for (;;) {
     try {
       return await api(`/api/bar/${encodeURIComponent(shopId)}/state`);
     } catch (err) {
       if (err.status !== 401) throw err;
+      if (!renewed && isCashierApp()) {
+        renewed = true;
+        if (await renewFromApp(shopId)) continue;
+      }
       let name = '';
       try {
         name = (await api(`/api/b/${encodeURIComponent(shopId)}`)).name;

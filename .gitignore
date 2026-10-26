@@ -15,3 +15,7 @@ DerivedData/
 
 # editor/plugin caches
 .impeccable/
+
+# cashier app templates (built by CI, see apps/)
+/native/
+server/native/
