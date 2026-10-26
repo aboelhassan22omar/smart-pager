@@ -70,6 +70,7 @@ export default async function brandRoutes(app, deps) {
     if (!owner || !(await verifyPin(String(password ?? ''), owner.password_hash))) {
       throw new HttpError(401, 'اسم المستخدم أو كلمة السر غلط');
     }
+    if (control.getBrand(owner.brand_id)?.deleted_at) throw new HttpError(403, 'الحساب ده متوقف. كلّم Aurexis');
     control.markOwnerLogin(owner.id);
     setOwnerSession(reply, config, owner);
     control.audit({ actor: `owner:${owner.id}`, action: 'owner.login', brandId: owner.brand_id, ip: req.ip });
@@ -90,7 +91,7 @@ export default async function brandRoutes(app, deps) {
     // A branch of THIS brand, or 404 (never reveals other brands' branches).
     function ownBranch(req) {
       const branch = control.getBranch(req.params.branch);
-      if (!branch || branch.brand_id !== req.params.brand) throw new HttpError(404, 'الفرع ده مش موجود');
+      if (!branch || branch.brand_id !== req.params.brand || branch.deleted_at) throw new HttpError(404, 'الفرع ده مش موجود');
       return tenants.resolve(branch.id);
     }
 

@@ -1,4 +1,4 @@
-import { hashPin, PIN_RE } from './auth.js';
+import { hashPin, passwordFields, pinFields, PIN_RE } from './auth.js';
 import { runBackup } from './backup.js';
 import { openStorage } from './bootstrap.js';
 import { loadConfig } from './config.js';
@@ -6,6 +6,7 @@ import { HttpError } from './errors.js';
 import { planView } from './plans.js';
 import { branchUrls, provisionBrand, provisionBranch } from './provision.js';
 import { checkPassword, USERNAME_RE } from './routes/super.js';
+import { ensureSecrets } from './secrets.js';
 import { randomId } from './util.js';
 
 const USAGE = `Smart Pager CLI
@@ -47,6 +48,8 @@ SUPER_PASSWORD_HASH='${hash}'`);
 
 const quietLog = { info() {}, warn: console.warn, error: console.error, debug() {} };
 const config = loadConfig();
+// The vault key (sealed PINs and passwords) derives from COOKIE_SECRET, same as the server's.
+ensureSecrets(config);
 const { control, tenants } = openStorage(config, quietLog);
 const deps = { config, control, tenants };
 const audit = (action, extra = {}) => control.audit({ actor: 'cli', action, ...extra });
@@ -67,7 +70,7 @@ function branchOrFail(id) {
 async function setPin(id, pin) {
   const ctx = branchOrFail(id);
   if (!PIN_RE.test(pin ?? '')) throw new HttpError(400, 'PIN must be 4-8 digits');
-  ctx.store.updateShop({ pin_hash: await hashPin(pin) });
+  ctx.store.updateShop(await pinFields(config.cookieSecret, pin));
   audit('branch.pin_reset', { brandId: ctx.branch.brand_id, branchId: id });
   console.log(`PIN updated for "${id}" (existing bar sessions are signed out)`);
 }
@@ -122,7 +125,7 @@ async function main([command, sub, ...rest]) {
     if (!USERNAME_RE.test(username ?? '')) throw new HttpError(400, 'username: 3-32 of a-z 0-9 . _ -');
     if (control.ownerByUsername(username)) throw new HttpError(409, `Username "${username}" is taken`);
     const password = given ? checkPassword(given) : randomId(9);
-    control.createOwner({ brandId, username, email: email ?? null, passwordHash: await hashPin(password) });
+    control.createOwner({ brandId, username, email: email ?? null, ...(await passwordFields(config.cookieSecret, password)) });
     audit('owner.create', { brandId, detail: { username } });
     console.log(`Owner "${username}" for brand "${brandId}"\n  password: ${password}\n  login:    ${config.publicUrl}/brand/${brandId}`);
   } else if (command === 'owner' && sub === 'reset') {
@@ -130,7 +133,7 @@ async function main([command, sub, ...rest]) {
     const owner = control.ownerByUsername(username ?? '');
     if (!owner) throw new HttpError(404, `No owner "${username}"`);
     const password = given ? checkPassword(given) : randomId(9);
-    control.resetOwnerPassword(owner.id, await hashPin(password));
+    control.resetOwnerPassword(owner.id, await passwordFields(config.cookieSecret, password));
     audit('owner.reset', { brandId: owner.brand_id, detail: { username } });
     console.log(`Password reset for "${username}" (other sessions signed out)\n  password: ${password}`);
   } else if (command === 'backup') {

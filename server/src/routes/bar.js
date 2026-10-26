@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import QRCode from 'qrcode';
-import { hashPin, PIN_RE, verifyPin } from '../auth.js';
+import { pinFields, PIN_RE, verifyPin } from '../auth.js';
 import { channels } from '../bus.js';
 import { staffCookieName } from '../cookies.js';
 import { planView } from '../plans.js';
@@ -193,7 +193,7 @@ export default async function barRoutes(app, { config, tenants, bus, notifier, s
         if (!(await verifyPin(String(body.currentPin ?? ''), shop.pin_hash))) {
           throw new HttpError(403, 'الرقم السري الحالي غلط', { field: 'currentPin' });
         }
-        fields.pin_hash = await hashPin(body.newPin);
+        Object.assign(fields, await pinFields(config.cookieSecret, body.newPin));
       }
       if (!Object.keys(fields).length) throw invalid(null, 'مفيش تغييرات تتحفظ');
 

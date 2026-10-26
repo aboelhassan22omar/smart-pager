@@ -1,5 +1,6 @@
 import crypto from 'node:crypto';
 import { promisify } from 'node:util';
+import { seal } from './vault.js';
 
 const scrypt = promisify(crypto.scrypt);
 const N = 16384;
@@ -26,3 +27,13 @@ export async function verifyPin(pin, stored) {
 // Changes whenever the PIN changes, which invalidates every existing session.
 export const pinFingerprint = (pinHash) =>
   crypto.createHash('sha256').update(pinHash).digest('base64url').slice(0, 16);
+
+/** Columns for a new branch PIN: the hash logins check + a sealed copy the super can read. */
+export async function pinFields(secret, pin) {
+  return { pin_hash: await hashPin(pin), pin_sealed: seal(secret, pin) };
+}
+
+/** Same for an owner password. */
+export async function passwordFields(secret, password) {
+  return { passwordHash: await hashPin(password), passwordSealed: seal(secret, password) };
+}

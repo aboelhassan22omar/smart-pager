@@ -41,7 +41,7 @@ export async function runWeeklySummaries(deps, { now = Date.now(), send = sendMa
   const week = weekKey(config.tz, now);
   let sent = 0;
   for (const brand of control.listBrands()) {
-    if (brand.last_summary_week === week) continue;
+    if (brand.last_summary_week === week || brand.deleted_at) continue;
     const to = control.ownersOfBrand(brand.id).map((o) => o.email).filter(Boolean);
     if (to.length) {
       const report = brandAnalytics(deps, brand.id, {

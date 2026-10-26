@@ -68,6 +68,14 @@ export const CONTROL_MIGRATIONS = [
   `
   ALTER TABLE brands ADD COLUMN last_summary_week TEXT;
   `,
+  // 4: sealed owner password (vault.js) the super can read back; trash (soft delete).
+  //    deleted_reason: 'manual' | 'trial_ended' (automatic) | 'brand' (its brand was trashed).
+  `
+  ALTER TABLE owners ADD COLUMN password_sealed TEXT;
+  ALTER TABLE brands ADD COLUMN deleted_at INTEGER;
+  ALTER TABLE branches ADD COLUMN deleted_at INTEGER;
+  ALTER TABLE branches ADD COLUMN deleted_reason TEXT;
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -98,9 +106,16 @@ export class ControlStore {
       setPlanStatus: p('UPDATE branches SET plan_status = ? WHERE id = ?'),
       owner: p('SELECT * FROM owners WHERE id = ?'),
       ownerByName: p('SELECT * FROM owners WHERE username = ?'),
-      brandOwners: p('SELECT id, brand_id, username, email, created_at, last_login_at FROM owners WHERE brand_id = ? ORDER BY id'),
-      insertOwner: p('INSERT INTO owners (brand_id, username, email, password_hash, created_at) VALUES (?, ?, ?, ?, ?)'),
-      resetOwner: p('UPDATE owners SET password_hash = ?, pw_version = pw_version + 1 WHERE id = ?'),
+      brandOwners: p('SELECT id, brand_id, username, email, password_sealed, created_at, last_login_at FROM owners WHERE brand_id = ? ORDER BY id'),
+      insertOwner: p('INSERT INTO owners (brand_id, username, email, password_hash, password_sealed, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+      resetOwner: p('UPDATE owners SET password_hash = ?, password_sealed = ?, pw_version = pw_version + 1 WHERE id = ?'),
+      renameOwner: p('UPDATE owners SET username = ? WHERE id = ?'),
+      trashBranch: p('UPDATE branches SET deleted_at = ?, deleted_reason = ? WHERE id = ? AND deleted_at IS NULL'),
+      restoreBranch: p('UPDATE branches SET deleted_at = NULL, deleted_reason = NULL WHERE id = ?'),
+      trashBrand: p('UPDATE brands SET deleted_at = ? WHERE id = ?'),
+      trashBrandBranches: p(`UPDATE branches SET deleted_at = ?, deleted_reason = 'brand' WHERE brand_id = ? AND deleted_at IS NULL`),
+      restoreBrand: p('UPDATE brands SET deleted_at = NULL WHERE id = ?'),
+      restoreBrandBranches: p(`UPDATE branches SET deleted_at = NULL, deleted_reason = NULL WHERE brand_id = ? AND deleted_reason = 'brand'`),
       ownerLogin: p('UPDATE owners SET last_login_at = ? WHERE id = ?'),
       insertPayment: p(`INSERT INTO payments (branch_id, amount_egp, period_start, period_end, note, actor, created_at)
                         VALUES (?, ?, ?, ?, ?, ?, ?)`),
@@ -186,12 +201,54 @@ export class ControlStore {
     return this.sql.payments.all(branchId);
   }
 
-  /** Stores the computed status for dashboards (requests always recompute it). */
+  /**
+   * Stores the computed status for dashboards (requests always recompute it), and moves
+   * branches whose free trial ended unpaid to the trash. Returns the ids it trashed.
+   */
   refreshPlanStatuses(now = Date.now()) {
+    const trashed = [];
     for (const branch of this.listBranches()) {
-      const status = effectivePlan(branch, now).status;
-      if (status !== branch.plan_status) this.sql.setPlanStatus.run(status, branch.id);
+      const plan = effectivePlan(branch, now);
+      if (!branch.deleted_at && plan.reason === 'trial_ended') {
+        this.trashBranch(branch.id, 'trial_ended', now);
+        this.audit({ actor: 'system', action: 'branch.trash', brandId: branch.brand_id, branchId: branch.id, detail: { reason: 'trial_ended' } });
+        trashed.push(branch.id);
+        continue;
+      }
+      if (plan.status !== branch.plan_status) this.sql.setPlanStatus.run(plan.status, branch.id);
     }
+    return trashed;
+  }
+
+  // ---- trash (soft delete) ----
+
+  /** A trashed branch keeps all its data; customers can't take numbers until it's restored. */
+  trashBranch(id, reason = 'manual', at = Date.now()) {
+    this.sql.trashBranch.run(at, reason, id);
+    this.sql.setPlanStatus.run('suspended', id);
+  }
+
+  restoreBranch(id) {
+    this.sql.restoreBranch.run(id);
+    const branch = this.getBranch(id);
+    this.sql.setPlanStatus.run(effectivePlan(branch).status, id);
+    return branch;
+  }
+
+  /** Trashing a brand trashes its live branches with it (reason 'brand'); restore brings back those only. */
+  trashBrand(id, at = Date.now()) {
+    tx(this.db, () => {
+      this.sql.trashBrand.run(at, id);
+      this.sql.trashBrandBranches.run(at, id);
+    });
+  }
+
+  restoreBrand(id) {
+    tx(this.db, () => {
+      this.sql.restoreBrand.run(id);
+      this.sql.restoreBrandBranches.run(id);
+    });
+    this.refreshPlanStatuses();
   }
 
   // ---- owners ----
@@ -208,14 +265,20 @@ export class ControlStore {
     return this.sql.brandOwners.all(brandId);
   }
 
-  createOwner({ brandId, username, email = null, passwordHash }) {
-    const res = this.sql.insertOwner.run(brandId, username, email, passwordHash, Date.now());
+  createOwner({ brandId, username, email = null, passwordHash, passwordSealed = null }) {
+    const res = this.sql.insertOwner.run(brandId, username, email, passwordHash, passwordSealed, Date.now());
     return this.getOwner(Number(res.lastInsertRowid));
   }
 
   /** New password; bumping pw_version signs every existing owner session out. */
-  resetOwnerPassword(id, passwordHash) {
-    this.sql.resetOwner.run(passwordHash, id);
+  resetOwnerPassword(id, { passwordHash, passwordSealed = null }) {
+    this.sql.resetOwner.run(passwordHash, passwordSealed, id);
+    return this.getOwner(id);
+  }
+
+  /** Username only: sessions stay valid (they are bound to the owner id and password version). */
+  renameOwner(id, username) {
+    this.sql.renameOwner.run(username, id);
     return this.getOwner(id);
   }
 

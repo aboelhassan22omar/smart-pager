@@ -10,7 +10,7 @@ export const ORDER_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 
 // Branch settings columns staff may change. The display name lives in the control DB.
 const SETTING_COLUMNS = new Set([
-  'logo', 'pin_hash', 'qr_mode', 'static_key', 'max_number', 'expire_hours',
+  'logo', 'pin_hash', 'pin_sealed', 'qr_mode', 'static_key', 'max_number', 'expire_hours',
   'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
   'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
@@ -39,8 +39,8 @@ export class BranchStore {
     const p = (sql) => db.prepare(sql);
     this.sql = {
       settings: p('SELECT * FROM branch_settings WHERE id = 1'),
-      insertSettings: p(`INSERT INTO branch_settings (id, pin_hash, qr_mode, qr_nonce, qr_rotated_at, static_key, created_at)
-                         VALUES (1, ?, ?, ?, ?, ?, ?)`),
+      insertSettings: p(`INSERT INTO branch_settings (id, pin_hash, pin_sealed, qr_mode, qr_nonce, qr_rotated_at, static_key, created_at)
+                         VALUES (1, ?, ?, ?, ?, ?, ?, ?)`),
       rotate: p('UPDATE branch_settings SET qr_prev_nonce = qr_nonce, qr_nonce = ?, qr_rotated_at = ? WHERE id = 1'),
       openNumbers: p(`SELECT number FROM orders WHERE status IN ('preparing', 'ready')`),
       setCounter: p('UPDATE branch_settings SET next_number = ?, number_day = ? WHERE id = 1'),
@@ -92,8 +92,8 @@ export class BranchStore {
     };
   }
 
-  initSettings({ pinHash, qrMode = 'dynamic', createdAt = Date.now() }) {
-    this.sql.insertSettings.run(pinHash, qrMode, newNonce(), Date.now(), newStaticKey(), createdAt);
+  initSettings({ pinHash, pinSealed = null, qrMode = 'dynamic', createdAt = Date.now() }) {
+    this.sql.insertSettings.run(pinHash, pinSealed, qrMode, newNonce(), Date.now(), newStaticKey(), createdAt);
     return this.getShop();
   }
 
