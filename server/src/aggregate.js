@@ -4,6 +4,7 @@
 import { featureFlags, planView } from './plans.js';
 import { median, rollupBranch, summarize } from './rollups.js';
 import { dayIn, dayStartIn, localSlot, startOfDayIn } from './util.js';
+import { staleDevices } from './apps.js';
 import { unseal } from './vault.js';
 import { logoUrl } from './views.js';
 
@@ -107,6 +108,14 @@ export function superOverview(deps, now = Date.now()) {
   const apps = Object.assign({}, ...[...byBrand.keys()].map((id) => deviceCounts(deps, id)));
   for (const branch of deps.control.listBranches()) {
     byBrand.get(branch.brand_id)?.branches.push(branchSummary(deps, branch, now, { withPin: true, apps }));
+  }
+  // Cashier apps: devices off for a day+, and page errors in the last 24h (super's «محتاج منك»).
+  const errors = deps.control.errorCountsSince(now - 86_400_000);
+  for (const brand of byBrand.values()) {
+    brand.appIssues = {
+      staleDevices: brand.deletedAt ? [] : staleDevices(deps, brand.id, now),
+      errors24h: errors[brand.id]?.total ?? 0,
+    };
   }
   for (const brand of byBrand.values()) {
     brand.owners = deps.control.ownersOfBrand(brand.id).map((o) => ({

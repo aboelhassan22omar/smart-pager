@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { DatabaseSync } from 'node:sqlite';
 import zlib from 'node:zlib';
 import { after, before, describe, test } from 'node:test';
 import { hashPin } from '../src/auth.js';
@@ -444,5 +445,112 @@ describe('cashier app flow', () => {
     for (const a of ['app.password', 'app.download', 'app.icon', 'device.link', 'device.rename', 'device.revoke']) {
       assert.ok(actions.has(a), `missing ${a}`);
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Remote support: refresh a device's screen, its error log, devices off for long
+// ---------------------------------------------------------------------------
+
+describe('cashier app remote support', () => {
+  let server;
+  let nativeDir;
+  let su;
+  const superPost = (p, body) => su.post(`/api/super${p}`, body);
+  const cookieOf = (c) => [...c.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+  const apps = {};
+
+  async function linkDevice(name) {
+    const app = client(server.url);
+    const { links } = (await client(server.url).post('/api/app/rsup/unlock', { password: 'rsup-pass-123' })).data;
+    const apk = Buffer.from(await (await fetch(server.url + links.android)).arrayBuffer());
+    const { key } = JSON.parse(Object.fromEntries(readZip(apk).map((e) => [e.name, e.data]))['assets/pager.json']);
+    await app.get(`/app/rsup/start?k=${key}&platform=android`);
+    const res = await app.post('/api/app/rsup/link', { k: key, branchId: 'rsup-a', pin: '1357', name, platform: 'android', version: '1.0.0' });
+    assert.equal(res.status, 200);
+    apps[name] = app;
+    return app;
+  }
+
+  before(async () => {
+    nativeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-native-'));
+    fs.writeFileSync(path.join(nativeDir, 'cashier-template.apk'), templateApk());
+    server = await startServer({ SUPER_PASSWORD_HASH: await hashPin(SUPER_PASSWORD), NATIVE_DIR: nativeDir });
+    su = client(server.url);
+    await su.post('/api/super/login', { password: SUPER_PASSWORD });
+    await superPost('/brands', { id: 'rsup', name: 'Remote' });
+    await superPost('/brands/rsup/branches', { id: 'rsup-a', name: 'فرع أ', pin: '1357' });
+    await superPost('/brands/rsup/app', { password: 'rsup-pass-123' });
+  });
+  after(async () => {
+    await server?.stop();
+    fs.rmSync(nativeDir, { recursive: true, force: true });
+  });
+
+  test('"refresh screen" reaches that device only, and only while it is connected', async () => {
+    const one = await linkDevice('كاشير 1');
+    const two = await linkDevice('كاشير 2');
+    const [d1] = (await su.get('/api/super/brands/rsup/app')).data.devices.filter((d) => d.name === 'كاشير 1');
+    assert.equal((await superPost(`/brands/rsup/devices/${d1.id}/reload`)).status, 409, 'not connected');
+
+    const s1 = await sse(`${server.url}/api/bar/rsup-a/events`, { cookie: cookieOf(one) });
+    const s2 = await sse(`${server.url}/api/bar/rsup-a/events`, { cookie: cookieOf(two) });
+    await s1.next('hello');
+    await s2.next('hello');
+    assert.equal((await superPost(`/brands/rsup/devices/${d1.id}/reload`)).status, 200);
+    await s1.next('reload');
+    await assert.rejects(s2.next('reload', () => true, 800), /timed out/);
+    assert.equal((await superPost('/brands/rsup/devices/nope/reload')).status, 404);
+    s1.close();
+    s2.close();
+  });
+
+  test('error log: device reports land per device, repeats bump a count, strangers are ignored', async () => {
+    const app = await linkDevice('كاشير 3');
+    const send = (c, body) => c.post('/api/app/report', body);
+    assert.equal((await send(client(server.url), { kind: 'error', message: 'not a device' })).status, 204);
+    assert.equal((await send(app, { kind: 'error', message: 'TypeError: x is undefined', detail: 'bar.js:10:5', page: '/bar/rsup-a' })).status, 204);
+    await send(app, { kind: 'error', message: 'TypeError: x is undefined', detail: 'bar.js:10:5', page: '/bar/rsup-a' });
+    await send(app, { kind: 'offline', message: 'الاتصال بالسيرفر انقطع 45 ثانية' });
+    await send(app, { kind: 'weird', message: '' });
+
+    const { errors } = (await su.get('/api/super/brands/rsup/app')).data;
+    assert.equal(errors.length, 2);
+    const err = errors.find((e) => e.kind === 'error');
+    assert.deepEqual([err.message, err.count, err.deviceName, err.branchName, err.page, err.version],
+      ['TypeError: x is undefined', 2, 'كاشير 3', 'فرع أ', '/bar/rsup-a', '1.0.0']);
+    assert.ok(errors.some((e) => e.kind === 'offline'));
+    // Connection drops are in the log but don't count as errors in «محتاج منك».
+    const brand = (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'rsup');
+    assert.equal(brand.appIssues.errors24h, 2);
+
+    // The owner gets the devices, never the error details.
+    await superPost('/brands/rsup/owners', { username: 'rsup.owner', password: 'rsup-owner-pass' });
+    const owner = client(server.url);
+    await owner.post('/api/brand/login', { username: 'rsup.owner', password: 'rsup-owner-pass' });
+    assert.ok(!('errors' in (await owner.get('/api/brand/rsup/app')).data));
+  });
+
+  test('a device off for more than a day shows in «محتاج منك»; connected or unlinked ones do not', async () => {
+    const issues = async () => (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'rsup').appIssues.staleDevices;
+    assert.deepEqual(await issues(), []);
+    const db = new DatabaseSync(path.join(server.dataDir, 'control.db'));
+    db.prepare('UPDATE devices SET last_seen_at = ?').run(Date.now() - 2 * 86_400_000);
+    db.close();
+    const names = async () => (await issues()).map((d) => d.name).sort();
+    assert.deepEqual(await names(), ['كاشير 1', 'كاشير 2', 'كاشير 3']);
+    const [first] = await issues();
+    assert.deepEqual(Object.keys(first).sort(), ['branchId', 'branchName', 'id', 'lastSeenAt', 'name']);
+
+    // Connected again: gone at once.
+    const stream = await sse(`${server.url}/api/bar/rsup-a/events`, { cookie: cookieOf(apps['كاشير 2']) });
+    await stream.next('hello');
+    assert.deepEqual(await names(), ['كاشير 1', 'كاشير 3']);
+    stream.close();
+
+    // Unlinked: not reported.
+    const d3 = (await su.get('/api/super/brands/rsup/app')).data.devices.find((d) => d.name === 'كاشير 3');
+    await superPost(`/brands/rsup/devices/${d3.id}/revoke`);
+    assert.ok(!(await names()).includes('كاشير 3'));
   });
 });
