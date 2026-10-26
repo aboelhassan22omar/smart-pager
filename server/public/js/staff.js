@@ -1,5 +1,6 @@
 // Shared bits for the PIN-protected staff pages (bar, qr, settings).
 
+import { connectionWatch } from './app-report.js';
 import { api, esc, isCashierApp } from './util.js';
 
 export function toast(message, tone = 'info') {
@@ -93,14 +94,22 @@ export async function loadStaffState(shopId, root) {
 }
 
 // EventSource with status callback and manual reconnect after hard failures.
+// Also: "reload" (the super refreshing this cashier app's screen) and, in the app,
+// long connection drops for the device's error log.
 export function staffEvents(shopId, handlers, onStatus) {
   let es = null;
   let retry = null;
+  const watch = connectionWatch();
+  const status = (online) => {
+    watch(online);
+    onStatus(online);
+  };
   const connect = () => {
     es = new EventSource(`/api/bar/${encodeURIComponent(shopId)}/events`);
-    es.addEventListener('open', () => onStatus(true));
+    es.addEventListener('open', () => status(true));
+    es.addEventListener('reload', () => location.reload());
     es.addEventListener('error', () => {
-      onStatus(false);
+      status(false);
       if (es.readyState === EventSource.CLOSED) {
         clearTimeout(retry);
         retry = setTimeout(connect, 3000);

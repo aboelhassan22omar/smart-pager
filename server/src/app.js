@@ -108,7 +108,10 @@ export async function buildApp(config) {
   const rotation = setInterval(() => service.rotateDue(), 1000);
   const jobs = setInterval(() => service.runJobs(), config.jobIntervalSeconds * 1000);
   // Stored plan_status is a dashboard cache; requests always recompute the plan.
-  const plans = setInterval(() => control.refreshPlanStatuses(), 3600_000);
+  const plans = setInterval(() => {
+    control.refreshPlanStatuses();
+    control.purgeDeviceErrors(Date.now() - 30 * 86_400_000);
+  }, 3600_000);
   const rollups = setInterval(() => service.runRollups(), 300_000);
   const summaries = setInterval(() => {
     runWeeklySummaries({ config, control, tenants, screens, log: app.log }).catch((err) => app.log.error({ err }, 'weekly summary job failed'));

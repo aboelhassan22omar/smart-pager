@@ -53,8 +53,46 @@ export function deviceView({ control, tenants, screens }, device, branchFp = new
   };
 }
 
-/** Everything the dashboards show about a brand's app: link, password, icon, devices. */
-export function appView(deps, brand) {
+/** A device that is not connected and was last seen this long ago shows in «محتاج منك». */
+export const DEVICE_STALE_MS = 24 * 3600 * 1000;
+
+/** The error log the super sees: newest first, with the device and branch names. */
+function errorsView({ control }, brandId) {
+  const names = new Map();
+  const deviceName = (id) => {
+    if (!names.has(id)) names.set(id, control.getDevice(id)?.name ?? 'جهاز اتشال');
+    return names.get(id);
+  };
+  return control.deviceErrors(brandId, 100).map((e) => ({
+    id: e.id,
+    deviceId: e.device_id,
+    deviceName: deviceName(e.device_id),
+    branchName: control.getBranch(e.branch_id)?.name ?? e.branch_id,
+    kind: e.kind,
+    message: e.message,
+    detail: e.detail,
+    page: e.page,
+    version: e.app_version,
+    count: e.count,
+    firstAt: e.first_at,
+    lastAt: e.last_at,
+  }));
+}
+
+/** Linked devices of live branches that have been off for a day or more (super's «محتاج منك»). */
+export function staleDevices({ control, screens }, brandId, now = Date.now()) {
+  return control.devicesOfBrand(brandId)
+    .filter((d) => !screens.deviceOnline(d.id) && d.last_seen_at < now - DEVICE_STALE_MS)
+    .map((d) => ({ device: d, branch: control.getBranch(d.branch_id) }))
+    .filter(({ branch }) => branch && !branch.deleted_at)
+    .map(({ device, branch }) => ({ id: device.id, name: device.name, branchId: branch.id, branchName: branch.name, lastSeenAt: device.last_seen_at }));
+}
+
+/**
+ * Everything the dashboards show about a brand's app: link, password, icon, devices.
+ * `withErrors`: the super's view also carries the devices' error log.
+ */
+export function appView(deps, brand, { withErrors = false } = {}) {
   const { config, control, packages } = deps;
   const fps = new Map();
   const devices = control.devicesOfBrand(brand.id)
@@ -69,5 +107,6 @@ export function appView(deps, brand) {
     platforms: packages.status(),
     downloads: control.appDownloads(brand.id),
     devices,
+    ...(withErrors ? { errors: errorsView(deps, brand.id) } : {}),
   };
 }

@@ -1086,3 +1086,55 @@
   display: flex;
   gap: 4px;
 }
+
+/* ---------- device error log (super) ---------- */
+
+.error-log {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.error-log li {
+  border-inline-start: 3px solid var(--danger);
+  border-radius: var(--r-control);
+  background: var(--bg);
+}
+
+.error-log li[data-kind='offline'] {
+  border-inline-start-color: var(--line-strong);
+}
+
+.error-log summary {
+  display: grid;
+  gap: 2px;
+  padding: 8px 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.error-log summary::-webkit-details-marker {
+  display: none;
+}
+
+.error-log .err-msg {
+  font-size: var(--fs-sm);
+  word-break: break-word;
+}
+
+.error-log summary > .muted {
+  font-size: var(--fs-xs);
+}
+
+.error-log pre {
+  margin: 0;
+  padding: 0 12px 10px;
+  overflow-x: auto;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}

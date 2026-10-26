@@ -98,6 +98,26 @@ export const CONTROL_MIGRATIONS = [
   );
   CREATE INDEX devices_brand ON devices (brand_id);
   `,
+  // 6: error log sent by the cashier apps (page errors, long connection drops). The same
+  //    message from the same device within an hour bumps its count instead of adding a row.
+  `
+  CREATE TABLE device_errors (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    device_id TEXT NOT NULL,
+    brand_id TEXT NOT NULL,
+    branch_id TEXT NOT NULL,
+    kind TEXT NOT NULL CHECK (kind IN ('error', 'offline')),
+    message TEXT NOT NULL,
+    detail TEXT,
+    page TEXT,
+    app_version TEXT,
+    count INTEGER NOT NULL DEFAULT 1,
+    first_at INTEGER NOT NULL,
+    last_at INTEGER NOT NULL
+  );
+  CREATE INDEX device_errors_brand ON device_errors (brand_id, last_at);
+  CREATE INDEX device_errors_device ON device_errors (device_id, last_at);
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -156,6 +176,15 @@ export class ControlStore {
       seenDevice: p('UPDATE devices SET last_seen_at = ?, app_version = COALESCE(?, app_version), model = COALESCE(?, model) WHERE id = ?'),
       renameDevice: p('UPDATE devices SET name = ? WHERE id = ?'),
       revokeDevice: p('UPDATE devices SET revoked_at = ? WHERE id = ? AND revoked_at IS NULL'),
+      sameError: p(`SELECT id FROM device_errors WHERE device_id = ? AND kind = ? AND message = ? AND last_at > ?
+                     ORDER BY id DESC LIMIT 1`),
+      bumpError: p('UPDATE device_errors SET count = count + 1, last_at = ?, detail = ?, page = ?, app_version = ? WHERE id = ?'),
+      insertError: p(`INSERT INTO device_errors (device_id, brand_id, branch_id, kind, message, detail, page, app_version, first_at, last_at)
+                      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`),
+      brandErrors: p('SELECT * FROM device_errors WHERE brand_id = ? ORDER BY last_at DESC LIMIT ?'),
+      errorsSince: p(`SELECT brand_id, COUNT(*) AS n, SUM(count) AS total FROM device_errors
+                      WHERE last_at > ? AND kind = 'error' GROUP BY brand_id`),
+      purgeErrors: p('DELETE FROM device_errors WHERE last_at < ?'),
       downloads: p(`SELECT json_extract(detail, '$.platform') AS platform, COUNT(*) AS n, MAX(at) AS last
                     FROM audit_log WHERE brand_id = ? AND action = 'app.download' GROUP BY 1`),
     };
@@ -369,6 +398,29 @@ export class ControlStore {
 
   revokeDevice(id, at = Date.now()) {
     this.sql.revokeDevice.run(at, id);
+  }
+
+  /** One error from a device; the same message within an hour only bumps its count. */
+  recordDeviceError(device, { kind, message, detail = null, page = null, at = Date.now() }) {
+    const same = this.sql.sameError.get(device.id, kind, message, at - 3_600_000);
+    if (same) this.sql.bumpError.run(at, detail, page, device.app_version, same.id);
+    else {
+      this.sql.insertError.run(device.id, device.brand_id, device.branch_id, kind, message, detail, page, device.app_version, at, at);
+    }
+  }
+
+  deviceErrors(brandId, limit = 100) {
+    return this.sql.brandErrors.all(brandId, limit);
+  }
+
+  /** { brandId: { rows, total } } of page errors (not connection drops) since `since`. */
+  errorCountsSince(since) {
+    return Object.fromEntries(this.sql.errorsSince.all(since).map((r) => [r.brand_id, { rows: Number(r.n), total: Number(r.total) }]));
+  }
+
+  /** Error log retention: 30 days. */
+  purgeDeviceErrors(before) {
+    this.sql.purgeErrors.run(before);
   }
 
   /** { android: { count, last }, windows: {...} } from the audit log. */

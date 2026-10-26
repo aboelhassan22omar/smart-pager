@@ -101,6 +101,20 @@ function attentionItems() {
   } else if (backup && Date.now() - backup.at > 36 * 3600_000) {
     items.push({ tone: 'alert', text: `آخر نسخة احتياطية من ${ago(backup.at)}`, act: 'backup', id: '', label: 'اعمل نسخة دلوقتي' });
   }
+  // Cashier apps: devices off for a day or more, and page errors from devices.
+  for (const brand of liveBrands()) {
+    const { staleDevices = [], errors24h = 0 } = brand.appIssues ?? {};
+    if (staleDevices.length > 2) {
+      items.push({ text: `${brand.name}: ${staleDevices.length} أجهزة كاشير مقفولة من يوم أو أكتر`, act: 'app', id: brand.id, label: 'افتح' });
+    } else {
+      for (const d of staleDevices) {
+        items.push({ text: `${brand.name}: جهاز «${d.name}» في ${d.branchName} مقفول ${ago(d.lastSeenAt)}`, act: 'app', id: brand.id, label: 'افتح' });
+      }
+    }
+    if (errors24h) {
+      items.push({ text: `${brand.name}: ${errors24h} ${errors24h === 1 ? 'خطأ' : 'أخطاء'} من أجهزة الكاشير في آخر 24 ساعة`, act: 'app-errors', id: brand.id, label: 'سجل الأخطاء' });
+    }
+  }
   const dayAgo = Date.now() - 86400000;
   const failed = activity.filter((e) => e.action === 'super.login_failed' && e.at > dayAgo).length;
   if (failed >= 3) items.push({ tone: 'alert', text: `${failed} محاولات دخول غلط للوحة الإدارة في آخر 24 ساعة` });
@@ -298,6 +312,7 @@ const ACTION_TEXT = {
   'device.link': (e) => `جهاز كاشير اتربط: ${e.detail?.name ?? ''} (${PLATFORM_LABEL[e.detail?.platform] ?? ''})`,
   'device.rename': (e) => `اسم جهاز جديد: ${e.detail?.name ?? ''}`,
   'device.revoke': (e) => `فصل جهاز: ${e.detail?.name ?? ''}`,
+  'device.reload': (e) => `تحديث شاشة جهاز: ${e.detail?.name ?? ''}`,
   'branch.rename': (e) => `تغيير اسم الفرع لـ «${e.detail?.name ?? ''}»`,
   'branch.pin_reset': () => 'رقم سري جديد للموظفين',
   'branch.trial_extend': (e) => `مدّ التجربة ${e.detail?.days ?? ''} يوم`,
@@ -623,7 +638,31 @@ async function renderIcon(file, background, size) {
   }
 }
 
-async function appSheet(brandId) {
+const ERRORS_SHOWN = 15;
+
+/** The devices' error log: newest first, details folded. */
+function errorsHtml(errors, all) {
+  if (!errors.length) return '<p class="muted">مفيش أخطاء من الأجهزة. أي خطأ أو انقطاع طويل في الاتصال بيظهر هنا.</p>';
+  const now = Date.now();
+  const rows = (all ? errors : errors.slice(0, ERRORS_SHOWN)).map((e) => `
+    <li data-kind="${esc(e.kind)}">
+      <details>
+        <summary>
+          <span class="err-msg">${esc(e.message)}${e.count > 1 ? ` <span class="muted">(${e.count} مرة)</span>` : ''}</span>
+          <span class="muted">${esc(e.deviceName)}، ${esc(e.branchName)}، ${esc(ago(e.lastAt, now) ?? '')}</span>
+        </summary>
+        <pre dir="ltr">${esc([`page: ${e.page ?? '-'}`, `app: ${e.version ?? '-'}`,
+          `first: ${new Date(e.firstAt).toLocaleString('en-GB')}`, `last: ${new Date(e.lastAt).toLocaleString('en-GB')}`,
+          e.detail ?? ''].join('\n'))}</pre>
+      </details>
+    </li>`).join('');
+  const more = !all && errors.length > ERRORS_SHOWN
+    ? `<button class="link-btn" data-op="errors-all" type="button">اعرض الكل (${errors.length})</button>` : '';
+  return `<ul class="error-log">${rows}</ul>${more}`;
+}
+
+async function appSheet(brandId, { focusErrors = false } = {}) {
+  let showAllErrors = false;
   const brand = findBrand(brandId);
   const base = `/brands/${encodeURIComponent(brandId)}`;
   let view;
@@ -668,8 +707,12 @@ async function appSheet(brandId) {
         </div>
         <h3 class="form-heading">الأجهزة</h3>
         ${devicesHtml(view, branches, {
-          actions: (d) => `<button class="link-btn" data-op="revoke" data-device="${esc(d.id)}" type="button">افصل</button>`,
+          actions: (d) => `
+            ${d.online ? `<button class="link-btn" data-op="reload" data-device="${esc(d.id)}" type="button">حدّث الشاشة</button>` : ''}
+            <button class="link-btn" data-op="revoke" data-device="${esc(d.id)}" type="button">افصل</button>`,
         })}
+        <h3 class="form-heading" id="app-errors">سجل الأخطاء</h3>
+        ${errorsHtml(view.errors ?? [], showAllErrors)}
         <div class="sheet-actions"><button class="btn btn-quiet btn-block" data-op="close" type="button">رجوع</button></div>
       </div>`;
   };
@@ -724,6 +767,17 @@ async function appSheet(brandId) {
     } else if (op === 'icon-reset') {
       await api(`/api/super${base}/app-icon`, { method: 'DELETE', body: {} });
       await reload();
+    } else if (op === 'reload') {
+      const id = e.target.closest('[data-device]').dataset.device;
+      try {
+        await post(`${base}/devices/${encodeURIComponent(id)}/reload`);
+        toast('الشاشة اتحدّثت على الجهاز');
+      } catch (err) {
+        toast(err.message, 'error');
+      }
+    } else if (op === 'errors-all') {
+      showAllErrors = true;
+      render();
     } else if (op === 'revoke') {
       const id = e.target.closest('[data-device]').dataset.device;
       const d = view.devices.find((x) => x.id === id);
@@ -741,6 +795,7 @@ async function appSheet(brandId) {
   render();
   document.body.append(backdrop);
   backdrop.querySelector('[data-op="close"]').focus();
+  if (focusErrors) backdrop.querySelector('#app-errors')?.scrollIntoView({ block: 'start' });
 }
 
 function trashBrand(id) {
@@ -764,6 +819,7 @@ function onAction(el) {
   else if (act === 'enter') enterBranch(id, page);
   else if (act === 'trash-brand') trashBrand(id);
   else if (act === 'app') appSheet(id);
+  else if (act === 'app-errors') appSheet(id, { focusErrors: true });
   else if (act === 'trash') openTrash();
   else if (act === 'pin') {
     const b = findBranch(id);

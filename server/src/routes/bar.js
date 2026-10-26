@@ -129,12 +129,19 @@ export default async function barRoutes(app, deps) {
       sse.send('hello', { serverNow: Date.now() });
       const branchId = req.ctx.branch.id;
       const channel = channels(branchId).bar;
-      const listener = (event, data) => sse.send(event, data);
-      bus.on(channel, listener);
-      screens.add(branchId);
       // A linked cashier app: "online now" on the dashboards while this stream is open.
       const device = deviceFromRequest(req, deps);
       const appDevice = device?.branch_id === branchId ? device.id : null;
+      // "reload" is addressed to one device (the super's "refresh screen"); everything else to all.
+      const listener = (event, data) => {
+        if (event === 'reload') {
+          if (appDevice && data.deviceId === appDevice) sse.send('reload', {});
+        } else {
+          sse.send(event, data);
+        }
+      };
+      bus.on(channel, listener);
+      screens.add(branchId);
       if (appDevice) {
         screens.addDevice(appDevice);
         control.touchDevice(appDevice);

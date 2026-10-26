@@ -2,6 +2,7 @@ import { passwordFields, pinFields, PIN_RE, verifyPin } from '../auth.js';
 import fs from 'node:fs';
 import { superOverview } from '../aggregate.js';
 import { appKeyOf, appView, brandAppDir, iconFile } from '../apps.js';
+import { channels } from '../bus.js';
 import { backupStatus, runBackup } from '../backup.js';
 import { HttpError } from '../errors.js';
 import { DAY_MS, effectivePlan, FEATURES, planView } from '../plans.js';
@@ -37,7 +38,7 @@ function parseDay(value, field) {
 }
 
 export default async function superRoutes(app, deps) {
-  const { config, control, tenants } = deps;
+  const { config, control, tenants, screens, bus } = deps;
   const loginLimiter = createRateLimiter({ limit: 5 });
   app.addHook('onClose', async () => loginLimiter.close());
   const audit = (req, action, extra = {}) => control.audit({ actor: 'super', action, ip: req.ip, ...extra });
@@ -160,7 +161,7 @@ export default async function superRoutes(app, deps) {
       return brand;
     }
 
-    s.get('/brands/:brand/app', async (req) => appView(deps, liveBrand(req)));
+    s.get('/brands/:brand/app', async (req) => appView(deps, liveBrand(req), { withErrors: true }));
 
     // The download password (8+ characters; empty = generate one). Turns the download link on.
     s.post('/brands/:brand/app', async (req) => {
@@ -169,7 +170,7 @@ export default async function superRoutes(app, deps) {
       control.setAppPassword(brand.id, await passwordFields(config.cookieSecret, password));
       appKeyOf(control, brand.id);
       audit(req, 'app.password', { brandId: brand.id });
-      return appView(deps, control.getBrand(brand.id));
+      return appView(deps, control.getBrand(brand.id), { withErrors: true });
     });
 
     // App icon: square PNGs the dashboard renders from the logo, ?size=432 (Android) and 256 (Windows).
@@ -198,6 +199,15 @@ export default async function superRoutes(app, deps) {
       if (!device || device.brand_id !== req.params.brand || device.revoked_at) throw new HttpError(404, 'الجهاز ده مش موجود');
       return device;
     }
+
+    // "Refresh screen": reloads the page on that device through its open bar stream.
+    s.post('/brands/:brand/devices/:device/reload', async (req) => {
+      const device = brandDevice(req);
+      if (!screens.deviceOnline(device.id)) throw new HttpError(409, 'الجهاز ده مش متصل دلوقتي، فمش هيوصله');
+      bus.emit(channels(device.branch_id).bar, 'reload', { deviceId: device.id });
+      audit(req, 'device.reload', { brandId: device.brand_id, branchId: device.branch_id, detail: { name: device.name } });
+      return { ok: true };
+    });
 
     s.post('/brands/:brand/devices/:device/revoke', async (req) => {
       const device = brandDevice(req);

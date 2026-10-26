@@ -25,9 +25,11 @@ export default async function appRoutes(app, deps) {
   const { config, control, tenants, packages } = deps;
   const unlockLimiter = createRateLimiter({ limit: config.loginRatePerMin });
   const linkLimiter = createRateLimiter({ limit: config.loginRatePerMin });
+  const reportLimiter = createRateLimiter({ limit: 30 });
   app.addHook('onClose', async () => {
     unlockLimiter.close();
     linkLimiter.close();
+    reportLimiter.close();
   });
 
   const page = (file) => fs.readFileSync(path.join(PUBLIC_DIR, file), 'utf8');
@@ -181,6 +183,19 @@ export default async function appRoutes(app, deps) {
       actor: `device:${device.id}`, brandId: brand.id, branchId: branch.id, detail: { name: device.name, platform: device.platform },
     });
     return { url: `/bar/${encodeURIComponent(branch.id)}` };
+  });
+
+  // Error log from a linked app (public/js/app-report.js). Anything else is ignored quietly.
+  app.post('/api/app/report', async (req, reply) => {
+    requireJson(req);
+    const device = deviceFromRequest(req, deps);
+    const body = req.body ?? {};
+    const kind = body.kind === 'offline' ? 'offline' : 'error';
+    const message = cleanText(body.message, 300);
+    if (device && message && reportLimiter.take(device.id).ok) {
+      control.recordDeviceError(device, { kind, message, detail: cleanText(body.detail, 2000), page: cleanText(body.page, 120) });
+    }
+    return reply.code(204).send();
   });
 
   // The bar page asks this when its staff session ran out: a linked app gets a new one silently.
