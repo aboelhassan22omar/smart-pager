@@ -58,10 +58,20 @@ jobs:
       - name: Validate inputs
         run: |
           fail() { echo "::error::$1"; exit 1; }
+          # Pasted values often carry spaces: trim them and hand the clean values to later steps.
+          trim() { printf '%s' "$1" | tr -d '[:space:]'; }
+          TEAM_ID=$(trim "$TEAM_ID"); KEY_ID=$(trim "$KEY_ID")
+          APP_ID=$(trim "$APP_ID"); PREVIOUS_TEAM_ID=$(trim "$PREVIOUS_TEAM_ID")
           [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "team_id must be 10 capital letters/digits"
           [[ "$KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "key_id must be 10 capital letters/digits"
           [[ -z "$APP_ID" || "$APP_ID" =~ ^[0-9]{6,12}$ ]] || fail "app_id must be the numeric App Store ID"
           [[ -z "$PREVIOUS_TEAM_ID" || "$PREVIOUS_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "previous_team_id must be 10 capital letters/digits"
+          {
+            echo "CLEAN_TEAM_ID=$TEAM_ID"
+            echo "CLEAN_KEY_ID=$KEY_ID"
+            echo "CLEAN_APP_ID=$APP_ID"
+            echo "CLEAN_PREVIOUS_TEAM_ID=$PREVIOUS_TEAM_ID"
+          } >> "$GITHUB_ENV"
 
       - name: Configure SSH
         env:
@@ -93,7 +103,7 @@ jobs:
           # The key goes over stdin, never on a command line; inputs are validated on the server.
           # shellcheck disable=SC2029
           printf '%s' "$APNS_KEY_P8" | ssh prod \
-            "bash '$DEPLOY_PATH/remote-apple.sh' '$DEPLOY_PATH' '$TEAM_ID' '$KEY_ID' '${APP_ID:--}' '$APNS_ENV' '${PREVIOUS_TEAM_ID:--}'"
+            "bash '$DEPLOY_PATH/remote-apple.sh' '$DEPLOY_PATH' '$CLEAN_TEAM_ID' '$CLEAN_KEY_ID' '${CLEAN_APP_ID:--}' '$APNS_ENV' '${CLEAN_PREVIOUS_TEAM_ID:--}'"
 
       - name: Check from the internet
         env:
@@ -102,4 +112,4 @@ jobs:
           [ -n "$PUBLIC_URL" ] || { echo "vars.PUBLIC_URL not set; skipping"; exit 0; }
           aasa=$(curl -fsS "$PUBLIC_URL/.well-known/apple-app-site-association")
           echo "$aasa"
-          echo "$aasa" | grep -q "$TEAM_ID.cc.aurexis.pager" || { echo "::error::AASA does not list $TEAM_ID"; exit 1; }
+          echo "$aasa" | grep -q "$CLEAN_TEAM_ID.cc.aurexis.pager" || { echo "::error::AASA does not list $CLEAN_TEAM_ID"; exit 1; }
