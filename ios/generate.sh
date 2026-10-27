@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
 # Generates SmartPager.xcodeproj from project.yml.
 #   PAGER_DOMAIN   domain serving /s/{shop} (default: pager.aurexis.cc)
-#   APPLE_TEAM_ID  your Apple Developer Team ID (empty = unsigned builds only)
+#   APPLE_TEAM_ID  Apple Developer Team ID that signs the app (default: MZ737V7Y46, the uploading team;
+#                  change it after an App Store transfer)
 set -euo pipefail
 cd "$(dirname "$0")"
 export PAGER_DOMAIN="${PAGER_DOMAIN:-pager.aurexis.cc}"
-export APPLE_TEAM_ID="${APPLE_TEAM_ID:-}"
+export APPLE_TEAM_ID="${APPLE_TEAM_ID:-MZ737V7Y46}"
 # Xcode 27.1+ (iOS 27.1 SDK): the app fills iPhone Duo's displays instead of running letterboxed.
 # ALLOW_XCODE_26=1 accepts 26.x (still App Store valid, Duo letterboxed): CI runners lag behind.
 need="27 1"; [ "${ALLOW_XCODE_26:-}" = 1 ] && need="26 0"

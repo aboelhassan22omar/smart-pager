@@ -1,0 +1,105 @@
+name: Apple config
+
+# Manual: puts the APNs key on the server and writes the Apple values into the server .env
+# (Live Activity pushes, Universal Links / App Clip AASA, Safari App Clip banner).
+# Run it again after an App Store transfer with the new team, key and previous team.
+# Secret: APNS_KEY_P8 = contents of AuthKey_<KEY_ID>.p8 (the team that owns the app).
+on:
+  workflow_dispatch:
+    inputs:
+      team_id:
+        description: Apple Team ID (10 characters)
+        required: true
+      key_id:
+        description: APNs Key ID (10 characters)
+        required: true
+      app_id:
+        description: Numeric App Store ID (leave empty until the app exists)
+        required: false
+        default: ""
+      apns_env:
+        description: production = TestFlight / App Store, sandbox = Xcode debug builds
+        type: choice
+        options: [production, sandbox]
+        default: production
+      previous_team_id:
+        description: Old Team ID after an App Store transfer (else empty)
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  apply:
+    name: Apple config - Apply on production
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: production
+      url: ${{ vars.PUBLIC_URL }}
+    concurrency:
+      group: production
+      cancel-in-progress: false
+    env:
+      SSH_HOST: ${{ secrets.SSH_HOST }}
+      SSH_USER: ${{ secrets.SSH_USER }}
+      SSH_PORT: ${{ secrets.SSH_PORT }}
+      DEPLOY_PATH: ${{ vars.DEPLOY_PATH }}
+      TEAM_ID: ${{ inputs.team_id }}
+      KEY_ID: ${{ inputs.key_id }}
+      APP_ID: ${{ inputs.app_id }}
+      APNS_ENV: ${{ inputs.apns_env }}
+      PREVIOUS_TEAM_ID: ${{ inputs.previous_team_id }}
+    steps:
+      - uses: actions/checkout@v7
+
+      # Inputs end up inside a remote command line: refuse anything but the expected shapes here.
+      - name: Validate inputs
+        run: |
+          fail() { echo "::error::$1"; exit 1; }
+          [[ "$TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "team_id must be 10 capital letters/digits"
+          [[ "$KEY_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "key_id must be 10 capital letters/digits"
+          [[ -z "$APP_ID" || "$APP_ID" =~ ^[0-9]{6,12}$ ]] || fail "app_id must be the numeric App Store ID"
+          [[ -z "$PREVIOUS_TEAM_ID" || "$PREVIOUS_TEAM_ID" =~ ^[A-Z0-9]{10}$ ]] || fail "previous_team_id must be 10 capital letters/digits"
+
+      - name: Configure SSH
+        env:
+          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$SSH_HOST" ] || [ -z "$SSH_USER" ] || [ -z "$SSH_PRIVATE_KEY" ] || [ -z "$DEPLOY_PATH" ]; then
+            echo "::error::SSH_HOST, SSH_USER, SSH_PRIVATE_KEY and vars.DEPLOY_PATH are required"
+            exit 1
+          fi
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -p "${SSH_PORT:-22}" -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+          {
+            echo "Host prod"
+            echo "  HostName $SSH_HOST"
+            echo "  User $SSH_USER"
+            echo "  Port ${SSH_PORT:-22}"
+            echo "  IdentityFile ~/.ssh/deploy_key"
+            echo "  IdentitiesOnly yes"
+          } > ~/.ssh/config
+
+      - name: Apply Apple settings
+        env:
+          APNS_KEY_P8: ${{ secrets.APNS_KEY_P8 }}
+        run: |
+          [ -n "$APNS_KEY_P8" ] || { echo "::error::secret APNS_KEY_P8 is not set"; exit 1; }
+          scp deploy/remote-apple.sh "prod:$DEPLOY_PATH/"
+          # The key goes over stdin, never on a command line; inputs are validated on the server.
+          # shellcheck disable=SC2029
+          printf '%s' "$APNS_KEY_P8" | ssh prod \
+            "bash '$DEPLOY_PATH/remote-apple.sh' '$DEPLOY_PATH' '$TEAM_ID' '$KEY_ID' '${APP_ID:--}' '$APNS_ENV' '${PREVIOUS_TEAM_ID:--}'"
+
+      - name: Check from the internet
+        env:
+          PUBLIC_URL: ${{ vars.PUBLIC_URL }}
+        run: |
+          [ -n "$PUBLIC_URL" ] || { echo "vars.PUBLIC_URL not set; skipping"; exit 0; }
+          aasa=$(curl -fsS "$PUBLIC_URL/.well-known/apple-app-site-association")
+          echo "$aasa"
+          echo "$aasa" | grep -q "$TEAM_ID.cc.aurexis.pager" || { echo "::error::AASA does not list $TEAM_ID"; exit 1; }
