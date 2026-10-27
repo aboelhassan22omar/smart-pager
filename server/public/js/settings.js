@@ -190,6 +190,10 @@ function renderShop() {
   const info = $('form-info').elements;
   info.preparingMessage.value = shop.preparingMessage;
   info.readyMessage.value = shop.readyMessage;
+  $('form-review').elements.googleReviewUrl.value = shop.reviewLink ?? '';
+  $('review-help').textContent = shop.reviewEnabled
+    ? 'من Google Business Profile بتاع الفرع ده: اطلب تقييمات ← انسخ اللينك. كل فرع ليه اللينك بتاعه.'
+    : 'زرار التقييم هيظهر للعميل بعد الاستلام لما صاحب البراند يشغّل خاصية التقييم للفرع ده.';
   const numbers = $('form-numbers').elements;
   numbers.maxNumber.value = shop.maxNumber;
   numbers.expireHours.value = shop.expireHours;
@@ -211,6 +215,12 @@ function bindForms() {
       readyMessage: f.readyMessage.value,
     }, e.target);
     if (ok) toast('الرسايل اتحفظت');
+  });
+
+  $('form-review').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const ok = await save({ googleReviewUrl: e.target.elements.googleReviewUrl.value }, e.target);
+    if (ok) toast(shop.reviewLink ? 'لينك التقييم اتحفظ' : 'لينك التقييم اتشال');
   });
 
   $('form-numbers').addEventListener('submit', async (e) => {

@@ -149,13 +149,13 @@ function featureToggle(b, feature, label, hint) {
 
 /** Extra fields per feature, filled in by the loyalty and promo phases. */
 function featureFields(b) {
-  const reviewHint = !b.googlePlaceId && b.legacyReviewUrl ? 'شغال دلوقتي بالرابط القديم' : 'من Google Business Profile ← اطلب تقييمات';
+  const reviewHint = `خاص بفرع ${b.name} بس. من Google Business Profile بتاع الفرع ← اطلب تقييمات ← انسخ اللينك`;
   return [
     { type: 'heading', label: 'التقييم' },
     featureToggle(b, 'review', 'التقييم بعد الاستلام', 'نجوم لينا وزرار تقييم جوجل، لكل العملاء'),
     {
-      name: 'googlePlaceId', label: 'Google Place ID', dir: 'ltr', value: b.googlePlaceId ?? '',
-      placeholder: 'ChIJ… أو رابط فيه placeid=', hint: reviewHint,
+      name: 'googlePlaceId', label: 'لينك تقييم جوجل للفرع ده', dir: 'ltr', value: b.legacyReviewUrl ?? b.googlePlaceId ?? '',
+      placeholder: 'https://g.page/r/…/review', hint: reviewHint,
     },
     { type: 'heading', label: 'بطاقة الختم' },
     featureToggle(b, 'loyalty', 'ختم مع كل طلب', 'العميل بياخد ختم لما يستلم، وهدية كل كام طلب'),

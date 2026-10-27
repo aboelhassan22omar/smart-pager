@@ -9,7 +9,7 @@ import { createRateLimiter } from '../ratelimit.js';
 import { OWNER_COOKIE, requireJson, requireOwner, setOwnerSession } from '../sessions.js';
 import { FEATURES } from '../plans.js';
 import { parsePlaceId } from '../upgrades.js';
-import { sniffImage } from './bar.js';
+import { parseGoogleReviewUrl, sniffImage } from './bar.js';
 import { cleanBranchName } from './super.js';
 
 const PROMO_TEXT_MAX = 120;
@@ -135,10 +135,21 @@ export default async function brandRoutes(app, deps) {
       });
       const fields = {};
       if ('name' in body) fields.name = cleanBranchName(body.name);
+      // This branch's Google review link: a normal review link (g.page/r/…/review, maps.app.goo.gl/…)
+      // or a place id. Each branch keeps its own; empty clears it.
       if ('googlePlaceId' in body) {
         const id = parsePlaceId(body.googlePlaceId);
-        if (id === undefined) throw new HttpError(400, 'الـ Place ID مش مظبوط (أو الصق رابط فيه placeid=)', { field: 'googlePlaceId' });
-        fields.google_place_id = id;
+        if (id === undefined) {
+          try {
+            fields.google_review_url = parseGoogleReviewUrl(body.googlePlaceId);
+          } catch {
+            throw new HttpError(400, 'الصق لينك تقييم جوجل بتاع الفرع ده (بيبدأ بـ https://) أو الـ Place ID', { field: 'googlePlaceId' });
+          }
+          fields.google_place_id = null;
+        } else {
+          fields.google_place_id = id;
+          fields.google_review_url = null;
+        }
       }
       Object.assign(fields, ownerExtraFields(body));
       const features = body.features && typeof body.features === 'object' ? body.features : {};
