@@ -4,12 +4,13 @@ import { readableAccent } from '../public/js/color.js';
 import { loyaltyEnabled } from './loyalty.js';
 import { featureFlags } from './plans.js';
 
-/** Google review link: from the place id (preferred), else the v1 free-form link. */
+/** Google review link of this branch: its own link (branch settings) first, else the place id. */
 export function reviewUrl(shop) {
+  if (shop.google_review_url) return shop.google_review_url;
   if (shop.google_place_id) {
     return `https://search.google.com/local/writereview?placeid=${encodeURIComponent(shop.google_place_id)}`;
   }
-  return shop.google_review_url ?? null;
+  return null;
 }
 
 export const reviewEnabled = (shop) => featureFlags(shop).review;
@@ -82,6 +83,9 @@ export const barShop = (shop) => ({
   expireHours: shop.expire_hours,
   lateAfterMinutes: shop.late_after_minutes ?? 10,
   reviewClicks: shop.review_clicks ?? 0,
+  // The branch's own saved link (shown in its settings even while the review feature is off).
+  reviewLink: shop.google_review_url ?? '',
+  reviewEnabled: reviewEnabled(shop),
 });
 
 export function qrInfo(shop, config) {

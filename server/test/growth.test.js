@@ -237,7 +237,8 @@ describe('feedback + Google review over HTTP', () => {
   });
 
   test('owner sets the place id and turns review on; other brands are 404/401', async () => {
-    assert.equal((await g.ownerSettings({ googlePlaceId: 'https://g.page/r/x' })).data.field, 'googlePlaceId');
+    assert.equal((await g.ownerSettings({ googlePlaceId: 'https://evil.example.com/review' })).data.field, 'googlePlaceId');
+    assert.equal((await g.ownerSettings({ googlePlaceId: 'not a link' })).data.field, 'googlePlaceId');
     assert.equal((await g.ownerSettings({ features: { review: true } }, 'rival-a')).status, 404);
     assert.equal((await g.owner.post('/api/brand/rival/branches/rival-a/settings', { features: { review: true } })).status, 401);
     assert.equal((await g.staff.post(`/api/brand/${BRAND}/branches/${BR}/settings`, { features: { review: true } })).status, 401);
@@ -248,6 +249,22 @@ describe('feedback + Google review over HTTP', () => {
     assert.equal(pub.feedback, true);
     assert.equal(pub.googleReviewUrl, `https://search.google.com/local/writereview?placeid=${PLACE}`);
     assert.equal((await anon.get('/api/b/rival-a')).data.googleReviewUrl, null);
+  });
+
+  test('each branch keeps its own Google link: branch settings win, owner can paste a normal link', async () => {
+    const own = 'https://g.page/r/BranchOwnLink/review';
+    assert.equal((await g.staff.post(`/api/bar/${BR}/settings`, { googleReviewUrl: own })).status, 200);
+    assert.equal((await shop()).googleReviewUrl, own, 'branch link wins over the owner place id');
+    const state = (await g.staff.get(`/api/bar/${BR}/state`)).data.shop;
+    assert.equal(state.reviewLink, own);
+    assert.equal(state.reviewEnabled, true);
+    assert.equal((await anon.get('/api/b/rival-a')).data.googleReviewUrl, null, 'other branches untouched');
+
+    const ownerLink = 'https://maps.app.goo.gl/OwnerPasted';
+    assert.equal((await g.ownerSettings({ googlePlaceId: ownerLink })).status, 200);
+    assert.equal((await shop()).googleReviewUrl, ownerLink);
+    assert.equal((await g.ownerSettings({ googlePlaceId: PLACE })).status, 200);
+    assert.equal((await shop()).googleReviewUrl, `https://search.google.com/local/writereview?placeid=${PLACE}`);
   });
 
   test('feedback: picked orders only, rating 1-5, once per order, within 48h', async () => {
