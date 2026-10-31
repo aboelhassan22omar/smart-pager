@@ -29,7 +29,10 @@ export function ago(ts, now = Date.now()) {
 const logoHtml = (b) => (b.logoUrl ? `<img src="${esc(b.logoUrl)}" alt="">` : esc(b.name.slice(0, 1)));
 
 function metaLine(b, now) {
-  const parts = [b.screens ? `${b.screens} شاشة متصلة` : 'مفيش شاشة متصلة'];
+  const k = b.screenKinds ?? { bar: b.screens, qr: 0 };
+  const parts = b.screens
+    ? [k.bar ? `الكاشير مفتوح على ${k.bar} جهاز` : '', k.qr ? `شاشة الكود على ${k.qr}` : ''].filter(Boolean)
+    : ['مفيش شاشة مفتوحة'];
   if (b.apps?.linked) parts.push(`التطبيق على ${b.apps.linked} جهاز`);
   const last = ago(b.lastActivityAt, now);
   parts.push(last ? `آخر طلب ${last}` : 'لسه مفيش طلبات');

@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#17191d">
+  <meta name="color-scheme" content="dark">
+  <meta name="robots" content="noindex">
+  <title>كافيه الديمو — Smart Pager</title>
+  <meta name="description" content="جرّب Smart Pager بنفسك: العميل بياخد رقم من غير تطبيق، والكاشير يدوس على الرقم، وموبايل العميل يرن.">
+  <link rel="preload" href="/fonts/readex-pro-arabic-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
+  <link rel="stylesheet" href="/css/base.css">
+  <link rel="stylesheet" href="/css/demo.css">
+  <script type="module" src="/js/powered.js"></script>
+  <script type="module" src="/js/demo.js"></script>
+</head>
+<body>
+  <header class="demo-head">
+    <div class="demo-intro">
+      <h1>كافيه الديمو</h1>
+      <p class="muted">ده Smart Pager شغال بجد. العميل بياخد رقم من غير ما ينزّل أي تطبيق، الكاشير يدوس على الرقم، وموبايل العميل يرن.</p>
+    </div>
+    <div class="demo-scan">
+      <img id="scan-qr" src="/api/demo/qr.svg" alt="كود العميل" width="88" height="88">
+      <p>جرّبه على موبايلك: امسح الكود ده بالكاميرا</p>
+    </div>
+  </header>
+
+  <p class="guide" id="guide" role="status" aria-live="polite"></p>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="الشاشات">
+    <button class="tab" role="tab" type="button" data-pane="customer" id="tab-customer">العميل</button>
+    <button class="tab" role="tab" type="button" data-pane="bar">الكاشير</button>
+    <button class="tab" role="tab" type="button" data-pane="qr"><span class="t-long">شاشة </span>الكود</button>
+    <button class="tab" role="tab" type="button" data-pane="owner"><span class="t-long">صاحب المكان</span><span class="t-short">المالك</span></button>
+  </nav>
+
+  <main class="stage">
+    <section class="pane pane-customer" data-pane="customer" role="tabpanel" aria-label="موبايل العميل">
+      <div class="phone">
+        <div class="phone-screen">
+          <div class="phone-start" id="phone-start">
+            <p class="phone-shop">كافيه الديمو</p>
+            <p class="muted">العميل بيمسح الكود اللي عند الكاشير بكاميرا موبايله، ورقمه بيظهر هنا.</p>
+            <button class="btn btn-primary btn-block" id="claim" type="button">امسح الكود وخد رقم</button>
+          </div>
+          <iframe id="frame-customer" title="صفحة العميل" allow="autoplay" hidden></iframe>
+        </div>
+      </div>
+      <button class="btn btn-quiet new-order" id="new-order" type="button" hidden>خد رقم جديد</button>
+    </section>
+
+    <section class="pane pane-wide" data-pane="bar" role="tabpanel" aria-label="شاشة الكاشير">
+      <iframe id="frame-bar" title="شاشة الكاشير" allow="autoplay"></iframe>
+    </section>
+    <section class="pane pane-wide" data-pane="qr" role="tabpanel" aria-label="شاشة الكود" hidden>
+      <iframe id="frame-qr" title="شاشة الكود" data-lazy></iframe>
+    </section>
+    <section class="pane pane-wide" data-pane="owner" role="tabpanel" aria-label="لوحة صاحب المكان" hidden>
+      <iframe id="frame-owner" title="لوحة صاحب المكان" data-lazy></iframe>
+    </section>
+  </main>
+</body>
+</html>

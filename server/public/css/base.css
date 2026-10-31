@@ -1,8 +1,9 @@
 /* Smart Pager — shared tokens and components.
    Color split 60 / 30 / 10:
-   60  graphite base   (--bg)
-   30  stone surfaces  (--surface, --surface-2, --text)
-   10  latte accent    (--accent) — primary actions, progress, focus only.
+   60  slate base       (--bg)
+   30  slate surfaces   (--surface, --surface-2, --text)
+   10  soft blue accent (--accent) — primary actions, progress, focus only.
+   Cool and calm on purpose: no warm browns or yellows.
    State colors (--ready, --danger) appear only when a state demands them. */
 
 @font-face {
@@ -26,15 +27,15 @@
 :root {
   color-scheme: dark;
 
-  --bg: #1e1f21;
-  --surface: #2a2b2e;
-  --surface-2: #34353a;
-  --line: rgb(236 234 230 / 0.08);
-  --line-strong: rgb(236 234 230 / 0.16);
-  --text: #eceae6;
-  --muted: #a09d97;
-  --accent: #cdbb97;
-  --on-accent: #1e1f21;
+  --bg: #17191d;
+  --surface: #20242a;
+  --surface-2: #2a2f36;
+  --line: rgb(228 232 238 / 0.08);
+  --line-strong: rgb(228 232 238 / 0.16);
+  --text: #e4e8ee;
+  --muted: #98a1ac;
+  --accent: #9db7d4;
+  --on-accent: #17191d;
   --ready: #3f8f60;
   --ready-deep: #2f7a4f;
   --danger: #c8574f;
@@ -213,7 +214,7 @@ select {
   align-items: center;
   gap: 12px;
   padding: calc(10px + env(safe-area-inset-top)) var(--gutter) 10px;
-  background: rgb(30 31 33 / 0.92);
+  background: rgb(23 25 29 / 0.92);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);

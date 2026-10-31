@@ -7,6 +7,7 @@ import { staffCookieName } from '../cookies.js';
 import { planView } from '../plans.js';
 import { deviceFromRequest, setStaffSession, verifyStaffSession } from '../sessions.js';
 import { HttpError } from '../errors.js';
+import { DEMO_LOCKED, isDemo } from '../demo.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { newStaticKey, QR_MODES } from '../store.js';
@@ -107,6 +108,10 @@ export default async function barRoutes(app, deps) {
     bar.addHook('onRequest', async (req) => {
       requireBar(req);
       const isLogo = req.routeOptions.url?.endsWith('/logo');
+      // Every visitor shares the demo café: its settings stay as they are.
+      if (req.method !== 'GET' && isDemo(req.shop.id) && (isLogo || req.routeOptions.url?.endsWith('/settings'))) {
+        throw new HttpError(403, DEMO_LOCKED);
+      }
       if (req.method === 'POST' && !isLogo && !(req.headers['content-type'] ?? '').startsWith('application/json')) {
         throw new HttpError(415, 'نوع الطلب مش مدعوم');
       }
@@ -141,14 +146,15 @@ export default async function barRoutes(app, deps) {
         }
       };
       bus.on(channel, listener);
-      screens.add(branchId);
+      const kind = req.query.screen === 'qr' ? 'qr' : 'bar';
+      screens.add(branchId, kind);
       if (appDevice) {
         screens.addDevice(appDevice);
         control.touchDevice(appDevice);
       }
       sse.onClose(() => {
         bus.off(channel, listener);
-        screens.remove(branchId);
+        screens.remove(branchId, kind);
         if (appDevice) {
           screens.removeDevice(appDevice);
           control.touchDevice(appDevice);

@@ -175,22 +175,6 @@
   color: #fff;
 }
 
-.sound-pill {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  width: min(100% - 2 * var(--gutter), 1100px);
-  margin: 12px auto 0;
-  padding: 10px 14px;
-  border: 1px solid var(--accent);
-  border-radius: var(--r-control);
-  background: transparent;
-  color: var(--accent);
-  font-size: var(--fs-sm);
-  cursor: pointer;
-}
-
 /* ---------- long-press sheet ---------- */
 
 .sheet-backdrop {

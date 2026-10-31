@@ -51,7 +51,9 @@ function showLogin() {
 function render() {
   $('brand-name').textContent = data.brand.name;
   document.title = `فروعي — ${data.brand.name}`;
-  $('owner-line').textContent = `داخل باسم ${data.owner.username}`;
+  $('owner-line').textContent = data.demo ? 'نسخة الديمو: ده اللي صاحب المحل بيشوفه' : `داخل باسم ${data.owner.username}`;
+  // The demo signs visitors in by itself; logging out would only strand them on a login form.
+  $('logout').hidden = Boolean(data.demo);
   const now = Date.now();
   $('branches').innerHTML = data.branches.length
     ? `<div class="cards">${data.branches.map((b) => branchCardHtml(b, {

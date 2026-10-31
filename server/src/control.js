@@ -118,6 +118,14 @@ export const CONTROL_MIGRATIONS = [
   CREATE INDEX device_errors_brand ON device_errors (brand_id, last_at);
   CREATE INDEX device_errors_device ON device_errors (device_id, last_at);
   `,
+  // 7: the public demo café (/demo): page loads and new visitors per local day.
+  `
+  CREATE TABLE demo_visits (
+    day TEXT PRIMARY KEY,
+    visits INTEGER NOT NULL DEFAULT 0,
+    visitors INTEGER NOT NULL DEFAULT 0
+  );
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -442,6 +450,24 @@ export class ControlStore {
 
   renameBranch(id, name) {
     this.sql.rename.run(name, id);
+  }
+
+  // ---- demo café ----
+
+  recordDemoVisit(day, { newVisitor }) {
+    this.db.prepare(`INSERT INTO demo_visits (day, visits, visitors) VALUES (?, 1, ?)
+                     ON CONFLICT (day) DO UPDATE SET visits = visits + 1, visitors = visitors + excluded.visitors`)
+      .run(day, newVisitor ? 1 : 0);
+  }
+
+  /** { today: {visits, visitors}, total: {visits, visitors} } */
+  demoVisits(day) {
+    const today = this.db.prepare('SELECT visits, visitors FROM demo_visits WHERE day = ?').get(day);
+    const total = this.db.prepare('SELECT SUM(visits) AS visits, SUM(visitors) AS visitors FROM demo_visits').get();
+    return {
+      today: { visits: today?.visits ?? 0, visitors: today?.visitors ?? 0 },
+      total: { visits: Number(total?.visits ?? 0), visitors: Number(total?.visitors ?? 0) },
+    };
   }
 
   touch(id, at = Date.now()) {

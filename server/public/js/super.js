@@ -60,7 +60,8 @@ function showLogin() {
 
 function attentionItems() {
   const items = [];
-  for (const brand of liveBrands()) {
+  // The demo café's sample ratings and visitors' orders aren't anything to act on.
+  for (const brand of liveBrands().filter((b) => !b.demo)) {
     if (!brand.owners.length) {
       items.push({ text: `${brand.name}: مفيش حساب لصاحب البراند`, act: 'owner', id: brand.id, label: 'اعمل حساب' });
     }
@@ -369,6 +370,30 @@ function renderActivity() {
   $('activity-more').hidden = list.length <= activityShown;
 }
 
+// ---------- "دلوقتي": who has what open right now ----------
+
+const num = (n) => String(n ?? 0);
+
+function renderLive() {
+  const live = overview.live;
+  if (!live) return;
+  const demo = live.demo;
+  const demoUrl = `${overview.publicUrl}/demo`;
+  const tile = (value, label, sub = '') => `
+    <div class="live-tile">
+      <p class="live-num num">${num(value)}</p>
+      <p class="live-label">${label}</p>
+      ${sub ? `<p class="live-sub">${sub}</p>` : ''}
+    </div>`;
+  $('live').innerHTML = `
+    ${tile(demo.open, 'فاتحين لينك الديمو', `النهارده ${num(demo.today.visits)} زيارة من ${num(demo.today.visitors)} شخص. من الأول ${num(demo.total.visitors)} شخص`)}
+    ${tile(live.bar, 'أجهزة فاتحة الكاشير', live.bar ? `في ${num(live.branches)} فرع` : 'مفيش فرع فاتح دلوقتي')}
+    ${tile(live.qr, 'شاشات الكود مفتوحة')}
+    ${tile(live.appsOnline, 'تطبيقات كاشير شغالة')}
+    ${tile(live.customers, 'عملاء مستنيين طلبهم')}`;
+  $('demo-link').innerHTML = `لينك الديمو: <a href="${esc(demoUrl)}" target="_blank" rel="noopener" dir="ltr">${esc(demoUrl)}</a> ${copyBtn(demoUrl)}`;
+}
+
 // ---------- data ----------
 
 async function refresh() {
@@ -376,6 +401,7 @@ async function refresh() {
     const [o, a] = await Promise.all([api('/api/super/overview'), api('/api/super/audit?limit=200')]);
     overview = o;
     activity = a.entries;
+    renderLive();
     renderAttention();
     renderBrands();
     renderTrashButton();
@@ -859,7 +885,7 @@ async function boot() {
     location.reload();
   });
   $('backup-now').addEventListener('click', (e) => backupNow(e.currentTarget));
-  for (const id of ['brands', 'attention']) {
+  for (const id of ['brands', 'attention', 'demo-link']) {
     $(id).addEventListener('click', (e) => {
       const el = e.target.closest('[data-act], [data-copy]');
       if (el) onAction(el);

@@ -328,7 +328,7 @@ describe('shop accent + Google review', () => {
     const { accent } = await publicShop();
     assert.match(accent.color, /^#[0-9a-f]{6}$/);
     assert.notEqual(accent.color, '#0b1f4b', 'too dark on graphite, so it is lightened');
-    assert.ok(['#1e1f21', '#ffffff'].includes(accent.ink));
+    assert.ok(['#17191d', '#ffffff'].includes(accent.ink));
 
     await settings({ accentColor: null });
     assert.equal((await publicShop()).accent, null);

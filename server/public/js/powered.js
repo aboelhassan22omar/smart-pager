@@ -41,4 +41,6 @@ export function mountPoweredBy(doc) {
   return footer;
 }
 
-if (typeof document !== 'undefined' && !isCashierApp(document)) mountPoweredBy(document);
+// Pages framed by the demo (/demo) leave the footer to the demo page itself.
+const framed = typeof window !== 'undefined' && window.self !== window.top;
+if (typeof document !== 'undefined' && !isCashierApp(document) && !framed) mountPoweredBy(document);

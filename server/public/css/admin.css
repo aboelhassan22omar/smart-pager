@@ -153,7 +153,7 @@
 
 .pill[data-plan='past_due'] {
   border-color: var(--accent);
-  background: rgb(205 187 151 / 0.12);
+  background: rgb(157 183 212 / 0.12);
   color: var(--accent);
 }
 
@@ -287,6 +287,56 @@
   font-weight: 600;
   text-align: start;
   word-break: break-all;
+}
+
+/* ---------- "دلوقتي" (live counts) ---------- */
+
+.live {
+  display: grid;
+  gap: 12px;
+}
+
+.live .dash-head h2 {
+  font-size: var(--fs-lg);
+}
+
+.live .sub a {
+  color: var(--text);
+}
+
+.live-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 8px;
+}
+
+.live-tile {
+  padding: 14px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-control);
+  background: var(--surface);
+}
+
+.live-tile:first-child {
+  border-color: color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.live-num {
+  margin: 0;
+  font-size: var(--fs-2xl);
+  font-weight: 600;
+  line-height: 1.1;
+}
+
+.live-label {
+  margin: 4px 0 0;
+  font-size: var(--fs-sm);
+}
+
+.live-sub {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
 }
 
 /* ---------- "محتاج منك" ---------- */
@@ -613,7 +663,7 @@
 }
 
 .columns .hit:hover {
-  fill: rgb(236 234 230 / 0.04);
+  fill: rgb(228 232 238 / 0.04);
 }
 
 .columns .grid {
@@ -662,7 +712,7 @@
   background: var(--surface-2);
 }
 
-/* Sequential, one hue: surface -> latte (lighter = more orders on the dark surface). */
+/* Sequential, one hue: surface -> accent (lighter = more orders on the dark surface). */
 :is(.heat-cell, .heat-legend i)[data-step='1'] { background: color-mix(in srgb, var(--accent) 22%, var(--surface-2)); }
 :is(.heat-cell, .heat-legend i)[data-step='2'] { background: color-mix(in srgb, var(--accent) 40%, var(--surface-2)); }
 :is(.heat-cell, .heat-legend i)[data-step='3'] { background: color-mix(in srgb, var(--accent) 58%, var(--surface-2)); }
