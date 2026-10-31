@@ -169,7 +169,7 @@ describe('shop accent from the logo', () => {
     const dark = readableAccent('#0b1f4b');
     assert.ok(contrast(dark.color, BG) >= 3, `${dark.color} vs graphite`);
     const light = readableAccent('#ffd54f');
-    assert.equal(light.ink, '#1e1f21');
+    assert.equal(light.ink, '#17191d');
     assert.ok(contrast(light.color, light.ink) >= 4.5);
   });
 

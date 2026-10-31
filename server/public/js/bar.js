@@ -225,10 +225,21 @@ function bindGrid() {
 
 // ---------- sound ----------
 
+// Always on, no button: the chime starts right away where the browser allows it (the cashier
+// app, or after typing the PIN), and otherwise on the first touch or key anywhere on the page.
 function unlockSound() {
   if (chime.unlocked) return;
   chime.unlock();
-  $('sound').hidden = true;
+}
+
+function keepSoundOn() {
+  unlockSound();
+  const events = ['pointerdown', 'keydown', 'touchend'];
+  const onGesture = () => {
+    unlockSound();
+    if (chime.unlocked) for (const e of events) document.removeEventListener(e, onGesture, true);
+  };
+  for (const e of events) document.addEventListener(e, onGesture, true);
 }
 
 // ---------- boot ----------
@@ -281,12 +292,7 @@ async function boot() {
   $('link-qr').innerHTML = icons.qr(22);
   $('link-settings').href = `/settings/${encodeURIComponent(shopId)}`;
   $('link-settings').innerHTML = icons.settings(22);
-  $('sound').innerHTML = `${icons.sound(18)}<span>دوس هنا عشان يشتغل صوت الطلبات الجديدة</span>`;
-  $('sound').hidden = false;
-  $('sound').addEventListener('click', () => {
-    unlockSound();
-    chime.play('order');
-  });
+  keepSoundOn();
   applyState(state);
   bindGrid();
 

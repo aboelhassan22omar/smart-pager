@@ -5,7 +5,7 @@ import { api, esc, shopIdFromPath } from './util.js';
 
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const LOGO_MAX = 2 * 1024 * 1024;
-const DEFAULT_ACCENT = '#cdbb97';
+const DEFAULT_ACCENT = '#9db7d4';
 
 const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
@@ -115,7 +115,7 @@ function previewAccent(hex) {
   const box = document.querySelector('.accent');
   const accent = hex ? readableAccent(hex) : null;
   box.style.setProperty('--shop-accent', accent ? accent.color : DEFAULT_ACCENT);
-  box.style.setProperty('--shop-ink', accent ? accent.ink : '#1e1f21');
+  box.style.setProperty('--shop-ink', accent ? accent.ink : '#17191d');
 }
 
 function renderAccent() {

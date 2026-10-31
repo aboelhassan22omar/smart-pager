@@ -5,6 +5,7 @@ import { featureFlags, planView } from './plans.js';
 import { median, rollupBranch, summarize } from './rollups.js';
 import { dayIn, dayStartIn, localSlot, startOfDayIn } from './util.js';
 import { staleDevices } from './apps.js';
+import { DEMO_ID } from './demo.js';
 import { unseal } from './vault.js';
 import { logoUrl } from './views.js';
 
@@ -73,6 +74,8 @@ function branchSummary({ tenants, screens, config }, branch, now, { withPin = fa
     promoStartsAt: shop?.promo_starts_at ?? null,
     promoEndsAt: shop?.promo_ends_at ?? null,
     screens: screens.count(branch.id),
+    screenKinds: screens.kinds(branch.id),
+    customersNow: screens.customers(branch.id),
     apps: apps[branch.id] ?? { linked: 0, online: 0 },
     deletedAt: branch.deleted_at ?? null,
     deletedReason: branch.deleted_reason ?? null,
@@ -103,7 +106,7 @@ export function brandOverview(deps, brandId, now = Date.now()) {
 export function superOverview(deps, now = Date.now()) {
   const secret = deps.config.cookieSecret;
   const byBrand = new Map(deps.control.listBrands().map((b) => [b.id, {
-    id: b.id, name: b.name, deletedAt: b.deleted_at ?? null, appEnabled: Boolean(b.app_password_hash), owners: [], branches: [],
+    id: b.id, name: b.name, demo: b.id === DEMO_ID, deletedAt: b.deleted_at ?? null, appEnabled: Boolean(b.app_password_hash), owners: [], branches: [],
   }]));
   const apps = Object.assign({}, ...[...byBrand.keys()].map((id) => deviceCounts(deps, id)));
   for (const branch of deps.control.listBranches()) {
@@ -122,7 +125,30 @@ export function superOverview(deps, now = Date.now()) {
       id: o.id, username: o.username, email: o.email, password: unseal(secret, o.password_sealed),
     }));
   }
-  return { brands: [...byBrand.values()], publicUrl: deps.config.publicUrl, serverNow: now };
+  return { brands: [...byBrand.values()], live: liveNow(deps, apps), publicUrl: deps.config.publicUrl, serverNow: now };
+}
+
+/**
+ * The super's "live now" line: open cashier / QR screens and waiting customers across the real
+ * branches, cashier apps online, and the demo café on its own (its visitors aren't customers).
+ */
+function liveNow({ control, screens, config }, apps) {
+  const live = { bar: 0, qr: 0, branches: 0, customers: 0, appsOnline: 0 };
+  for (const branch of control.listBranches()) {
+    if (branch.deleted_at || branch.id === DEMO_ID) continue;
+    const kinds = screens.kinds(branch.id);
+    live.bar += kinds.bar;
+    live.qr += kinds.qr;
+    if (kinds.bar + kinds.qr > 0) live.branches++;
+    live.customers += screens.customers(branch.id);
+    live.appsOnline += apps[branch.id]?.online ?? 0;
+  }
+  live.demo = {
+    open: screens.demoPages(),
+    customers: screens.customers(DEMO_ID),
+    ...control.demoVisits(dayIn(config.tz)),
+  };
+  return live;
 }
 
 // ---------------------------------------------------------------------------

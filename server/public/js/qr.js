@@ -110,6 +110,7 @@ async function boot() {
     (online) => {
       if (online) reload();
     },
+    { screen: 'qr' },
   );
 }
 

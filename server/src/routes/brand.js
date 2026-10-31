@@ -3,6 +3,7 @@ import path from 'node:path';
 import { verifyPin } from '../auth.js';
 import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
 import { appView } from '../apps.js';
+import { DEMO_LOCKED, isDemo } from '../demo.js';
 import { HttpError } from '../errors.js';
 import { LOYALTY_EVERY, REWARD_TEXT_MAX } from '../loyalty.js';
 import { createRateLimiter } from '../ratelimit.js';
@@ -86,6 +87,7 @@ export default async function brandRoutes(app, deps) {
   await app.register(async (b) => {
     b.addHook('onRequest', async (req) => {
       req.owner = requireOwner(req, deps, req.params.brand);
+      if (req.method !== 'GET' && isDemo(req.params.brand)) throw new HttpError(403, DEMO_LOCKED);
       requireJson(req, req.url.split('?')[0].endsWith('/promo-image') ? IMAGE_TYPES : []);
     });
 
@@ -99,6 +101,7 @@ export default async function brandRoutes(app, deps) {
     b.get('/overview', async (req) => ({
       ...brandOverview(deps, req.params.brand),
       owner: { username: req.owner.username },
+      demo: isDemo(req.params.brand),
     }));
 
     // ?from=YYYY-MM-DD&to=YYYY-MM-DD[&branch=<id>]  (at most 366 days)

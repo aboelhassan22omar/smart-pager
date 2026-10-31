@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#1e1f21">
+  <meta name="theme-color" content="#17191d">
   <meta name="color-scheme" content="dark">
   <meta name="robots" content="noindex">
   <title>لوحة الإدارة — Smart Pager</title>
@@ -26,6 +26,14 @@
     </header>
 
     <main class="dash">
+      <section class="live" aria-labelledby="h-live">
+        <div class="dash-head">
+          <h2 id="h-live">دلوقتي</h2>
+          <p class="sub" id="demo-link"></p>
+        </div>
+        <div class="live-grid" id="live"></div>
+      </section>
+
       <section class="attention" aria-labelledby="h-attention">
         <h2 id="h-attention">محتاج منك</h2>
         <ul id="attention"></ul>

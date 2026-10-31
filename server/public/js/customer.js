@@ -116,7 +116,14 @@ function renderPromo() {
   }
 }
 
+// Inside the demo page (/demo) the order's state goes up to it, so it can point at this screen.
+function tellDemo() {
+  if (window.parent === window) return;
+  window.parent.postMessage({ type: 'sp:order', id: order.id, number: order.number, status: order.status }, location.origin);
+}
+
 function render() {
+  tellDemo();
   const card = $('card');
   card.dataset.status = order.status;
   $('card-shop').textContent = order.shopName;

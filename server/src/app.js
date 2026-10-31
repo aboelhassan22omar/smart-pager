@@ -12,11 +12,13 @@ import { createService } from './service.js';
 import { scheduleBackups } from './backup.js';
 import { runWeeklySummaries } from './summary.js';
 import { createPackages } from './native/packages.js';
+import { topUpDemo } from './demo.js';
 import adminRoutes from './routes/admin.js';
 import appRoutes from './routes/app.js';
 import barRoutes from './routes/bar.js';
 import brandRoutes from './routes/brand.js';
 import customerRoutes from './routes/customer.js';
+import demoRoutes from './routes/demo.js';
 import pageRoutes from './routes/pages.js';
 import superRoutes from './routes/super.js';
 
@@ -31,7 +33,8 @@ const CSP = [
   "script-src 'self'",
   "connect-src 'self'",
   "worker-src 'self'",
-  "frame-ancestors 'none'",
+  // 'self': the demo page (/demo) shows the customer, cashier and owner pages in frames.
+  "frame-ancestors 'self'",
   "base-uri 'none'",
   "form-action 'self'",
 ].join('; ');
@@ -103,6 +106,7 @@ export async function buildApp(config) {
   await app.register(superRoutes, ctx);
   await app.register(brandRoutes, ctx);
   await app.register(appRoutes, ctx);
+  await app.register(demoRoutes, ctx);
   await app.register(pageRoutes, ctx);
 
   const rotation = setInterval(() => service.rotateDue(), 1000);
@@ -111,6 +115,7 @@ export async function buildApp(config) {
   const plans = setInterval(() => {
     control.refreshPlanStatuses();
     control.purgeDeviceErrors(Date.now() - 30 * 86_400_000);
+    topUpDemo({ tenants, config });
   }, 3600_000);
   const rollups = setInterval(() => service.runRollups(), 300_000);
   const summaries = setInterval(() => {

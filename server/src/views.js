@@ -46,7 +46,7 @@ export const publicShop = (shop, { today } = {}) => ({
   logoUrl: logoUrl(shop),
   preparingMessage: shop.preparing_message,
   readyMessage: shop.ready_message,
-  // {color, ink} already adjusted for contrast; null = default latte accent.
+  // {color, ink} already adjusted for contrast; null = the default accent.
   accent: shop.accent_color ? readableAccent(shop.accent_color) : null,
   // Post-pickup review (phase 5): internal stars + the Google button, together.
   feedback: reviewEnabled(shop),

@@ -1,10 +1,10 @@
 // Brand accent from the shop logo. Pure functions (Node-importable); the server uses
 // readableAccent() too, so customers always get a legible accent whatever was stored.
 //
-// The accent is the 10% of the 60/30/10 split: it replaces the default latte only.
+// The accent is the 10% of the 60/30/10 split: it replaces the default soft blue only.
 
-export const BG = '#1e1f21';
-const DARK_INK = '#1e1f21';
+export const BG = '#17191d';
+const DARK_INK = '#17191d';
 const LIGHT_INK = '#ffffff';
 const MIN_UI_CONTRAST = 3; // WCAG 1.4.11 for UI parts against the graphite background
 

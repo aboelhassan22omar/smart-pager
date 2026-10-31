@@ -102,7 +102,7 @@ function renderColumns(el, daily) {
   el.append(svg);
 }
 
-/** Peak hours: sequential, one hue (latte) from the surface up; 5 steps + legend. */
+/** Peak hours: sequential, one hue (the accent) from the surface up; 5 steps + legend. */
 function renderHeatmap(el, heatmap) {
   const max = Math.max(0, ...heatmap.flat());
   const step = (v) => (v === 0 || max === 0 ? 0 : Math.max(1, Math.ceil((v / max) * HEAT_STEPS)));

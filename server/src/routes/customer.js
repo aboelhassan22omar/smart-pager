@@ -50,7 +50,7 @@ export function validateLiveActivity(payload) {
   return { token, app };
 }
 
-export default async function customerRoutes(app, { config, control, tenants, bus, notifier, service }) {
+export default async function customerRoutes(app, { config, control, tenants, bus, notifier, service, screens }) {
   const claimLimiter = createRateLimiter({ limit: config.claimRatePerMin });
   const deviceLimiter = createRateLimiter(DEVICE_CLAIMS);
   app.addHook('onClose', async () => {
@@ -128,7 +128,12 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       const channel = channels(req.ctx.branch.id).order(order.id);
       const listener = (event, data) => sse.send(event, data);
       bus.on(channel, listener);
-      sse.onClose(() => bus.off(channel, listener));
+      const branchId = req.ctx.branch.id;
+      screens.addCustomer(branchId);
+      sse.onClose(() => {
+        bus.off(channel, listener);
+        screens.removeCustomer(branchId);
+      });
     });
 
     // Sent (via sendBeacon) when a customer taps "rate us on Google" after pickup.

@@ -96,7 +96,7 @@ export async function loadStaffState(shopId, root) {
 // EventSource with status callback and manual reconnect after hard failures.
 // Also: "reload" (the super refreshing this cashier app's screen) and, in the app,
 // long connection drops for the device's error log.
-export function staffEvents(shopId, handlers, onStatus) {
+export function staffEvents(shopId, handlers, onStatus, { screen = 'bar' } = {}) {
   let es = null;
   let retry = null;
   const watch = connectionWatch();
@@ -105,7 +105,7 @@ export function staffEvents(shopId, handlers, onStatus) {
     onStatus(online);
   };
   const connect = () => {
-    es = new EventSource(`/api/bar/${encodeURIComponent(shopId)}/events`);
+    es = new EventSource(`/api/bar/${encodeURIComponent(shopId)}/events?screen=${screen}`);
     es.addEventListener('open', () => status(true));
     es.addEventListener('reload', () => location.reload());
     es.addEventListener('error', () => {
