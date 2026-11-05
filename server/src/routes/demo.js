@@ -6,6 +6,7 @@ import { PUBLIC_DIR } from '../paths.js';
 import { setOwnerSession, setStaffSession } from '../sessions.js';
 import { openSse } from '../sse.js';
 import { dayIn } from '../util.js';
+import { publicShop } from '../views.js';
 
 const VISITOR_COOKIE = 'sp_demo';
 const VISITOR_MAX_AGE = 365 * 24 * 3600;
@@ -36,7 +37,7 @@ export default async function demoRoutes(app, deps) {
   app.get('/api/demo', async () => {
     const { ctx } = await ensureDemo(deps);
     const shop = ctx.store.getShop();
-    return { shopId: shop.id, brandId: shop.brand_id, name: shop.name, customerPath: customerPath(shop) };
+    return { shopId: shop.id, brandId: shop.brand_id, name: shop.name, customerPath: customerPath(shop), theme: publicShop(shop).theme };
   });
 
   // The customer link as a QR: visitors scan it with their own phone and get a real number.

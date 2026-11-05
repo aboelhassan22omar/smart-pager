@@ -1,5 +1,5 @@
 import { Chime } from './chime.js';
-import { applyAccent } from './color.js';
+import { applyTheme } from './color.js';
 import { icons } from './icons.js';
 import { loyaltyHtml } from './loyalty-card.js';
 import { aheadText, etaText } from './queue-text.js';
@@ -398,12 +398,48 @@ async function resolveOrder() {
   const n = params.get('n');
   const k = params.get('k');
   if ((!current || CLOSED.includes(current.status)) && (n || k)) {
-    current = await api(`${branchApi}/claim`, {
-      method: 'POST', body: { n: n ?? undefined, k: k ?? undefined }, headers: deviceHeaders(),
-    });
-    if (current.deviceToken) store.set(deviceKey, current.deviceToken);
+    current = await claimOrder();
   }
   return current;
+}
+
+async function claimOrder(pick) {
+  const n = params.get('n');
+  const k = params.get('k');
+  const claimed = await api(`${branchApi}/claim`, {
+    method: 'POST', body: { n: n ?? undefined, k: k ?? undefined, canPick: true, pick }, headers: deviceHeaders(),
+  });
+  if (claimed.deviceToken) store.set(deviceKey, claimed.deviceToken);
+  return claimed;
+}
+
+// Several numbers from the POS are waiting: the customer picks the one on their receipt.
+function pickNumber(numbers, note = '') {
+  $('card').hidden = true;
+  $('enable').hidden = true;
+  $('pick').hidden = false;
+  $('pick-note').textContent = note;
+  $('pick-note').hidden = !note;
+  $('pick-numbers').innerHTML = numbers
+    .map((n) => `<button class="btn pick-number num" type="button" data-pick="${esc(n)}">${esc(n)}</button>`)
+    .join('');
+  return new Promise((resolve, reject) => {
+    $('pick').onclick = async (e) => {
+      const button = e.target.closest('[data-pick]');
+      if (!button) return;
+      const pick = button.dataset.pick === 'new' ? 'new' : Number(button.dataset.pick);
+      try {
+        const claimed = await claimOrder(pick);
+        $('pick').hidden = true;
+        $('card').hidden = false;
+        $('enable').hidden = false;
+        resolve(claimed);
+      } catch (err) {
+        if (err.data?.choose) resolve(pickNumber(err.data.choose, err.message));
+        else reject(err);
+      }
+    };
+  });
 }
 
 async function boot() {
@@ -414,7 +450,7 @@ async function boot() {
     fatal(err.status === 404 ? 'المحل ده مش موجود. اتأكد من الكود' : err.message);
     return;
   }
-  applyAccent(document.documentElement, shop.accent);
+  applyTheme(document.documentElement, shop.theme);
   paintLogo($('splash-logo'), 136);
   $('splash-name').textContent = shop.name;
   paintLogo($('card-logo'), 56);
@@ -428,6 +464,14 @@ async function boot() {
   }
   await holdSplash();
 
+  if (resolved?.choose) {
+    try {
+      resolved = await pickNumber(resolved.choose);
+    } catch (err) {
+      resolved = null;
+      failure = err.message;
+    }
+  }
   if (!resolved) {
     fatal(failure ?? 'امسح الكود اللي عند الكاشير عشان تاخد رقم طلبك');
     return;

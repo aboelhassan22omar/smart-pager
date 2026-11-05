@@ -9,6 +9,8 @@ import { dayIn, startOfDayIn } from './util.js';
 export const DEMO_ID = 'demo';
 export const DEMO_NAME = 'كافيه الديمو';
 const DEMO_OWNER = 'demo.visitor';
+// Shows visitors what a branch looks like in its own color.
+const DEMO_COLOR = '#12a0a0';
 const SEED_DAYS = 14;
 const SEED_PREFIX = 'seed-';
 export const DEMO_LOCKED = 'دي نسخة الديمو: الإعدادات مقفولة هنا، وبتتغيّر عادي في النسخة بتاعتك';
@@ -27,7 +29,10 @@ export async function ensureDemo(deps) {
     return ctx?.store.getShop() && owner ? { ctx, owner } : null;
   };
   const existing = ready();
-  if (existing) return existing;
+  if (existing) {
+    if (!existing.ctx.store.getShop().theme_version) existing.ctx.store.updateShop({ accent_color: DEMO_COLOR, theme_version: 1 });
+    return existing;
+  }
   creating ??= create(deps).finally(() => {
     creating = null;
   });
@@ -49,6 +54,8 @@ async function create({ control, tenants, config }) {
     const cols = await pinFields(config.cookieSecret, pin);
     ctx.store.initSettings({ pinHash: cols.pin_hash, pinSealed: cols.pin_sealed, qrMode: 'both' });
     ctx.store.updateShop({
+      accent_color: DEMO_COLOR,
+      theme_version: 1,
       expire_hours: 1,
       preparing_message: 'طلبك بيتحضّر دلوقتي. هنرن عليك أول ما يجهز',
       ready_message: 'طلبك جاهز، اتفضّل استلمه من الكاشير',

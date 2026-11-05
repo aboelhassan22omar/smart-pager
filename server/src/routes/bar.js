@@ -7,6 +7,7 @@ import { staffCookieName } from '../cookies.js';
 import { planView } from '../plans.js';
 import { deviceFromRequest, setStaffSession, verifyStaffSession } from '../sessions.js';
 import { HttpError } from '../errors.js';
+import { randomId } from '../util.js';
 import { DEMO_LOCKED, isDemo } from '../demo.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
@@ -109,7 +110,8 @@ export default async function barRoutes(app, deps) {
       requireBar(req);
       const isLogo = req.routeOptions.url?.endsWith('/logo');
       // Every visitor shares the demo café: its settings stay as they are.
-      if (req.method !== 'GET' && isDemo(req.shop.id) && (isLogo || req.routeOptions.url?.endsWith('/settings'))) {
+      const locked = ['/settings', '/pos/rotate'].some((path) => req.routeOptions.url?.endsWith(path));
+      if (req.method !== 'GET' && isDemo(req.shop.id) && (isLogo || locked)) {
         throw new HttpError(403, DEMO_LOCKED);
       }
       if (req.method === 'POST' && !isLogo && !(req.headers['content-type'] ?? '').startsWith('application/json')) {
@@ -189,6 +191,17 @@ export default async function barRoutes(app, deps) {
       return service.adjustCounter(req.ctx, delta);
     });
 
+    // The link this branch pastes into its POS (created the first time it is asked for).
+    const posView = (shop) => ({
+      url: `${config.publicUrl}/api/pos/${shop.id}/${shop.pos_token}`,
+      last: shop.pos_last_event ? JSON.parse(shop.pos_last_event) : null,
+    });
+
+    bar.get('/pos', async (req) => posView(req.shop.pos_token ? req.shop : req.ctx.store.updateShop({ pos_token: randomId(24) })));
+
+    // The old link stops working right away.
+    bar.post('/pos/rotate', async (req) => posView(req.ctx.store.updateShop({ pos_token: randomId(24), pos_last_event: null })));
+
     bar.post('/orders/:id/advance', async (req) => publicOrder(service.advance(req.ctx, req.shop, shopOrder(req)), req.shop));
 
     bar.post('/orders/:id/status', async (req) => {
@@ -221,8 +234,8 @@ export default async function barRoutes(app, deps) {
         if (v === null || v === '') fields.accent_color = null;
         else if (typeof v === 'string' && HEX_COLOR_RE.test(v)) fields.accent_color = v.toLowerCase();
         else throw invalid('accentColor', 'اللون ده مش مظبوط');
+        fields.theme_version = 1;
       }
-      if ('googleReviewUrl' in body) fields.google_review_url = parseGoogleReviewUrl(body.googleReviewUrl);
       if (body.rotateStaticKey === true) fields.static_key = newStaticKey();
       if ('newPin' in body) {
         if (typeof body.newPin !== 'string' || !PIN_RE.test(body.newPin)) {

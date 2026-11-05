@@ -85,7 +85,8 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       }
       // Suspended or trial over: no new orders (open ones finish normally).
       if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الخدمة متوقفة مؤقتًا، اسأل الكاشير');
-      const { n, k } = req.body ?? {};
+      const { n, k, pick, canPick } = req.body ?? {};
+      if (pick != null && pick !== 'new' && !Number.isInteger(pick)) throw new HttpError(400, 'الرقم ده مش مظبوط', { field: 'pick' });
       const branchId = req.ctx.branch.id;
 
       // Loyalty on: the order is tied to this device (token created on its first claim).
@@ -100,7 +101,10 @@ export default async function customerRoutes(app, { config, control, tenants, bu
         }
       }
 
-      const { order, shop } = service.claim(req.ctx, { n, k }, { deviceHash: device?.hash });
+      const claimed = service.claim(req.ctx, { n, k, pick }, { deviceHash: device?.hash, canPick: canPick === true });
+      // Several numbers from the POS are waiting: the customer picks the one on their receipt.
+      if (claimed.choose) return { choose: claimed.choose };
+      const { order, shop } = claimed;
       const view = service.customerView(req.ctx, order, shop);
       if (!device) return view;
       setDeviceCookie(reply, config, branchId, device.token);

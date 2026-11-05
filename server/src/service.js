@@ -55,8 +55,10 @@ export function createService({ control, tenants, bus, notifier, screens, config
   const publishNonce = (ctx, shop) => bus.emit(channels(ctx.branch.id).bar, 'nonce', qrInfo(shop, config));
   const publishShop = (ctx, shop) => bus.emit(channels(ctx.branch.id).bar, 'shop', barShop(shop));
 
-  function claim(ctx, codes, { deviceHash = null } = {}) {
-    const { order, shop, rotated } = ctx.store.claim(codes, { deviceHash });
+  function claim(ctx, codes, { deviceHash = null, canPick = false } = {}) {
+    const result = ctx.store.claim(codes, { deviceHash, canPick });
+    if (result.choose) return result;
+    const { order, shop, rotated } = result;
     if (rotated) publishNonce(ctx, shop);
     publishOrder(ctx, order, shop, { action: 'created' });
     control.touch(ctx.branch.id);
@@ -67,6 +69,23 @@ export function createService({ control, tenants, bus, notifier, screens, config
     const counter = ctx.store.adjustCounter(delta);
     bus.emit(channels(ctx.branch.id).bar, 'counter', counter);
     return counter;
+  }
+
+  const publishCounter = (ctx) => bus.emit(channels(ctx.branch.id).bar, 'counter', ctx.store.counter());
+  const posEvent = (ctx, event) => ctx.store.updateShop({ pos_last_event: JSON.stringify({ at: Date.now(), ...event }) });
+
+  /** Orders read from the branch's POS link. */
+  function posOrders(ctx, orders) {
+    const results = orders.map((order) => ({ ...order, result: ctx.store.posOrder(order) }));
+    const last = results.at(-1);
+    posEvent(ctx, { number: last.number, delivery: last.delivery, cancelled: last.cancelled });
+    publishCounter(ctx);
+    return results;
+  }
+
+  /** The POS called but no order number was found: the field names go on the settings page. */
+  function posUnread(ctx, keys) {
+    posEvent(ctx, { unread: true, keys });
   }
 
   function setStatus(ctx, shop, order, status) {
@@ -151,6 +170,6 @@ export function createService({ control, tenants, bus, notifier, screens, config
   }
 
   return {
-    claim, adjustCounter, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+    claim, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
   };
 }

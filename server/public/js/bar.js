@@ -1,4 +1,5 @@
 import { Chime } from './chime.js';
+import { accentFromImage, applyTheme } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, staffEvents, toast } from './staff.js';
 import { api, elapsedLabel, esc, shopIdFromPath } from './util.js';
@@ -91,6 +92,8 @@ function renderCounter(counter) {
   $('count-next').textContent = String(counter.next ?? '—');
   $('count-last').textContent = counter.last == null ? 'لسه مفيش' : String(counter.last);
   $('count-minus').disabled = counter.last == null;
+  $('count-waiting').hidden = !counter.waiting;
+  $('count-waiting').textContent = counter.waiting ? `أرقام من السيستم مستنية سكان: ${counter.waiting}` : '';
 }
 
 async function adjustCount(delta) {
@@ -289,7 +292,25 @@ function renderPlan(plan) {
   }
 }
 
+// Branches whose logo was uploaded before colors could be read from any logo: done once, here,
+// because reading the image takes a browser. A branch that chose the default stays on it.
+let themeChecked = false;
+function readLogoColorOnce(shop) {
+  if (themeChecked || !shop.logoUrl || shop.accentColor || shop.themeVersion) return;
+  themeChecked = true;
+  const img = new Image();
+  img.addEventListener('load', async () => {
+    const color = accentFromImage(img);
+    if (!color) return;
+    const res = await api(`${base}/settings`, { method: 'POST', body: { accentColor: color } }).catch(() => null);
+    if (res) applyTheme(document.documentElement, res.shop.theme);
+  });
+  img.src = shop.logoUrl;
+}
+
 function applyState(state) {
+  applyTheme(document.documentElement, state.shop.theme);
+  readLogoColorOnce(state.shop);
   renderPlan(state.plan);
   renderCounter(state.counter);
   lateAfterMs = (state.shop.lateAfterMinutes ?? 10) * 60_000;
@@ -343,6 +364,7 @@ async function boot() {
       },
       shop: (shop) => {
         $('shop-name').textContent = shop.name;
+        applyTheme(document.documentElement, shop.theme);
         lateAfterMs = (shop.lateAfterMinutes ?? 10) * 60_000;
         renderGrid();
       },

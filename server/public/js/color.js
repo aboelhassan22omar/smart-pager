@@ -1,12 +1,14 @@
 // Brand accent from the shop logo. Pure functions (Node-importable); the server uses
 // readableAccent() too, so customers always get a legible accent whatever was stored.
 //
-// The accent is the 10% of the 60/30/10 split: it replaces the default soft blue only.
+// A branch's color tints the whole page (brandTheme), not only the buttons, so it feels like its own.
 
 export const BG = '#17191d';
 const DARK_INK = '#17191d';
 const LIGHT_INK = '#ffffff';
 const MIN_UI_CONTRAST = 3; // WCAG 1.4.11 for UI parts against the graphite background
+const DANGER = '#c8574f';
+const MIN_TEXT_CONTRAST = 4.5; // WCAG 1.4.3 for the text on a button in that color
 
 export function hexToRgb(hex) {
   const n = Number.parseInt(hex.slice(1), 16);
@@ -55,27 +57,30 @@ export function contrast(a, b) {
   return (Math.max(la, lb) + 0.05) / (Math.min(la, lb) + 0.05);
 }
 
-// Hues that already mean something here: green = ready, red = cancel.
-export function isStateHue(h, s) {
-  return s > 0.35 && ((h >= 95 && h <= 165) || h >= 345 || h <= 15);
-}
+// A black-and-white logo gets a true grey look, so it still differs from the default blue.
+export const MONO_COLOR = '#ececec';
+const MIN_COLOR_SHARE = 0.015; // of the logo's visible area
 
 /**
- * Picks the dominant saturated color from RGBA pixel data (e.g. canvas ImageData.data).
- * Ignores transparent, near-black, near-white and greyish pixels. Skips hues that would
- * read as "ready" or "cancel". Returns a hex string, or null for monochrome logos.
+ * The logo's own color from RGBA pixel data (e.g. canvas ImageData.data): the hue that covers
+ * the most, a colored background included. White, black and greys don't count, and neither do
+ * pale tints that are really just paper. Red and green logos keep their color: the ready and
+ * cancel screens are recognizable by more than the hue. Returns MONO_COLOR when the logo has no
+ * color at all, or null when nothing in the image is visible.
  */
 export function extractAccent(data) {
   const bins = Array.from({ length: 36 }, () => ({ w: 0, r: 0, g: 0, b: 0 }));
   let total = 0;
+  let visible = 0;
   for (let i = 0; i < data.length; i += 4) {
-    if (data[i + 3] < 200) continue;
+    if (data[i + 3] < 128) continue;
+    visible += 1;
     const r = data[i];
     const g = data[i + 1];
     const b = data[i + 2];
     const [h, s, l] = rgbToHsl(r, g, b);
-    if (s < 0.28 || l < 0.14 || l > 0.88) continue;
-    const w = s * (1 - Math.abs(l - 0.5));
+    if (Math.max(r, g, b) - Math.min(r, g, b) < 30 || s < 0.15 || l > 0.93) continue;
+    const w = l > 0.82 ? 0.25 : 1;
     const bin = bins[Math.floor(h / 10) % 36];
     bin.w += w;
     bin.r += r * w;
@@ -83,20 +88,15 @@ export function extractAccent(data) {
     bin.b += b * w;
     total += w;
   }
-  if (total === 0) return null;
+  if (!visible) return null;
+  if (total / visible < MIN_COLOR_SHARE) return MONO_COLOR;
 
   // Score each hue bin with half of its neighbours so a gradient counts as one color.
-  const scored = bins
-    .map((bin, i) => ({ bin, score: bin.w + 0.5 * (bins[(i + 35) % 36].w + bins[(i + 1) % 36].w) }))
-    .filter(({ bin }) => bin.w / total >= 0.04)
+  const [{ bin }] = bins
+    .map((b, i) => ({ bin: b, score: b.w + 0.5 * (bins[(i + 35) % 36].w + bins[(i + 1) % 36].w) }))
+    .filter((x) => x.bin.w > 0)
     .sort((x, y) => y.score - x.score);
-
-  for (const { bin } of scored) {
-    const color = rgbToHex(bin.r / bin.w, bin.g / bin.w, bin.b / bin.w);
-    const [h, s] = rgbToHsl(...hexToRgb(color));
-    if (!isStateHue(h, s)) return color;
-  }
-  return null;
+  return rgbToHex(bin.r / bin.w, bin.g / bin.w, bin.b / bin.w);
 }
 
 /** Lightens `hex` until it stands out on the background, and picks the text color for it. */
@@ -104,7 +104,9 @@ export function readableAccent(hex, bg = BG) {
   const [h, s, start] = rgbToHsl(...hexToRgb(hex));
   let l = start;
   let color = hex.toLowerCase();
-  for (let i = 0; i < 50 && contrast(color, bg) < MIN_UI_CONTRAST && l < 0.97; i++) {
+  const inkContrast = () => Math.max(contrast(color, DARK_INK), contrast(color, LIGHT_INK));
+  // Bright mid-tones (a pure red) read poorly with both white and dark text on them, so they lift too.
+  for (let i = 0; i < 50 && (contrast(color, bg) < MIN_UI_CONTRAST || inkContrast() < MIN_TEXT_CONTRAST) && l < 0.97; i++) {
     l = Math.min(0.97, l + 0.02);
     color = rgbToHex(...hslToRgb(h, s, l));
   }
@@ -112,16 +114,62 @@ export function readableAccent(hex, bg = BG) {
   return { color, ink };
 }
 
-/** Sets the accent tokens on an element (usually document.documentElement); null restores the default. */
-export function applyAccent(el, accent) {
+const hsl = (h, s, l) => rgbToHex(...hslToRgb(h, s, l));
+
+function readableText(hex, bg) {
+  const [h, s, start] = rgbToHsl(...hexToRgb(hex));
+  let color = hex;
+  for (let l = start; contrast(color, bg) < MIN_TEXT_CONTRAST && l < 0.97; l += 0.02) color = hsl(h, s, l);
+  return color;
+}
+
+/**
+ * The whole page in the logo's color: dark surfaces tinted strongly with its hue, text with a
+ * hint of it, and the color itself on the actions. Stays dark so the green "ready" screen and
+ * the order number keep standing out. Greys stay truly neutral.
+ */
+export function brandTheme(hex) {
+  const [h, s] = rgbToHsl(...hexToRgb(hex));
+  // Dark oranges and yellows turn to chocolate at full strength, so they stay a warm charcoal.
+  const strongest = h >= 15 && h <= 65 ? 0.3 : 0.62;
+  const tint = s < 0.1 ? 0 : Math.min(strongest, Math.max(0.3, s * 0.75));
+  const bg = hsl(h, tint, 0.105);
+  const surface = hsl(h, tint, 0.155);
+  const surface2 = hsl(h, tint, 0.205);
+  const textTint = Math.min(tint, 0.3);
+  const text = hsl(h, textTint, 0.94);
+  const [tr, tg, tb] = hexToRgb(text);
+  const accent = readableAccent(hex, surface2);
+  // On a red page the usual red for "cancel" would disappear: it lifts until it reads.
+  const danger = readableText(DANGER, surface2);
+  return {
+    '--bg': bg,
+    '--surface': surface,
+    '--surface-2': surface2,
+    '--line': `rgb(${tr} ${tg} ${tb} / 0.1)`,
+    '--line-strong': `rgb(${tr} ${tg} ${tb} / 0.2)`,
+    '--text': text,
+    '--muted': hsl(h, textTint, 0.74),
+    '--accent': accent.color,
+    '--on-accent': accent.ink,
+    '--danger': danger,
+    '--on-danger': contrast(danger, LIGHT_INK) >= contrast(danger, DARK_INK) ? LIGHT_INK : DARK_INK,
+  };
+}
+
+const THEME_TOKENS = [
+  '--bg', '--surface', '--surface-2', '--line', '--line-strong', '--text', '--muted', '--accent', '--on-accent', '--danger', '--on-danger',
+];
+
+/** Paints a page with brandTheme() tokens (usually on document.documentElement); null restores the default. */
+export function applyTheme(el, theme) {
   if (!el) return;
-  if (!accent) {
-    el.style.removeProperty('--accent');
-    el.style.removeProperty('--on-accent');
-    return;
+  for (const token of THEME_TOKENS) {
+    if (theme) el.style.setProperty(token, theme[token]);
+    else el.style.removeProperty(token);
   }
-  el.style.setProperty('--accent', accent.color);
-  el.style.setProperty('--on-accent', accent.ink);
+  const meta = el.ownerDocument?.querySelector('meta[name="theme-color"]');
+  if (meta) meta.content = theme?.['--bg'] ?? BG;
 }
 
 /** Browser only: dominant accent of an image (HTMLImageElement / ImageBitmap). */

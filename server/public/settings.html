@@ -69,18 +69,6 @@
         </form>
       </section>
 
-      <section class="group" aria-labelledby="h-review">
-        <h2 id="h-review">تقييم جوجل</h2>
-        <form id="form-review" class="panel stack" novalidate>
-          <label class="field"><span>لينك تقييم الفرع ده على جوجل</span>
-            <input class="input" name="googleReviewUrl" type="url" dir="ltr" inputmode="url" maxlength="500"
-              placeholder="https://g.page/r/…/review"></label>
-          <p class="muted small" id="review-help">من Google Business Profile بتاع الفرع ده: اطلب تقييمات ← انسخ اللينك. كل فرع ليه اللينك بتاعه.</p>
-          <p class="form-error" hidden></p>
-          <button class="btn btn-primary" type="submit">احفظ اللينك</button>
-        </form>
-      </section>
-
       <section class="group" aria-labelledby="h-qr">
         <h2 id="h-qr">كود الطلب</h2>
         <div class="panel stack">
@@ -122,6 +110,62 @@
           <p class="form-error" hidden></p>
           <button class="btn btn-primary" type="submit">احفظ الأرقام</button>
         </form>
+      </section>
+
+      <section class="group" aria-labelledby="h-pos">
+        <h2 id="h-pos">ربط سيستم الكاشير</h2>
+        <div class="panel stack">
+          <p class="muted small">السيستم بيبعت رقم كل طلب على اللينك ده. العد هنا بيمشي معاه لوحده، وطلبات الديليفري بتتعدّى من غير ما تدوس +، والعميل بياخد نفس الرقم اللي على الفاتورة.</p>
+          <label class="field"><span>لينك الربط بتاع الفرع ده</span>
+            <input class="input" id="pos-url" dir="ltr" readonly></label>
+          <div class="row-actions">
+            <button class="btn btn-primary" id="pos-copy" type="button">انسخ اللينك</button>
+            <button class="btn" id="pos-test" type="button">جرّب اللينك</button>
+            <button class="btn btn-danger" id="pos-rotate" type="button">غيّر اللينك</button>
+          </div>
+          <p class="pos-status" id="pos-status" role="status"></p>
+
+          <h3 class="pos-how">إزاي تربط</h3>
+          <details class="pos-guide" open>
+            <summary>أسهل طريقة: ابعت الرسالة دي لدعم السيستم بتاعك</summary>
+            <p class="muted small">معظم برامج الكاشير عندها دعم فني يقدر يظبطها. انسخ الرسالة وابعتها لهم زي ما هي.</p>
+            <textarea class="input pos-message" id="pos-message" rows="5" readonly dir="auto"></textarea>
+            <button class="btn" id="pos-message-copy" type="button">انسخ الرسالة</button>
+          </details>
+          <details class="pos-guide">
+            <summary>Loyverse</summary>
+            <ol>
+              <li>افتح <a href="https://r.loyverse.com/dashboard/#/webhooks" target="_blank" rel="noopener">صفحة Webhooks</a> من حساب Loyverse.</li>
+              <li>ضيف webhook جديد، واختار الحدث <code dir="ltr">receipts.update</code>.</li>
+              <li>الصق لينك الربط واحفظ.</li>
+              <li>اعمل طلب تجربة من الكاشير، وارجع هنا هتلاقي رقمه ظهر فوق.</li>
+            </ol>
+            <p class="muted small">الطلبات اللي نوعها فيه كلمة Delivery في Loyverse بتتعدّى لوحدها. لو استخدمت زرار الاختبار بتاع Loyverse، رقمه التجريبي ممكن يغيّر العد لحد أول طلب حقيقي.</p>
+          </details>
+          <details class="pos-guide">
+            <summary>Foodics</summary>
+            <ol>
+              <li>الربط في Foodics بيتم من خلال الـ API، ومحتاج خطة أو ترخيص بيدعمه. اسأل دعم Foodics.</li>
+              <li>ابعتلهم رسالة الربط اللي فوق، بس بـ<strong>اللينك ده</strong> عشان Foodics بيبعت نوع الطلب كرقم:
+                <input class="input pos-url-small" id="pos-url-foodics" dir="ltr" readonly></li>
+            </ol>
+          </details>
+          <details class="pos-guide">
+            <summary>Odoo</summary>
+            <ol>
+              <li>من Studio افتح Automations، واعمل Automation Rule جديدة على موديل طلبات الـ POS، بتشتغل عند إنشاء طلب.</li>
+              <li>الإجراء: <code dir="ltr">Send Webhook Notification</code>، والصق لينك الربط في خانة URL.</li>
+              <li>في Fields اختار حقل رقم الطلب وحقل نوع الطلب.</li>
+            </ol>
+          </details>
+          <details class="pos-guide">
+            <summary>أي سيستم تاني، أو للمبرمج</summary>
+            <p class="muted small">أي سيستم يقدر يكلّم لينك مع كل طلب هيشتغل. ابعت POST بـ JSON (أو فورم، أو GET):</p>
+            <pre class="pos-code" dir="ltr">{ "number": 123, "type": "delivery" }</pre>
+            <p class="muted small"><code dir="ltr">type</code>: كلمة delivery يعني ديليفري، وأي قيمة تانية طلب عادي. لطلب اتلغى ابعت معاه <code dir="ltr">"status": "cancelled"</code>. أسماء زي <code dir="ltr">order_number</code> و<code dir="ltr">receipt_number</code> و<code dir="ltr">order_type</code> شغالة برضه. لو النوع بيتبعت كرقم، زوّد <code dir="ltr">?delivery=3</code> على اللينك بالرقم اللي معناه ديليفري.</p>
+          </details>
+          <p class="muted small">السيستم بتاعك مفيهوش ربط خالص؟ استخدم + و− في شاشة الطلبات، هيظبطوا العد برضه.</p>
+        </div>
       </section>
 
       <section class="group" aria-labelledby="h-pin">

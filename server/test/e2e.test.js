@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import { after, before, describe, test } from 'node:test';
-import { ADMIN_TOKEN, client, earlyRejectPost, PNG_1X1, setFeatureFlag, sse, startServer } from './helpers.js';
+import { ADMIN_TOKEN, client, earlyRejectPost, PNG_1X1, setFeatureFlag, setReviewLink, sse, startServer } from './helpers.js';
 import { appleAppSiteAssociation } from '../src/views.js';
 
 let server;
@@ -334,29 +334,13 @@ describe('shop accent + Google review', () => {
     assert.equal((await publicShop()).accent, null);
   });
 
-  test('Google review link must be an https Google URL; empty removes it', async () => {
-    assert.equal((await settings({ googleReviewUrl: 'http://g.page/r/abc/review' })).data.field, 'googleReviewUrl');
-    assert.equal((await settings({ googleReviewUrl: 'https://evil.example.com/review' })).status, 400);
-    assert.equal((await settings({ googleReviewUrl: 'https://google.com.evil.io/x' })).status, 400);
-    for (const ok of [
-      'https://g.page/r/CbX1abc/review',
-      'https://search.google.com/local/writereview?placeid=ChIJ123',
-      'https://maps.app.goo.gl/AbCd',
-      'https://www.google.com.eg/maps/place/x',
-    ]) {
-      assert.equal((await settings({ googleReviewUrl: ok })).status, 200, ok);
-    }
-    await settings({ googleReviewUrl: '  ' });
-    assert.equal((await publicShop()).googleReviewUrl, null);
-  });
-
   test('review taps are counted once per picked-up order', async () => {
     const order = await claimDynamic();
     const click = () => api.request('POST', `/api/b/${SHOP}/orders/${order.id}/review-click`, {
       body: '',
       headers: { 'content-type': 'text/plain;charset=UTF-8' },
     });
-    await settings({ googleReviewUrl: 'https://g.page/r/CbX1abc/review' });
+    setReviewLink(server.dataDir, SHOP, SHOP, 'https://g.page/r/CbX1abc/review');
     await bar.post(`/api/bar/${SHOP}/orders/${order.id}/status`, { status: 'picked' });
     assert.equal((await click()).status, 409, 'review feature off: no button, no counting');
     assert.equal((await publicShop()).googleReviewUrl, null);
@@ -375,7 +359,7 @@ describe('shop accent + Google review', () => {
     assert.equal((await barState()).shop.reviewClicks, 1);
     assert.equal((await publicShop()).googleReviewUrl, 'https://g.page/r/CbX1abc/review');
 
-    await settings({ googleReviewUrl: '' });
+    setReviewLink(server.dataDir, SHOP, SHOP, null);
     assert.equal((await clickFresh()).status, 409, 'no link, no counting');
   });
 });

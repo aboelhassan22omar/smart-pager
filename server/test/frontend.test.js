@@ -4,7 +4,9 @@ import path from 'node:path';
 import { describe, test } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import vm from 'node:vm';
-import { BG, contrast, extractAccent, hexToRgb, readableAccent, rgbToHsl } from '../public/js/color.js';
+import {
+  BG, brandTheme, contrast, extractAccent, hexToRgb, hslToRgb, MONO_COLOR, readableAccent, rgbToHex, rgbToHsl,
+} from '../public/js/color.js';
 import { reviewHtml } from '../public/js/review.js';
 import { mountPoweredBy, AUREXIS_LOGO, AUREXIS_URL } from '../public/js/powered.js';
 import { esc, isCashierApp, SPLASH_MIN_MS } from '../public/js/util.js';
@@ -154,15 +156,45 @@ describe('shop accent from the logo', () => {
     assert.ok(Math.abs(hueOf(color) - hueOf('#1a73e8')) < 8, color);
   });
 
-  test('monochrome or transparent logos give no accent', () => {
-    assert.equal(extractAccent(pixels(['#000000', 300], ['#ffffff', 300], ['#808080', 300])), null);
+  test('a black-and-white logo gets the grey look; only an invisible image gives nothing', () => {
+    assert.equal(extractAccent(pixels(['#000000', 300], ['#ffffff', 300], ['#808080', 300])), MONO_COLOR);
     assert.equal(extractAccent(pixels(['#1a73e8', 300, 0])), null);
   });
 
-  test('skips green and red, which mean "ready" and "cancel"', () => {
-    const color = extractAccent(pixels(['#2e9e44', 500], ['#d93025', 400], ['#7b3fe4', 150]));
-    assert.ok(Math.abs(hueOf(color) - hueOf('#7b3fe4')) < 8, color);
-    assert.equal(extractAccent(pixels(['#2e9e44', 500])), null);
+  test('red and green logos keep their color', () => {
+    const red = extractAccent(pixels(['#d93025', 400], ['#ffffff', 600]));
+    assert.ok(Math.abs(hueOf(red) - hueOf('#d93025')) < 8, red);
+    const green = extractAccent(pixels(['#2e9e44', 500], ['#d93025', 200], ['#7b3fe4', 150]));
+    assert.ok(Math.abs(hueOf(green) - hueOf('#2e9e44')) < 8, green);
+  });
+
+  test('reads the logos the old rules gave up on', () => {
+    const hue = (color, expected) => assert.ok(Math.abs(hueOf(color) - hueOf(expected)) < 8, `${color} vs ${expected}`);
+    hue(extractAccent(pixels(['#0b1f4b', 300], ['#ffffff', 700])), '#0b1f4b'); // dark navy
+    hue(extractAccent(pixels(['#c9a24b', 30], ['#000000', 970])), '#c9a24b'); // a thin gold line on black
+    hue(extractAccent(pixels(['#b5121b', 900], ['#ffffff', 100])), '#b5121b'); // a full red square
+    hue(extractAccent(pixels(['#6d4c41', 400], ['#f5f0e6', 600])), '#6d4c41'); // brown on cream paper
+  });
+
+  test('every logo color gives a dark, readable page that clearly carries its hue', () => {
+    for (let h = 0; h < 360; h += 15) {
+      for (const [s, l] of [[0.9, 0.5], [0.6, 0.2], [0.4, 0.75]]) {
+        const color = rgbToHex(...hslToRgb(h, s, l));
+        const t = brandTheme(color);
+        for (const surface of ['--bg', '--surface', '--surface-2']) {
+          assert.ok(contrast(t['--text'], t[surface]) >= 7, `text on ${surface} for ${color}`);
+          assert.ok(contrast(t['--muted'], t[surface]) >= 4.5, `muted on ${surface} for ${color}`);
+          assert.ok(contrast(t['--accent'], t[surface]) >= 3, `accent on ${surface} for ${color}`);
+        }
+        assert.ok(contrast(t['--accent'], t['--on-accent']) >= 4.5, `button text for ${color}`);
+        assert.ok(contrast(t['--danger'], t['--surface-2']) >= 4.5, `cancel text for ${color}`);
+        const [bgHue, bgSat] = rgbToHsl(...hexToRgb(t['--bg']));
+        const gap = Math.min(Math.abs(bgHue - h), 360 - Math.abs(bgHue - h));
+        assert.ok(gap < 12 && bgSat >= 0.25, `background of ${color} carries its hue: ${t['--bg']}`);
+      }
+    }
+    const grey = brandTheme(MONO_COLOR);
+    assert.equal(rgbToHsl(...hexToRgb(grey['--bg']))[1], 0, 'a black-and-white logo stays truly neutral');
   });
 
   test('readableAccent lifts dark colors and picks a legible ink', () => {
@@ -173,9 +205,13 @@ describe('shop accent from the logo', () => {
     assert.ok(contrast(light.color, light.ink) >= 4.5);
   });
 
-  test('customer page and QR screen apply the shop accent', () => {
-    assert.match(read('public/js/customer.js'), /applyAccent\(document\.documentElement, shop\.accent\)/);
-    assert.match(read('public/js/qr.js'), /applyAccent\(document\.documentElement, state\.shop\.accent\)/);
+  test('every page of a branch wears its color', () => {
+    assert.match(read('public/js/customer.js'), /applyTheme\(document\.documentElement, shop\.theme\)/);
+    assert.match(read('public/js/qr.js'), /applyTheme\(document\.documentElement, state\.shop\.theme\)/);
+    assert.match(read('public/js/bar.js'), /applyTheme\(document\.documentElement, state\.shop\.theme\)/);
+    assert.match(read('public/js/brand.js'), /applyTheme\(document\.documentElement, data\.brand\.theme\)/);
+    assert.match(read('public/js/settings.js'), /applyTheme\(document\.documentElement/);
+    assert.match(read('public/js/demo.js'), /applyTheme\(document\.documentElement, info\.theme\)/);
   });
 });
 
