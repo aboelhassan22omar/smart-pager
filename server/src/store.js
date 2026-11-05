@@ -147,21 +147,58 @@ export class BranchStore {
     });
   }
 
-  // Daily reset, wrap after max_number, skip numbers that are still open.
-  #allocateNumber(shop) {
-    const today = dayIn(this.config.tz);
+  // The number the next customer gets: daily reset, wrap after max_number, skip open numbers.
+  #nextFree(shop, today, open) {
     const max = shop.max_number;
     let n = shop.number_day === today ? shop.next_number : 1;
     if (n < 1 || n > max) n = 1;
-    const open = new Set(this.sql.openNumbers.all().map((r) => r.number));
     for (let i = 0; i < max; i++) {
-      if (!open.has(n)) {
-        this.sql.setCounter.run(n >= max ? 1 : n + 1, today);
-        return n;
-      }
+      if (!open.has(n)) return n;
       n = n >= max ? 1 : n + 1;
     }
-    throw new HttpError(503, 'كل الأرقام مشغولة دلوقتي. كلّم الكاشير');
+    return null;
+  }
+
+  #openNumbers() {
+    return new Set(this.sql.openNumbers.all().map((r) => r.number));
+  }
+
+  #allocateNumber(shop) {
+    const today = dayIn(this.config.tz);
+    const n = this.#nextFree(shop, today, this.#openNumbers());
+    if (n == null) throw new HttpError(503, 'كل الأرقام مشغولة دلوقتي. كلّم الكاشير');
+    this.sql.setCounter.run(n >= shop.max_number ? 1 : n + 1, today);
+    return n;
+  }
+
+  /** What the cashier sees: the next number and the one before it (null at the start of the count). */
+  counter() {
+    const shop = this.sql.settings.get();
+    const next = this.#nextFree(shop, dayIn(this.config.tz), this.#openNumbers());
+    return { next, last: next > 1 ? next - 1 : null };
+  }
+
+  /**
+   * +1: skips a number that went to an order outside the pager (delivery, a takeaway that
+   * won't scan), so the count stays the same as the POS. -1: takes one back after a mistake.
+   */
+  adjustCounter(delta) {
+    return tx(this.db, () => {
+      const shop = this.sql.settings.get();
+      const today = dayIn(this.config.tz);
+      const open = this.#openNumbers();
+      const next = this.#nextFree(shop, today, open);
+      if (next == null) throw new HttpError(503, 'كل الأرقام مشغولة دلوقتي. كلّم الكاشير');
+      if (delta > 0) {
+        this.sql.setCounter.run(next >= shop.max_number ? 1 : next + 1, today);
+      } else {
+        const back = next - 1;
+        if (back < 1) throw new HttpError(409, 'العد لسه في أوله، مفيش رقم نرجع له');
+        if (open.has(back)) throw new HttpError(409, `رقم ${back} عليه طلب مفتوح. لو طلع بالغلط، ألغيه من شاشة الطلبات`);
+        this.sql.setCounter.run(back, today);
+      }
+      return this.counter();
+    });
   }
 
   #attachDevice(orderId, deviceHash) {

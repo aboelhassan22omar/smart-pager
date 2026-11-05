@@ -28,6 +28,14 @@
     <p id="plan-banner" class="plan-banner" role="status" hidden></p>
 
     <main class="board">
+      <section class="counter" aria-label="عدّ الأرقام">
+        <button class="btn btn-primary count-btn" id="count-plus" type="button" aria-label="عدّي رقم: ديليفري أو طلب من غير سكان">+</button>
+        <div class="counter-text" aria-live="polite">
+          <p class="counter-next"><span>الرقم الجاي</span> <strong class="num" id="count-next"></strong></p>
+          <p class="counter-last"><span>آخر رقم</span> <span class="num" id="count-last"></span></p>
+        </div>
+        <button class="btn count-btn" id="count-minus" type="button" aria-label="ارجع رقم لورا">−</button>
+      </section>
       <p class="board-meta" id="board-meta"></p>
       <div id="grid" class="grid" role="list"></div>
       <div id="empty" class="empty" hidden>
@@ -36,6 +44,7 @@
       </div>
       <label class="late-chime"><input type="checkbox" id="late-chime"> صوت لما طلب يتأخر (على الشاشة دي بس)</label>
       <p class="help muted">دوسة واحدة: الطلب جاهز وبيرن عند العميل. دوسة تانية: اتسلّم. دوسة طويلة: اختيارات أكتر.</p>
+      <p class="help muted">طلعت طلب ديليفري أو طلب مش هيعمل سكان؟ دوس + عشان العد يفضل زي السيستم. دوس − لو عدّيت رقم بالغلط.</p>
     </main>
   </div>
 

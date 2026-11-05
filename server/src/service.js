@@ -47,7 +47,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
     const ch = channels(ctx.branch.id);
     bus.emit(ch.order(order.id), 'order', view);
     if (renotify) bus.emit(ch.order(order.id), 'renotify', view);
-    bus.emit(ch.bar, 'order', { action, order: publicOrder(order, shop) });
+    bus.emit(ch.bar, 'order', { action, order: publicOrder(order, shop), counter: ctx.store.counter() });
     notifier.orderChanged(ctx, order, shop, { renotify });
     publishQueue(ctx);
   }
@@ -61,6 +61,12 @@ export function createService({ control, tenants, bus, notifier, screens, config
     publishOrder(ctx, order, shop, { action: 'created' });
     control.touch(ctx.branch.id);
     return { order, shop };
+  }
+
+  function adjustCounter(ctx, delta) {
+    const counter = ctx.store.adjustCounter(delta);
+    bus.emit(channels(ctx.branch.id).bar, 'counter', counter);
+    return counter;
   }
 
   function setStatus(ctx, shop, order, status) {
@@ -145,6 +151,6 @@ export function createService({ control, tenants, bus, notifier, screens, config
   }
 
   return {
-    claim, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+    claim, adjustCounter, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
   };
 }

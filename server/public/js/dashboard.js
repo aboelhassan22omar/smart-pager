@@ -46,7 +46,7 @@ export function branchCardHtml(b, { now, actions = '', extra = '' } = {}) {
       <div class="branch-top">
         <span class="branch-logo">${logoHtml(b)}</span>
         <div class="branch-name">
-          <strong>${esc(b.name)}</strong>
+          <strong title="${esc(b.name)}">${esc(b.name)}</strong>
           ${b.area ? `<span>${esc(b.area)}</span> ` : ''}<span class="branch-id" dir="ltr">${esc(b.id)}</span>
         </div>
       </div>

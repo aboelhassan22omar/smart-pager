@@ -125,6 +125,7 @@ export default async function barRoutes(app, deps) {
         qr: qrInfo(shop, config),
         apple: appleStatus(config, notifier.apnsReady),
         plan: planView(req.ctx.branch),
+        counter: req.ctx.store.counter(),
         serverNow: Date.now(),
       };
     });
@@ -179,6 +180,13 @@ export default async function barRoutes(app, deps) {
         reply.header('content-disposition', `attachment; filename="${shop.id}-qr-${kind}.svg"`);
       }
       return svg;
+    });
+
+    // +1 / -1 on the count: an order outside the pager (delivery), or a mistake.
+    bar.post('/counter', async (req) => {
+      const delta = req.body?.delta;
+      if (delta !== 1 && delta !== -1) throw invalid('delta', 'لازم 1 أو -1');
+      return service.adjustCounter(req.ctx, delta);
     });
 
     bar.post('/orders/:id/advance', async (req) => publicOrder(service.advance(req.ctx, req.shop, shopOrder(req)), req.shop));

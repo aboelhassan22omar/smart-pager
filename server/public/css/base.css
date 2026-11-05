@@ -221,14 +221,18 @@ select {
 }
 
 .topbar h1 {
+  display: -webkit-box;
   flex: 1;
   min-width: 0;
   margin: 0;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: var(--fs-lg);
   font-weight: 600;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.25;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .topbar nav {
