@@ -1,4 +1,4 @@
-import { applyAccent } from './color.js';
+import { applyTheme } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, staffEvents } from './staff.js';
 import { esc, shopIdFromPath } from './util.js';
@@ -24,7 +24,7 @@ function swapImage(img, src) {
 function render(state) {
   qr = state.qr;
   clockOffset = qr.serverNow - Date.now();
-  applyAccent(document.documentElement, state.shop.accent);
+  applyTheme(document.documentElement, state.shop.theme);
   const logo = $('qr-logo');
   logo.hidden = !state.shop.logoUrl;
   if (state.shop.logoUrl && logo.dataset.src !== state.shop.logoUrl) {

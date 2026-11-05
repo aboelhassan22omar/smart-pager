@@ -113,6 +113,21 @@ export const BRANCH_MIGRATIONS = [
   `
   ALTER TABLE branch_settings ADD COLUMN pin_sealed TEXT;
   `,
+  // 7: the POS link. pos_numbers holds the numbers the POS gave out today: 'waiting' for the
+  //    customer's scan, or 'done' (delivery, already claimed). Also: theme_version marks a
+  //    branch whose color was already set or read from its logo, so it isn't guessed again.
+  `
+  ALTER TABLE branch_settings ADD COLUMN pos_token TEXT;
+  ALTER TABLE branch_settings ADD COLUMN pos_last_event TEXT;
+  ALTER TABLE branch_settings ADD COLUMN theme_version INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE pos_numbers (
+    day TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('waiting', 'done')),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (day, number)
+  );
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

@@ -39,6 +39,7 @@
   --ready: #3f8f60;
   --ready-deep: #2f7a4f;
   --danger: #c8574f;
+  --on-danger: #fff;
 
   --font: 'Readex Pro', system-ui, -apple-system, 'Segoe UI', Tahoma, sans-serif;
   --fs-xs: 0.75rem;
@@ -214,7 +215,7 @@ select {
   align-items: center;
   gap: 12px;
   padding: calc(10px + env(safe-area-inset-top)) var(--gutter) 10px;
-  background: rgb(23 25 29 / 0.92);
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
   border-bottom: 1px solid var(--line);

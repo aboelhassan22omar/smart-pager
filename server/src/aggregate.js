@@ -1,6 +1,7 @@
 // The ONLY module that reads across branches. Used by the brand-owner dashboard (its own
 // brand's branches only — the caller passes a brand id) and by the super dashboard.
 
+import { brandTheme } from '../public/js/color.js';
 import { featureFlags, planView } from './plans.js';
 import { median, rollupBranch, summarize } from './rollups.js';
 import { dayIn, dayStartIn, localSlot, startOfDayIn } from './util.js';
@@ -55,6 +56,7 @@ function branchSummary({ tenants, screens, config }, branch, now, { withPin = fa
   const ratings = shop ? ratingSummary(ctx, now) : { avg: null, count: 0, low: [] };
   return {
     id: branch.id,
+    accentColor: shop?.accent_color ?? null,
     brandId: branch.brand_id,
     name: branch.name,
     area: branch.area,
@@ -93,10 +95,10 @@ export function brandOverview(deps, brandId, now = Date.now()) {
   const brand = deps.control.getBrand(brandId);
   if (!brand) return null;
   const apps = deviceCounts(deps, brandId);
-  return {
-    brand: { id: brand.id, name: brand.name },
-    branches: deps.control.branchesOfBrand(brandId).filter((b) => !b.deleted_at).map((b) => branchSummary(deps, b, now, { apps })),
-  };
+  const branches = deps.control.branchesOfBrand(brandId).filter((b) => !b.deleted_at).map((b) => branchSummary(deps, b, now, { apps }));
+  // The dashboard wears the color of the brand's first branch that has one.
+  const color = branches.find((b) => b.accentColor)?.accentColor;
+  return { brand: { id: brand.id, name: brand.name, theme: color ? brandTheme(color) : null }, branches };
 }
 
 /**

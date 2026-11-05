@@ -1,3 +1,4 @@
+import { applyTheme } from './color.js';
 import { api, esc } from './util.js';
 
 // The demo page: frames the real customer, cashier, QR and owner pages of the demo café
@@ -109,6 +110,7 @@ async function boot() {
     guide(esc(err.message));
     return;
   }
+  applyTheme(document.documentElement, info.theme);
   const shop = encodeURIComponent(info.shopId);
   $('frame-bar').src = `/bar/${shop}`;
   $('frame-qr').dataset.lazy = `/qr/${shop}`;

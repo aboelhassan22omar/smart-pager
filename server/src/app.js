@@ -20,6 +20,7 @@ import brandRoutes from './routes/brand.js';
 import customerRoutes from './routes/customer.js';
 import demoRoutes from './routes/demo.js';
 import pageRoutes from './routes/pages.js';
+import posRoutes from './routes/pos.js';
 import superRoutes from './routes/super.js';
 
 export const LOGO_MAX_BYTES = 2 * 1024 * 1024;
@@ -107,6 +108,7 @@ export async function buildApp(config) {
   await app.register(brandRoutes, ctx);
   await app.register(appRoutes, ctx);
   await app.register(demoRoutes, ctx);
+  await app.register(posRoutes, ctx);
   await app.register(pageRoutes, ctx);
 
   const rotation = setInterval(() => service.rotateDue(), 1000);

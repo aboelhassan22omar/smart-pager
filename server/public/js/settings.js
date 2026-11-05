@@ -1,7 +1,7 @@
-import { accentFromImage, readableAccent } from './color.js';
+import { accentFromImage, applyTheme, brandTheme, MONO_COLOR, readableAccent } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, toast } from './staff.js';
-import { api, esc, shopIdFromPath } from './util.js';
+import { api, elapsedLabel, esc, shopIdFromPath } from './util.js';
 
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const LOGO_MAX = 2 * 1024 * 1024;
@@ -78,9 +78,7 @@ async function uploadLogo(file) {
     shop = (await api(`${base}/logo`, { method: 'POST', raw: file, contentType: file.type })).shop;
     // A new logo brings its own color.
     const color = await accentFromFile(file);
-    if (await save({ accentColor: color })) {
-      toast(color ? 'الشعار اتحفظ، ولون المحل اتظبط منه' : 'الشعار اتحفظ. ملوش لون واضح، فهنستخدم اللون الافتراضي');
-    }
+    if (await save({ accentColor: color })) toast(logoColorMessage(color));
   } catch (err) {
     toast(err.message, 'error');
   } finally {
@@ -92,6 +90,11 @@ async function uploadLogo(file) {
 }
 
 // ---------- shop accent ----------
+
+const logoColorMessage = (color) => {
+  if (!color) return 'الشعار اتحفظ، بس معرفناش نقرا ألوانه. اختار لون من تحت';
+  return color === MONO_COLOR ? 'الشعار أبيض وأسود، فالصفحات بقت رمادي زيه' : 'الصفحات بقت بألوان الشعار';
+};
 
 async function accentFromFile(file) {
   try {
@@ -116,13 +119,14 @@ function previewAccent(hex) {
   const accent = hex ? readableAccent(hex) : null;
   box.style.setProperty('--shop-accent', accent ? accent.color : DEFAULT_ACCENT);
   box.style.setProperty('--shop-ink', accent ? accent.ink : '#17191d');
+  applyTheme(document.documentElement, hex ? brandTheme(hex) : null);
 }
 
 function renderAccent() {
   previewAccent(shop.accentColor);
   $('accent-input').value = shop.accentColor ?? DEFAULT_ACCENT;
   $('accent-note').textContent = shop.accentColor
-    ? 'بيظهر للعميل في الأزرار وشريط التقدم وشاشة الكود'
+    ? 'بيظهر في كل الصفحات: العميل والكاشير وشاشة الكود ولوحة صاحب المحل'
     : 'اللون الافتراضي. ارفع شعار أو اختار لون';
   $('accent-reset').hidden = !shop.accentColor;
 }
@@ -136,9 +140,7 @@ function bindAccent() {
   $('accent-auto').addEventListener('click', async () => {
     if (!shop.logoUrl) return toast('ارفع شعار الأول', 'error');
     const color = await accentFromLogoUrl(shop.logoUrl);
-    if (await save({ accentColor: color })) {
-      toast(color ? 'لون المحل اتاخد من الشعار' : 'الشعار ملوش لون واضح، فهنستخدم اللون الافتراضي');
-    }
+    if (await save({ accentColor: color })) toast(logoColorMessage(color));
     return undefined;
   });
   $('accent-reset').addEventListener('click', async () => {
@@ -184,16 +186,92 @@ function bindLogo() {
   });
 }
 
+// ---------- POS link ----------
+
+let pos = null;
+
+function posStatus() {
+  const box = $('pos-status');
+  const last = pos.last;
+  box.dataset.tone = '';
+  if (!last) {
+    box.textContent = 'لسه موصلش حاجة من السيستم. أول طلب يوصل هيظهر هنا.';
+  } else if (last.unread) {
+    box.dataset.tone = 'alert';
+    box.textContent = `السيستم بعت ${elapsedLabel(last.at)} بس معرفناش رقم الطلب. الحقول اللي وصلت: ${last.keys.join('، ') || 'مفيش'}. ابعتها لدعم السيستم أو لينا.`;
+  } else {
+    box.dataset.tone = 'ok';
+    const kind = last.cancelled ? ' (اتلغى)' : last.delivery ? ' (ديليفري)' : '';
+    box.textContent = `متوصل. آخر طلب من السيستم: رقم ${last.number}${kind}، ${elapsedLabel(last.at)}.`;
+  }
+}
+
+const posMessage = (url) => `عايزين السيستم يبعت كل طلب جديد على اللينك ده (POST بـ JSON):
+${url}
+{ "number": رقم الطلب اللي على الفاتورة, "type": نوع الطلب (delivery أو dine_in أو takeaway) }
+لو الطلب اتلغى يتبعت معاه "status": "cancelled". ولو بتعرفوا تبعتوا طلباتكم بالشكل بتاعكم، ابعتوها على نفس اللينك وهو بيقرا أسماء الحقول المعروفة.`;
+
+function renderPos() {
+  $('pos-url').value = pos.url;
+  $('pos-url-foodics').value = `${pos.url}?delivery=3`;
+  $('pos-message').value = posMessage(pos.url);
+  posStatus();
+}
+
+async function copyText(text, message) {
+  await navigator.clipboard?.writeText(text).catch(() => {});
+  toast(message);
+}
+
+function bindPos() {
+  $('pos-copy').addEventListener('click', () => copyText(pos.url, 'اللينك اتنسخ'));
+  $('pos-message-copy').addEventListener('click', () => copyText($('pos-message').value, 'الرسالة اتنسخت'));
+  $('pos-test').addEventListener('click', async () => {
+    try {
+      const res = await api(pos.url, { method: 'POST', body: { test: true, number: 123, type: 'delivery' } });
+      toast(res.ok ? 'اللينك شغال. العد متغيّرش، ده كان اختبار بس' : 'اللينك مردّش زي المفروض', res.ok ? 'info' : 'error');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  });
+  const rotate = $('pos-rotate');
+  rotate.addEventListener('click', async () => {
+    if (rotate.dataset.armed !== 'true') {
+      rotate.dataset.armed = 'true';
+      rotate.textContent = 'اللينك القديم هيقف. دوس تاني';
+      setTimeout(() => {
+        rotate.dataset.armed = '';
+        rotate.textContent = 'غيّر اللينك';
+      }, 4000);
+      return;
+    }
+    rotate.dataset.armed = '';
+    rotate.textContent = 'غيّر اللينك';
+    try {
+      pos = await api(`${base}/pos/rotate`, { method: 'POST', body: {} });
+      renderPos();
+      toast('اللينك اتغيّر. الصق الجديد في السيستم');
+    } catch (err) {
+      toast(err.message, 'error');
+    }
+  });
+}
+
+async function loadPos() {
+  try {
+    pos = await api(`${base}/pos`);
+    renderPos();
+  } catch {
+    /* the next refresh retries */
+  }
+}
+
 // ---------- forms ----------
 
 function renderShop() {
   const info = $('form-info').elements;
   info.preparingMessage.value = shop.preparingMessage;
   info.readyMessage.value = shop.readyMessage;
-  $('form-review').elements.googleReviewUrl.value = shop.reviewLink ?? '';
-  $('review-help').textContent = shop.reviewEnabled
-    ? 'من Google Business Profile بتاع الفرع ده: اطلب تقييمات ← انسخ اللينك. كل فرع ليه اللينك بتاعه.'
-    : 'زرار التقييم هيظهر للعميل بعد الاستلام لما صاحب البراند يشغّل خاصية التقييم للفرع ده.';
   const numbers = $('form-numbers').elements;
   numbers.maxNumber.value = shop.maxNumber;
   numbers.expireHours.value = shop.expireHours;
@@ -215,12 +293,6 @@ function bindForms() {
       readyMessage: f.readyMessage.value,
     }, e.target);
     if (ok) toast('الرسايل اتحفظت');
-  });
-
-  $('form-review').addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const ok = await save({ googleReviewUrl: e.target.elements.googleReviewUrl.value }, e.target);
-    if (ok) toast(shop.reviewLink ? 'لينك التقييم اتحفظ' : 'لينك التقييم اتشال');
   });
 
   $('form-numbers').addEventListener('submit', async (e) => {
@@ -300,6 +372,9 @@ async function boot() {
   bindLogo();
   bindAccent();
   bindForms();
+  bindPos();
+  await loadPos();
+  setInterval(loadPos, 15_000);
 }
 
 boot();

@@ -1,6 +1,6 @@
 // Shapes the API exposes. Never leak pin_hash, nonces or keys outside bar-only views.
 
-import { readableAccent } from '../public/js/color.js';
+import { brandTheme, readableAccent } from '../public/js/color.js';
 import { loyaltyEnabled } from './loyalty.js';
 import { featureFlags } from './plans.js';
 
@@ -48,6 +48,8 @@ export const publicShop = (shop, { today } = {}) => ({
   readyMessage: shop.ready_message,
   // {color, ink} already adjusted for contrast; null = the default accent.
   accent: shop.accent_color ? readableAccent(shop.accent_color) : null,
+  // The whole page in the logo's color (surfaces, text, accent); null = the default look.
+  theme: shop.accent_color ? brandTheme(shop.accent_color) : null,
   // Post-pickup review (phase 5): internal stars + the Google button, together.
   feedback: reviewEnabled(shop),
   googleReviewUrl: reviewEnabled(shop) ? reviewUrl(shop) : null,
@@ -83,9 +85,7 @@ export const barShop = (shop) => ({
   expireHours: shop.expire_hours,
   lateAfterMinutes: shop.late_after_minutes ?? 10,
   reviewClicks: shop.review_clicks ?? 0,
-  // The branch's own saved link (shown in its settings even while the review feature is off).
-  reviewLink: shop.google_review_url ?? '',
-  reviewEnabled: reviewEnabled(shop),
+  themeVersion: shop.theme_version ?? 0,
 });
 
 export function qrInfo(shop, config) {

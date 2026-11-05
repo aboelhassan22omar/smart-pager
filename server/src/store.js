@@ -1,5 +1,6 @@
 import { tx } from './db.js';
 import { HttpError } from './errors.js';
+import { MAX_POS_NUMBER } from './pos.js';
 import { dayIn, randomId, safeEqual } from './util.js';
 
 export const OPEN_STATUSES = ['preparing', 'ready'];
@@ -14,12 +15,18 @@ const SETTING_COLUMNS = new Set([
   'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
   'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
+  'pos_token', 'pos_last_event', 'theme_version',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
 // (device endpoints / tokens) still go 24h after their order closed.
 const ORDER_RETENTION_MS = 90 * 24 * 3600 * 1000;
 const SUBSCRIPTION_RETENTION_MS = 24 * 3600 * 1000;
+// A number from the POS nobody scanned stops being offered to customers after this.
+const POS_WAITING_MS = 20 * 60_000;
+const POS_RETENTION_MS = 3 * 24 * 3600 * 1000;
+// A POS number this far below our count means the POS restarted its numbering (not a late call).
+const POS_RESTART_GAP = 50;
 
 export const newNonce = () => randomId(12);
 export const newStaticKey = () => randomId(18);
@@ -120,7 +127,7 @@ export class BranchStore {
   // ---- orders ----
 
   /** `deviceHash` (loyalty on): the order is tied to the device and takes its oldest free reward. */
-  claim({ n, k }, { deviceHash = null } = {}) {
+  claim({ n, k, pick }, { deviceHash = null, canPick = false } = {}) {
     return tx(this.db, () => {
       const shop = this.getShop();
       if (!shop) throw new HttpError(404, 'المحل ده مش موجود');
@@ -138,7 +145,10 @@ export class BranchStore {
         throw new HttpError(403, 'الكود ده انتهى. امسح الكود اللي عند الكاشير تاني');
       }
 
-      const number = this.#allocateNumber(shop);
+      const posNumber = this.#fromPos(pick, canPick);
+      if (posNumber?.choose) return posNumber;
+      const number = posNumber ?? this.#allocateNumber(shop);
+      if (shop.pos_token) this.#markPosNumber(number);
       const id = randomId(16);
       this.sql.insertOrder.run(id, number, Date.now());
       if (deviceHash) this.#attachDevice(id, deviceHash);
@@ -159,6 +169,67 @@ export class BranchStore {
     return null;
   }
 
+  /**
+   * With a POS linked, the customer gets the number on their receipt: the only one waiting,
+   * or the one they pick when there are several (someone before them didn't scan). Apps that
+   * can't show a choice get the newest. Returns a number, { choose }, or null for the count.
+   */
+  #fromPos(pick, canPick) {
+    const waiting = this.#posWaiting();
+    if (!waiting.length || pick === 'new') return null;
+    if (pick != null) {
+      if (waiting.includes(pick)) return pick;
+      throw new HttpError(409, 'الرقم ده حد تاني أخده. اختار رقم طلبك تاني', { choose: waiting });
+    }
+    if (waiting.length === 1) return waiting[0];
+    return canPick ? { choose: waiting } : waiting.at(-1);
+  }
+
+  #posWaiting(now = Date.now()) {
+    const open = this.#openNumbers();
+    return this.db.prepare(`SELECT number FROM pos_numbers WHERE day = ? AND state = 'waiting' AND created_at >= ? ORDER BY created_at, number`)
+      .all(dayIn(this.config.tz), now - POS_WAITING_MS)
+      .map((r) => r.number)
+      .filter((number) => !open.has(number));
+  }
+
+  #markPosNumber(number) {
+    this.db.prepare(`INSERT INTO pos_numbers (day, number, state, created_at) VALUES (?, ?, 'done', ?)
+                     ON CONFLICT (day, number) DO UPDATE SET state = 'done'`).run(dayIn(this.config.tz), number, Date.now());
+  }
+
+  /**
+   * One order from the POS. Every number moves the count past it; a delivery ends there, and any
+   * other order waits for its customer's scan. Systems call again when an order changes, so a
+   * number already seen today does nothing. Returns what happened to it.
+   */
+  posOrder({ number, delivery = false, cancelled = false }) {
+    return tx(this.db, () => {
+      const today = dayIn(this.config.tz);
+      const now = Date.now();
+      const seen = this.db.prepare('SELECT state FROM pos_numbers WHERE day = ? AND number = ?').get(today, number);
+      if (cancelled) {
+        // The POS doesn't reuse a cancelled number, so the count stays where it is.
+        if (seen) this.#markPosNumber(number);
+        return 'cancelled';
+      }
+      if (seen) return 'repeated';
+
+      const shop = this.sql.settings.get();
+      const updates = number > shop.max_number ? { max_number: MAX_POS_NUMBER } : null;
+      if (updates) this.updateShop(updates);
+      const max = updates ? MAX_POS_NUMBER : shop.max_number;
+      const count = shop.number_day === today ? shop.next_number : 1;
+      if (number >= count || count - number > POS_RESTART_GAP) this.sql.setCounter.run(number >= max ? 1 : number + 1, today);
+
+      const taken = this.#openNumbers().has(number);
+      const state = delivery || taken ? 'done' : 'waiting';
+      this.db.prepare('INSERT INTO pos_numbers (day, number, state, created_at) VALUES (?, ?, ?, ?)').run(today, number, state, now);
+      if (delivery) return 'delivery';
+      return taken ? 'matched' : 'waiting';
+    });
+  }
+
   #openNumbers() {
     return new Set(this.sql.openNumbers.all().map((r) => r.number));
   }
@@ -175,7 +246,9 @@ export class BranchStore {
   counter() {
     const shop = this.sql.settings.get();
     const next = this.#nextFree(shop, dayIn(this.config.tz), this.#openNumbers());
-    return { next, last: next > 1 ? next - 1 : null };
+    const counter = { next, last: next > 1 ? next - 1 : null };
+    const waiting = shop.pos_token ? this.#posWaiting().length : 0;
+    return waiting ? { ...counter, waiting } : counter;
   }
 
   /**
@@ -196,6 +269,8 @@ export class BranchStore {
         if (back < 1) throw new HttpError(409, 'العد لسه في أوله، مفيش رقم نرجع له');
         if (open.has(back)) throw new HttpError(409, `رقم ${back} عليه طلب مفتوح. لو طلع بالغلط، ألغيه من شاشة الطلبات`);
         this.sql.setCounter.run(back, today);
+        // A number taken back isn't offered to customers any more.
+        this.db.prepare('DELETE FROM pos_numbers WHERE day = ? AND number = ?').run(today, back);
       }
       return this.counter();
     });
@@ -260,6 +335,7 @@ export class BranchStore {
   purgeClosed(now = Date.now()) {
     const subscriptions = Number(this.sql.purgeSubs.run(now - SUBSCRIPTION_RETENTION_MS).changes);
     const orders = Number(this.sql.purge.run(now - ORDER_RETENTION_MS).changes);
+    this.db.prepare('DELETE FROM pos_numbers WHERE created_at < ?').run(now - POS_RETENTION_MS);
     return { orders, subscriptions };
   }
 

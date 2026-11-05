@@ -1,4 +1,5 @@
 import { mountAnalytics } from './analytics.js';
+import { applyTheme } from './color.js';
 import { appInviteText, branchCardHtml, devicesHtml } from './dashboard.js';
 import { openForm } from './forms.js';
 import { icons } from './icons.js';
@@ -49,6 +50,7 @@ function showLogin() {
 }
 
 function render() {
+  applyTheme(document.documentElement, data.brand.theme);
   $('brand-name').textContent = data.brand.name;
   document.title = `فروعي — ${data.brand.name}`;
   $('owner-line').textContent = data.demo ? 'نسخة الديمو: ده اللي صاحب المحل بيشوفه' : `داخل باسم ${data.owner.username}`;
@@ -151,7 +153,7 @@ function featureToggle(b, feature, label, hint) {
 
 /** Extra fields per feature, filled in by the loyalty and promo phases. */
 function featureFields(b) {
-  const reviewHint = `خاص بفرع ${b.name} بس. من Google Business Profile بتاع الفرع ← اطلب تقييمات ← انسخ اللينك`;
+  const reviewHint = `خاص بفرع ${b.name} بس، ومن هنا بس بيتحط. من Google Business Profile بتاع الفرع ← اطلب تقييمات ← انسخ اللينك`;
   return [
     { type: 'heading', label: 'التقييم' },
     featureToggle(b, 'review', 'التقييم بعد الاستلام', 'نجوم لينا وزرار تقييم جوجل، لكل العملاء'),

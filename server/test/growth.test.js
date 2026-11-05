@@ -251,13 +251,20 @@ describe('feedback + Google review over HTTP', () => {
     assert.equal((await anon.get('/api/b/rival-a')).data.googleReviewUrl, null);
   });
 
-  test('each branch keeps its own Google link: branch settings win, owner can paste a normal link', async () => {
-    const own = 'https://g.page/r/BranchOwnLink/review';
-    assert.equal((await g.staff.post(`/api/bar/${BR}/settings`, { googleReviewUrl: own })).status, 200);
-    assert.equal((await shop()).googleReviewUrl, own, 'branch link wins over the owner place id');
+  test('the Google link is set by the owner only, one per branch', async () => {
+    const before = (await shop()).googleReviewUrl;
+    assert.equal((await g.staff.post(`/api/bar/${BR}/settings`, { googleReviewUrl: 'https://g.page/r/FromTheBranch/review' })).status, 400);
+    assert.equal((await shop()).googleReviewUrl, before, 'the branch settings no longer change it');
     const state = (await g.staff.get(`/api/bar/${BR}/state`)).data.shop;
-    assert.equal(state.reviewLink, own);
-    assert.equal(state.reviewEnabled, true);
+    assert.equal('reviewLink' in state, false);
+
+    for (const bad of ['http://g.page/r/abc/review', 'https://evil.example.com/review', 'https://google.com.evil.io/x']) {
+      assert.equal((await g.ownerSettings({ googlePlaceId: bad })).data.field, 'googlePlaceId', bad);
+    }
+    for (const ok of ['https://g.page/r/CbX1abc/review', 'https://maps.app.goo.gl/AbCd', 'https://www.google.com.eg/maps/place/x']) {
+      assert.equal((await g.ownerSettings({ googlePlaceId: ok })).status, 200, ok);
+      assert.equal((await shop()).googleReviewUrl, ok);
+    }
     assert.equal((await anon.get('/api/b/rival-a')).data.googleReviewUrl, null, 'other branches untouched');
 
     const ownerLink = 'https://maps.app.goo.gl/OwnerPasted';

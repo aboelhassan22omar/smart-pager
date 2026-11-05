@@ -108,6 +108,16 @@ export function setFeatureFlag(dataDir, branchId, feature, on = true) {
   }
 }
 
+// Sets a branch's saved review link straight in its database, as the owner's form would.
+export function setReviewLink(dataDir, brandId, branchId, url) {
+  const db = new DatabaseSync(path.join(dataDir, 'tenants', brandId, branchId, 'pager.db'));
+  try {
+    db.prepare('UPDATE branch_settings SET google_review_url = ? WHERE id = 1').run(url);
+  } finally {
+    db.close();
+  }
+}
+
 const randomIp = () => `10.${crypto.randomInt(256)}.${crypto.randomInt(256)}.${crypto.randomInt(1, 255)}`;
 
 // fetch wrapper with a cookie jar. Every request gets a random client IP
