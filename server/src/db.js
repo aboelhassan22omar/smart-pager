@@ -128,6 +128,24 @@ export const BRANCH_MIGRATIONS = [
     PRIMARY KEY (day, number)
   );
   `,
+  // 8: several POS terminals in one branch number on their own ("1-1001", "2-1001"), so a
+  //    POS number is keyed by its full reference. orders.ref is what the customer's receipt
+  //    says when it differs from the plain number. pos_only: numbers come from the POS only.
+  `
+  ALTER TABLE orders ADD COLUMN ref TEXT;
+  ALTER TABLE branch_settings ADD COLUMN pos_only INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE pos_refs (
+    day TEXT NOT NULL,
+    ref TEXT NOT NULL,
+    number INTEGER NOT NULL,
+    state TEXT NOT NULL CHECK (state IN ('waiting', 'done')),
+    created_at INTEGER NOT NULL,
+    PRIMARY KEY (day, ref)
+  );
+  INSERT INTO pos_refs (day, ref, number, state, created_at) SELECT day, CAST(number AS TEXT), number, state, created_at FROM pos_numbers;
+  DROP TABLE pos_numbers;
+  ALTER TABLE pos_refs RENAME TO pos_numbers;
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

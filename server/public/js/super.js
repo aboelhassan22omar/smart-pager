@@ -6,6 +6,18 @@ import { api, esc } from './util.js';
 
 const POLL_MS = 10_000;
 const ACTIVITY_PAGE = 15;
+// Where branches are; empty = the server's own time (Egypt).
+const TIMEZONES = [
+  ['', 'مصر (الافتراضي)'], ['Asia/Riyadh', 'السعودية'], ['Asia/Dubai', 'الإمارات'], ['Asia/Kuwait', 'الكويت'],
+  ['Asia/Qatar', 'قطر'], ['Asia/Bahrain', 'البحرين'], ['Asia/Muscat', 'عُمان'], ['Asia/Amman', 'الأردن'],
+  ['Asia/Beirut', 'لبنان'], ['Asia/Baghdad', 'العراق'], ['Africa/Tripoli', 'ليبيا'], ['Africa/Tunis', 'تونس'],
+  ['Africa/Algiers', 'الجزائر'], ['Africa/Casablanca', 'المغرب'], ['Africa/Khartoum', 'السودان'], ['Europe/Istanbul', 'تركيا'],
+  ['Europe/London', 'بريطانيا'], ['Europe/Berlin', 'ألمانيا'], ['America/New_York', 'أمريكا (نيويورك)'],
+];
+const tzField = (value = '') => ({
+  name: 'tz', label: 'البلد (التوقيت)', type: 'select', value: value ?? '',
+  options: TIMEZONES.map(([v, l]) => ({ value: v, label: l })),
+});
 const FEATURE_LABEL = { review: 'التقييم بعد الاستلام', loyalty: 'كارت الولاء', promo: 'مساحة الإعلان' };
 const $ = (id) => document.getElementById(id);
 
@@ -471,6 +483,7 @@ function newBranch(brandId) {
       { name: 'area', label: 'المنطقة', placeholder: 'الكوربة' },
       { name: 'id', label: 'المعرّف', dir: 'ltr', value: `${brandId}-` },
       { name: 'pin', label: 'الرقم السري للموظفين (4–8 أرقام)', inputmode: 'numeric', dir: 'ltr' },
+      tzField(),
     ],
     submit: 'اعمل الفرع',
     onSubmit: async (v) => {
@@ -536,6 +549,7 @@ function branchMenu(id) {
     ['trial', 'مدّ التجربة'],
     ['qr', 'افتح شاشة الكود'],
     ['rename', 'غيّر الاسم'],
+    ['timezone', 'البلد (التوقيت)'],
     ['features', 'الخصائص'],
     [manualStop ? 'resume' : 'suspend', manualStop ? 'شغّل الفرع تاني' : 'وقّف الفرع'],
     ['trash', 'انقل لسلة المهملات'],
@@ -563,6 +577,12 @@ function branchAction(op, b) {
   const path = `/branches/${encodeURIComponent(b.id)}`;
   if (op === 'qr') {
     enterBranch(b.id, 'qr');
+  } else if (op === 'timezone') {
+    openForm({
+      title: `توقيت ${b.name}`, intro: 'بيحدد إمتى الأرقام تبدأ من 1، وساعات الزحمة في التحليلات. عدّ النهارده مش بيتأثر.',
+      fields: [tzField(b.timezone)],
+      onSubmit: async (v) => { await post(`${path}/timezone`, { tz: v.tz }); await done('التوقيت اتغيّر'); },
+    });
   } else if (op === 'rename') {
     openForm({
       title: 'اسم الفرع', fields: [{ name: 'name', label: 'الاسم', value: b.name }],

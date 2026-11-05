@@ -126,6 +126,11 @@ export const CONTROL_MIGRATIONS = [
     visitors INTEGER NOT NULL DEFAULT 0
   );
   `,
+  // 8: each branch's timezone (NULL = the server's TZ) and the hour its business day starts.
+  `
+  ALTER TABLE branches ADD COLUMN tz TEXT;
+  ALTER TABLE branches ADD COLUMN day_start_hour INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -450,6 +455,14 @@ export class ControlStore {
 
   renameBranch(id, name) {
     this.sql.rename.run(name, id);
+  }
+
+  setBranchTz(id, tz) {
+    this.db.prepare('UPDATE branches SET tz = ? WHERE id = ?').run(tz, id);
+  }
+
+  setDayStart(id, hour) {
+    this.db.prepare('UPDATE branches SET day_start_hour = ? WHERE id = ?').run(hour, id);
   }
 
   // ---- demo café ----

@@ -23,6 +23,8 @@
   <main id="app" class="stage" hidden>
     <p id="banner" class="banner" role="status" hidden>الاتصال اتقطع. بنحاول نرجّعه…</p>
 
+    <div id="others" class="others" hidden></div>
+
     <article id="card" class="card" data-status="preparing" aria-live="polite">
       <header class="card-head">
         <span class="card-app">ORDER TRACKER</span>
@@ -49,6 +51,18 @@
 
     <button id="enable" class="btn btn-primary btn-block enable" type="button">فعّل التنبيه</button>
     <p id="ios-hint" class="hint" hidden>على الآيفون سيب الصفحة دي مفتوحة والشاشة منوّرة لحد ما طلبك يجهز.</p>
+
+    <section id="again" class="pick" hidden>
+      <h1 class="pick-title">ده طلب جديد؟</h1>
+      <p class="muted">عندك طلب لسه مفتوح هنا، رقم <strong class="num" id="again-number"></strong>.</p>
+      <button class="btn btn-primary btn-block" type="button" data-again="new">أيوه، خد رقم للطلب الجديد</button>
+      <button class="btn btn-quiet btn-block" type="button" data-again="back">لأ، ارجع لطلبي</button>
+    </section>
+
+    <section id="waiting" class="pick" hidden aria-live="polite">
+      <h1 class="pick-title">ثواني…</h1>
+      <p class="muted">بنستنى طلبك يوصل من الكاشير عشان رقمك يبقى نفس رقم الفاتورة.</p>
+    </section>
 
     <section id="pick" class="pick" hidden>
       <h1 class="pick-title">إيه رقم طلبك؟</h1>

@@ -11,7 +11,7 @@ import { createRateLimiter } from '../ratelimit.js';
 import {
   requireJson, requireSuper, setStaffSession, setSuperSession, SUPER_COOKIE, superEnabled,
 } from '../sessions.js';
-import { randomId } from '../util.js';
+import { isTimeZone, randomId } from '../util.js';
 import { barShop } from '../views.js';
 import { sniffImage } from './bar.js';
 
@@ -274,6 +274,16 @@ export default async function superRoutes(app, deps) {
       if (typeof pin !== 'string' || !PIN_RE.test(pin)) throw bad('pin', 'الرقم السري لازم يكون من 4 لـ 8 أرقام');
       ctx.store.updateShop(await pinFields(config.cookieSecret, pin));
       audit(req, 'branch.pin_reset', req.audit);
+      return { ok: true };
+    });
+
+    // The branch's timezone (empty = the server's). Today's count carries over.
+    s.post('/branches/:branch/timezone', async (req) => {
+      const ctx = branchCtx(req);
+      const tz = typeof req.body?.tz === 'string' ? req.body.tz.trim() : '';
+      if (tz && !isTimeZone(tz)) throw bad('tz', 'التوقيت ده مش معروف');
+      ctx.store.setDay({ tz: tz || null });
+      audit(req, 'branch.timezone', { ...req.audit, detail: { tz: tz || null } });
       return { ok: true };
     });
 

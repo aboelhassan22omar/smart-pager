@@ -45,10 +45,21 @@ function fieldsOf(obj) {
   return fields;
 }
 
+/**
+ * "2-1008" from a POS with several terminals (Loyverse writes terminal-number): the terminal
+ * stays in the reference so two terminals' 1008 never meet. Only for exactly two short groups.
+ */
+export function parseRef(value) {
+  const number = parseNumber(value);
+  if (!number) return null;
+  const m = typeof value === 'string' ? value.trim().match(/^\D*?(\d{1,3})\s*[-/]\s*\d+\D*$/) : null;
+  return { number, ref: m ? `${Number(m[1])}-${number}` : null };
+}
+
 function numberOf(fields) {
   for (const key of NUMBER_KEYS) {
-    const n = fields.has(key) ? parseNumber(fields.get(key)) : null;
-    if (n) return n;
+    const parsed = fields.has(key) ? parseRef(fields.get(key)) : null;
+    if (parsed) return parsed;
   }
   return null;
 }
@@ -81,11 +92,12 @@ function findOrders(node, depth = 0) {
   return [];
 }
 
-/** [{ number, delivery, cancelled }] for each order found in the payload. */
+/** [{ number, ref, delivery, cancelled }] for each order found in the payload. */
 export function readOrders(payload, { deliveryCode = null } = {}) {
   return findOrders(payload).slice(0, MAX_ORDERS_PER_CALL).map((obj) => {
     const fields = fieldsOf(obj);
-    return { number: numberOf(fields), delivery: isDelivery(fields, deliveryCode), cancelled: isCancelled(fields) };
+    const { number, ref } = numberOf(fields);
+    return { number, ref, delivery: isDelivery(fields, deliveryCode), cancelled: isCancelled(fields) };
   });
 }
 

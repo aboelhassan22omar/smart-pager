@@ -47,6 +47,7 @@ export function loadConfig(env = process.env) {
     logLevel: str(env.LOG_LEVEL, 'info'),
     nonceRotateSeconds: int(env.NONCE_ROTATE_SECONDS, 60, 5, 3600),
     claimRatePerMin: int(env.CLAIM_RATE_PER_MIN, 6, 1, 100000),
+    claimIpRatePerMin: int(env.CLAIM_IP_RATE_PER_MIN, 120, 1, 100000),
     loginRatePerMin: int(env.LOGIN_RATE_PER_MIN, 5, 1, 100000),
     jobIntervalSeconds: int(env.JOB_INTERVAL_SECONDS, 60, 1, 3600),
     jobBatch: int(env.JOB_BATCH, 100, 1, 100000),

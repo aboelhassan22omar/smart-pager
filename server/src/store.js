@@ -1,7 +1,7 @@
 import { tx } from './db.js';
 import { HttpError } from './errors.js';
 import { MAX_POS_NUMBER } from './pos.js';
-import { dayIn, randomId, safeEqual } from './util.js';
+import { branchTz, businessDay, randomId, safeEqual } from './util.js';
 
 export const OPEN_STATUSES = ['preparing', 'ready'];
 export const CLOSED_STATUSES = ['picked', 'expired', 'cancelled'];
@@ -15,7 +15,7 @@ const SETTING_COLUMNS = new Set([
   'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
   'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
-  'pos_token', 'pos_last_event', 'theme_version',
+  'pos_token', 'pos_last_event', 'theme_version', 'pos_only',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
@@ -49,9 +49,9 @@ export class BranchStore {
       insertSettings: p(`INSERT INTO branch_settings (id, pin_hash, pin_sealed, qr_mode, qr_nonce, qr_rotated_at, static_key, created_at)
                          VALUES (1, ?, ?, ?, ?, ?, ?, ?)`),
       rotate: p('UPDATE branch_settings SET qr_prev_nonce = qr_nonce, qr_nonce = ?, qr_rotated_at = ? WHERE id = 1'),
-      openNumbers: p(`SELECT number FROM orders WHERE status IN ('preparing', 'ready')`),
+      openNumbers: p(`SELECT number, ref FROM orders WHERE status IN ('preparing', 'ready')`),
       setCounter: p('UPDATE branch_settings SET next_number = ?, number_day = ? WHERE id = 1'),
-      insertOrder: p(`INSERT INTO orders (id, number, status, created_at) VALUES (?, ?, 'preparing', ?)`),
+      insertOrder: p(`INSERT INTO orders (id, number, ref, status, created_at) VALUES (?, ?, ?, 'preparing', ?)`),
       // Order reads carry the attached reward's state (loyalty) for the bar and customer views.
       order: p(`SELECT o.*, r.redeemed_at AS reward_redeemed_at FROM orders o
                 LEFT JOIN loyalty_rewards r ON r.id = o.reward_id WHERE o.id = ?`),
@@ -96,6 +96,8 @@ export class BranchStore {
       ff_loyalty: branch.ff_loyalty,
       ff_promo: branch.ff_promo,
       forced_off: branch.forced_off,
+      tz: branch.tz,
+      day_start_hour: branch.day_start_hour,
     };
   }
 
@@ -124,6 +126,29 @@ export class BranchStore {
     return Boolean(s) && s.qr_mode !== 'static' && now - s.qr_rotated_at >= this.config.nonceRotateSeconds * 1000;
   }
 
+  // ---- business day ----
+
+  /** The branch's own day (YYYY-MM-DD): its timezone, starting at its "day starts at" hour. */
+  today(now = Date.now()) {
+    const branch = this.control.getBranch(this.branchId);
+    return businessDay(branchTz(branch, this.config), branch?.day_start_hour ?? 0, now);
+  }
+
+  /** New timezone and/or start hour, without restarting the count of the day in progress. */
+  setDay({ tz, dayStartHour }) {
+    return tx(this.db, () => {
+      const before = this.today();
+      if (tz !== undefined) this.control.setBranchTz(this.branchId, tz);
+      if (dayStartHour !== undefined) this.control.setDayStart(this.branchId, dayStartHour);
+      const after = this.today();
+      if (after !== before) {
+        this.db.prepare('UPDATE branch_settings SET number_day = ? WHERE id = 1 AND number_day = ?').run(after, before);
+        this.db.prepare('UPDATE OR IGNORE pos_numbers SET day = ? WHERE day = ?').run(after, before);
+      }
+      return this.getShop();
+    });
+  }
+
   // ---- orders ----
 
   /** `deviceHash` (loyalty on): the order is tied to the device and takes its oldest free reward. */
@@ -145,12 +170,13 @@ export class BranchStore {
         throw new HttpError(403, 'الكود ده انتهى. امسح الكود اللي عند الكاشير تاني');
       }
 
-      const posNumber = this.#fromPos(pick, canPick);
-      if (posNumber?.choose) return posNumber;
-      const number = posNumber ?? this.#allocateNumber(shop);
-      if (shop.pos_token) this.#markPosNumber(number);
+      const fromPos = this.#fromPos(shop, pick, canPick);
+      if (fromPos?.choose) return fromPos;
+      const number = fromPos?.number ?? this.#allocateNumber(shop);
+      const ref = fromPos?.ref ?? null;
+      if (shop.pos_token) this.#markPos(ref ?? String(number), number);
       const id = randomId(16);
-      this.sql.insertOrder.run(id, number, Date.now());
+      this.sql.insertOrder.run(id, number, ref, Date.now());
       if (deviceHash) this.#attachDevice(id, deviceHash);
       if (dynamicOk) this.sql.rotate.run(newNonce(), Date.now());
       return { order: this.sql.order.get(id), shop: this.getShop(), rotated: dynamicOk };
@@ -172,45 +198,57 @@ export class BranchStore {
   /**
    * With a POS linked, the customer gets the number on their receipt: the only one waiting,
    * or the one they pick when there are several (someone before them didn't scan). Apps that
-   * can't show a choice get the newest. Returns a number, { choose }, or null for the count.
+   * can't show a choice get the newest. In POS-only mode there is no number without the POS:
+   * the customer waits for it. Returns { number, ref }, { choose }, or null for the count.
    */
-  #fromPos(pick, canPick) {
-    const waiting = this.#posWaiting();
-    if (!waiting.length || pick === 'new') return null;
+  #fromPos(shop, pick, canPick) {
+    const waiting = shop.pos_token ? this.#posWaiting() : [];
+    const posOnly = Boolean(shop.pos_token && shop.pos_only);
+    const wait = () => new HttpError(409, 'طلبك لسه موصلش من الكاشير. ثواني وهيظهر', { wait: true });
+    if (!waiting.length || pick === 'new') {
+      if (posOnly) throw wait();
+      return null;
+    }
+    const labels = waiting.map((w) => w.key);
     if (pick != null) {
-      if (waiting.includes(pick)) return pick;
-      throw new HttpError(409, 'الرقم ده حد تاني أخده. اختار رقم طلبك تاني', { choose: waiting });
+      const hit = waiting.find((w) => w.key === String(pick));
+      if (hit) return hit;
+      throw new HttpError(409, 'الرقم ده حد تاني أخده. اختار رقم طلبك تاني', { choose: labels });
     }
     if (waiting.length === 1) return waiting[0];
-    return canPick ? { choose: waiting } : waiting.at(-1);
+    return canPick ? { choose: labels } : waiting.at(-1);
   }
 
+  /** Waiting POS numbers, oldest first: [{ key, number, ref }] (ref only with a terminal prefix). */
   #posWaiting(now = Date.now()) {
-    const open = this.#openNumbers();
-    return this.db.prepare(`SELECT number FROM pos_numbers WHERE day = ? AND state = 'waiting' AND created_at >= ? ORDER BY created_at, number`)
-      .all(dayIn(this.config.tz), now - POS_WAITING_MS)
-      .map((r) => r.number)
-      .filter((number) => !open.has(number));
+    const open = this.#openKeys();
+    return this.db.prepare(`SELECT ref, number FROM pos_numbers WHERE day = ? AND state = 'waiting' AND created_at >= ?
+                            ORDER BY created_at, number`)
+      .all(this.today(now), now - POS_WAITING_MS)
+      .filter((r) => !open.has(r.ref))
+      .map((r) => ({ key: r.ref, number: r.number, ref: r.ref === String(r.number) ? null : r.ref }));
   }
 
-  #markPosNumber(number) {
-    this.db.prepare(`INSERT INTO pos_numbers (day, number, state, created_at) VALUES (?, ?, 'done', ?)
-                     ON CONFLICT (day, number) DO UPDATE SET state = 'done'`).run(dayIn(this.config.tz), number, Date.now());
+  #markPos(key, number) {
+    this.db.prepare(`INSERT INTO pos_numbers (day, ref, number, state, created_at) VALUES (?, ?, ?, 'done', ?)
+                     ON CONFLICT (day, ref) DO UPDATE SET state = 'done'`).run(this.today(), key, number, Date.now());
   }
 
   /**
    * One order from the POS. Every number moves the count past it; a delivery ends there, and any
    * other order waits for its customer's scan. Systems call again when an order changes, so a
-   * number already seen today does nothing. Returns what happened to it.
+   * number already seen today does nothing. `ref` ("2-1008") tells terminals apart.
+   * Returns what happened to it.
    */
-  posOrder({ number, delivery = false, cancelled = false }) {
+  posOrder({ number, ref = null, delivery = false, cancelled = false }) {
     return tx(this.db, () => {
-      const today = dayIn(this.config.tz);
+      const today = this.today();
       const now = Date.now();
-      const seen = this.db.prepare('SELECT state FROM pos_numbers WHERE day = ? AND number = ?').get(today, number);
+      const key = ref ?? String(number);
+      const seen = this.db.prepare('SELECT state FROM pos_numbers WHERE day = ? AND ref = ?').get(today, key);
       if (cancelled) {
         // The POS doesn't reuse a cancelled number, so the count stays where it is.
-        if (seen) this.#markPosNumber(number);
+        if (seen) this.#markPos(key, number);
         return 'cancelled';
       }
       if (seen) return 'repeated';
@@ -222,9 +260,9 @@ export class BranchStore {
       const count = shop.number_day === today ? shop.next_number : 1;
       if (number >= count || count - number > POS_RESTART_GAP) this.sql.setCounter.run(number >= max ? 1 : number + 1, today);
 
-      const taken = this.#openNumbers().has(number);
+      const taken = this.#openKeys().has(key);
       const state = delivery || taken ? 'done' : 'waiting';
-      this.db.prepare('INSERT INTO pos_numbers (day, number, state, created_at) VALUES (?, ?, ?, ?)').run(today, number, state, now);
+      this.db.prepare('INSERT INTO pos_numbers (day, ref, number, state, created_at) VALUES (?, ?, ?, ?, ?)').run(today, key, number, state, now);
       if (delivery) return 'delivery';
       return taken ? 'matched' : 'waiting';
     });
@@ -234,8 +272,13 @@ export class BranchStore {
     return new Set(this.sql.openNumbers.all().map((r) => r.number));
   }
 
+  /** Open orders by what the receipt says ("2-1008", or the plain number). */
+  #openKeys() {
+    return new Set(this.sql.openNumbers.all().map((r) => r.ref ?? String(r.number)));
+  }
+
   #allocateNumber(shop) {
-    const today = dayIn(this.config.tz);
+    const today = this.today();
     const n = this.#nextFree(shop, today, this.#openNumbers());
     if (n == null) throw new HttpError(503, 'كل الأرقام مشغولة دلوقتي. كلّم الكاشير');
     this.sql.setCounter.run(n >= shop.max_number ? 1 : n + 1, today);
@@ -245,7 +288,7 @@ export class BranchStore {
   /** What the cashier sees: the next number and the one before it (null at the start of the count). */
   counter() {
     const shop = this.sql.settings.get();
-    const next = this.#nextFree(shop, dayIn(this.config.tz), this.#openNumbers());
+    const next = this.#nextFree(shop, this.today(), this.#openNumbers());
     const counter = { next, last: next > 1 ? next - 1 : null };
     const waiting = shop.pos_token ? this.#posWaiting().length : 0;
     return waiting ? { ...counter, waiting } : counter;
@@ -258,7 +301,7 @@ export class BranchStore {
   adjustCounter(delta) {
     return tx(this.db, () => {
       const shop = this.sql.settings.get();
-      const today = dayIn(this.config.tz);
+      const today = this.today();
       const open = this.#openNumbers();
       const next = this.#nextFree(shop, today, open);
       if (next == null) throw new HttpError(503, 'كل الأرقام مشغولة دلوقتي. كلّم الكاشير');
@@ -270,7 +313,7 @@ export class BranchStore {
         if (open.has(back)) throw new HttpError(409, `رقم ${back} عليه طلب مفتوح. لو طلع بالغلط، ألغيه من شاشة الطلبات`);
         this.sql.setCounter.run(back, today);
         // A number taken back isn't offered to customers any more.
-        this.db.prepare('DELETE FROM pos_numbers WHERE day = ? AND number = ?').run(today, back);
+        this.db.prepare('DELETE FROM pos_numbers WHERE day = ? AND ref = ?').run(today, String(back));
       }
       return this.counter();
     });
