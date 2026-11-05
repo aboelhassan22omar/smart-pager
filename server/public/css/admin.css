@@ -2,6 +2,7 @@
 
 .dash {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 28px;
   width: min(100% - 2 * var(--gutter), 1180px);
   margin: 20px auto 32px;
@@ -53,6 +54,7 @@
 
 .brand-section {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
 }
 
@@ -62,12 +64,13 @@
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr));
   gap: 12px;
 }
 
 .branch-card {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 14px;
   padding: 16px;
   border: 1px solid var(--line);
@@ -109,13 +112,17 @@
   min-width: 0;
 }
 
+/* Long names wrap to two lines, then cut (the full name is in the title attribute). */
 .branch-name strong {
-  display: block;
+  display: -webkit-box;
   overflow: hidden;
+  overflow-wrap: anywhere;
   font-size: var(--fs-lg);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
 }
 
 .branch-name span {
@@ -165,16 +172,20 @@
 
 .stats {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1px;
   overflow: hidden;
   border-radius: var(--r-control);
   background: var(--line);
 }
 
+/* The label may wrap; the numbers stay on one line across the three cells. */
 .stats div {
-  display: grid;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
   gap: 2px;
+  min-width: 0;
   padding: 10px 12px;
   background: var(--surface);
 }

@@ -84,6 +84,26 @@ function upsert(o) {
   renderGrid();
 }
 
+// ---------- the count: next and last number, + and − ----------
+
+function renderCounter(counter) {
+  if (!counter) return;
+  $('count-next').textContent = String(counter.next ?? '—');
+  $('count-last').textContent = counter.last == null ? 'لسه مفيش' : String(counter.last);
+  $('count-minus').disabled = counter.last == null;
+}
+
+async function adjustCount(delta) {
+  try {
+    const counter = await api(`${base}/counter`, { method: 'POST', body: { delta } });
+    renderCounter(counter);
+    toast(delta > 0 ? `عدّينا رقم ${counter.last}. الجاي ${counter.next}` : `رجعنا رقم. الجاي ${counter.next}`);
+  } catch (err) {
+    toast(err.message, 'error');
+    if (err.status === 409) refreshState();
+  }
+}
+
 // ---------- actions ----------
 
 async function act(id, path, body) {
@@ -271,6 +291,7 @@ function renderPlan(plan) {
 
 function applyState(state) {
   renderPlan(state.plan);
+  renderCounter(state.counter);
   lateAfterMs = (state.shop.lateAfterMinutes ?? 10) * 60_000;
   $('shop-name').textContent = state.shop.name;
   document.title = `الطلبات — ${state.shop.name}`;
@@ -295,6 +316,8 @@ async function boot() {
   keepSoundOn();
   applyState(state);
   bindGrid();
+  $('count-plus').addEventListener('click', () => adjustCount(1));
+  $('count-minus').addEventListener('click', () => adjustCount(-1));
 
   $('sheet').addEventListener('click', (e) => {
     if (e.target === $('sheet')) return closeSheet();
@@ -309,7 +332,9 @@ async function boot() {
   staffEvents(
     shopId,
     {
-      order: ({ action, order }) => {
+      counter: renderCounter,
+      order: ({ action, order, counter }) => {
+        renderCounter(counter);
         if (action === 'created') {
           fresh.add(order.id);
           chime.play('order');
@@ -331,6 +356,8 @@ async function boot() {
 
   // Late tiles must turn red on time, so the grid re-renders every 15s.
   setInterval(renderGrid, 15_000);
+  // The count restarts at midnight with no event to announce it.
+  setInterval(refreshState, 60_000);
   const lateToggle = $('late-chime');
   lateToggle.checked = lateChimeOn();
   lateToggle.addEventListener('change', () => {
