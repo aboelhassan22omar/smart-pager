@@ -13,6 +13,7 @@ import { scheduleBackups } from './backup.js';
 import { runWeeklySummaries } from './summary.js';
 import { createPackages } from './native/packages.js';
 import { topUpDemo } from './demo.js';
+import { mailScreenAlerts } from './alerts.js';
 import adminRoutes from './routes/admin.js';
 import appRoutes from './routes/app.js';
 import barRoutes from './routes/bar.js';
@@ -120,6 +121,9 @@ export async function buildApp(config) {
     topUpDemo({ tenants, config });
   }, 3600_000);
   const rollups = setInterval(() => service.runRollups(), 300_000);
+  const alerts = setInterval(() => {
+    mailScreenAlerts({ ...ctx, log: app.log }).catch((err) => app.log.error({ err }, 'screen alerts failed'));
+  }, 300_000);
   const summaries = setInterval(() => {
     runWeeklySummaries({ config, control, tenants, screens, log: app.log }).catch((err) => app.log.error({ err }, 'weekly summary job failed'));
   }, 3600_000);
@@ -133,6 +137,7 @@ export async function buildApp(config) {
     clearInterval(jobs);
     clearInterval(plans);
     clearInterval(rollups);
+    clearInterval(alerts);
     clearInterval(summaries);
     stopBackups();
     notifier.close();

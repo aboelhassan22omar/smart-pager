@@ -5,6 +5,7 @@ import { brandTheme } from '../public/js/color.js';
 import { featureFlags, planView } from './plans.js';
 import { median, rollupBranch, summarize } from './rollups.js';
 import { branchTz, businessDayStart, dayIn, dayStartIn, localSlot, startOfDayIn } from './util.js';
+import { screenAlert } from './alerts.js';
 import { staleDevices } from './apps.js';
 import { DEMO_ID } from './demo.js';
 import { unseal } from './vault.js';
@@ -49,7 +50,8 @@ function deviceCounts({ control, screens }, brandId) {
 }
 
 /** `withPin`: the super's view also carries the current staff PIN (null when not known). */
-function branchSummary({ tenants, screens, config }, branch, now, { withPin = false, apps = {} } = {}) {
+function branchSummary(deps, branch, now, { withPin = false, apps = {} } = {}) {
+  const { tenants, screens, config } = deps;
   const ctx = tenants.get(branch.id);
   const shop = ctx?.store.getShop();
   // "Today" is the branch's business day, in its own timezone.
@@ -82,6 +84,8 @@ function branchSummary({ tenants, screens, config }, branch, now, { withPin = fa
     screens: screens.count(branch.id),
     screenKinds: screens.kinds(branch.id),
     customersNow: screens.customers(branch.id),
+    // The cashier screen is closed at an hour this branch is normally busy.
+    screenAlert: screenAlert(deps, branch, now),
     apps: apps[branch.id] ?? { linked: 0, online: 0 },
     deletedAt: branch.deleted_at ?? null,
     deletedReason: branch.deleted_reason ?? null,

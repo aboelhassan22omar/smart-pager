@@ -29,6 +29,7 @@ export function ago(ts, now = Date.now()) {
 const logoHtml = (b) => (b.logoUrl ? `<img src="${esc(b.logoUrl)}" alt="">` : esc(b.name.slice(0, 1)));
 
 function metaLine(b, now) {
+  if (b.screenAlert) return `الكاشير مقفول من ${b.screenAlert.closedMinutes} دقيقة، والوقت ده عادةً فيه طلبات`;
   const k = b.screenKinds ?? { bar: b.screens, qr: 0 };
   const parts = b.screens
     ? [k.bar ? `الكاشير مفتوح على ${k.bar} جهاز` : '', k.qr ? `شاشة الكود على ${k.qr}` : ''].filter(Boolean)
@@ -56,7 +57,7 @@ export function branchCardHtml(b, { now, actions = '', extra = '' } = {}) {
         <div><dt>مفتوح دلوقتي</dt><dd class="num">${b.openNow}</dd></div>
         <div><dt>متأخر</dt><dd class="num ${b.lateToday ? 'is-alert' : ''}">${b.lateToday}</dd></div>
       </dl>
-      <p class="branch-meta"><span class="dot" data-online="${b.screens > 0}"></span>${esc(metaLine(b, now))}</p>
+      <p class="branch-meta"><span class="dot" data-online="${b.screens > 0}" data-alert="${Boolean(b.screenAlert)}"></span>${esc(metaLine(b, now))}</p>
       ${extra}
       ${actions ? `<div class="card-actions">${actions}</div>` : ''}
     </article>`;

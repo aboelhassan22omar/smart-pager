@@ -81,6 +81,12 @@ function attentionItems() {
       items.push({ text: `${brand.name}: البراند لسه ملوش فروع`, act: 'branch', id: brand.id, label: 'ضيف فرع' });
     }
     for (const b of liveBranches(brand)) {
+      if (b.screenAlert) {
+        items.push({
+          tone: 'alert',
+          text: `${b.name}: شاشة الكاشير مقفولة من ${b.screenAlert.closedMinutes} دقيقة، والوقت ده عادةً فيه طلبات. كلّم الفرع`,
+        });
+      }
       const { status, daysLeft, reason } = b.plan;
       if (status === 'suspended') {
         const why = reason === 'manual' ? 'إنت موقّفه' : reason === 'trial_ended' ? 'التجربة خلصت' : 'الدفع اتأخر';

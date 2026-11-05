@@ -58,6 +58,10 @@
   gap: 14px;
 }
 
+.branch-meta .dot[data-alert='true'] {
+  background: var(--danger);
+}
+
 .branch-plan {
   margin: -4px 0 0;
 }

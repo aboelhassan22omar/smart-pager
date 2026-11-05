@@ -24,6 +24,8 @@ export function createScreens() {
   const kinds = new Map(); // branchId -> { bar, qr }
   const devices = new Map();
   const customers = new Map();
+  const barClosedAt = new Map(); // branchId -> when its last cashier screen closed
+  const startedAt = Date.now();
   let demoPages = 0;
   const bump = (map, key, by) => {
     const n = (map.get(key) ?? 0) + by;
@@ -39,14 +41,18 @@ export function createScreens() {
       const k = kinds.get(branchId) ?? { bar: 0, qr: 0 };
       k[kind] += 1;
       kinds.set(branchId, k);
+      if (kind === 'bar') barClosedAt.delete(branchId);
     },
     remove(branchId, kind = 'bar') {
       bump(counts, branchId, -1);
       const k = kinds.get(branchId);
       if (!k) return;
       k[kind] = Math.max(0, k[kind] - 1);
+      if (kind === 'bar' && !k.bar) barClosedAt.set(branchId, Date.now());
       if (!k.bar && !k.qr) kinds.delete(branchId);
     },
+    /** null while a cashier screen is open; else since when none is (server start at the latest). */
+    barClosedSince: (branchId) => ((kinds.get(branchId)?.bar ?? 0) > 0 ? null : barClosedAt.get(branchId) ?? startedAt),
     count: (branchId) => counts.get(branchId) ?? 0,
     kinds: (branchId) => ({ bar: 0, qr: 0, ...kinds.get(branchId) }),
     branches: () => [...counts.keys()],
