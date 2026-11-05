@@ -223,6 +223,11 @@
   font-size: var(--fs-sm);
 }
 
+.offline-banner {
+  border-color: var(--danger);
+  color: var(--text);
+}
+
 .plan-banner[data-plan='suspended'] {
   border-color: transparent;
   background: var(--danger);

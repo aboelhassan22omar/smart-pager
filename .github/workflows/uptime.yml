@@ -1,0 +1,75 @@
+name: Uptime
+
+# Opens an issue (GitHub emails you) when production stops answering, and closes it with a
+# note when it is back. Runs every 10 minutes; GitHub can start scheduled runs a few minutes
+# late, and pauses them after 60 days without any activity in the repository.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+jobs:
+  check:
+    name: Production health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      URL: ${{ vars.PUBLIC_URL || 'https://pager.aurexis.cc' }}
+    steps:
+      - name: Check /health (3 tries, 30s apart)
+        id: health
+        run: |
+          detail=""
+          for attempt in 1 2 3; do
+            if body=$(curl -fsS --max-time 15 "$URL/health" 2>&1) && grep -q '"ok":true' <<<"$body"; then
+              echo "up=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            detail="$body"
+            [ "$attempt" -lt 3 ] && sleep 30
+          done
+          echo "up=false" >> "$GITHUB_OUTPUT"
+          {
+            echo "detail<<EOF"
+            echo "${detail:0:300}"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Open, or close, the alert issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          UP: ${{ steps.health.outputs.up }}
+          DETAIL: ${{ steps.health.outputs.detail }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          gh label create uptime --color B60205 --description "Production health alerts" --force >/dev/null
+          open=$(gh issue list --label uptime --state open --json number --jq '.[0].number // empty')
+          run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          now=$(date -u '+%Y-%m-%d %H:%M UTC')
+          if [ "$UP" = "true" ]; then
+            if [ -n "$open" ]; then
+              gh issue comment "$open" --body "السيرفر رجع يشتغل ($now). $run_url"
+              gh issue close "$open"
+            fi
+            exit 0
+          fi
+          if [ -z "$open" ]; then
+            gh issue create --label uptime --title "السيرفر مش بيرد: $URL" --body "$(cat <<EOF
+          @$OWNER السيرفر مابيردش من $now (3 محاولات، 30 ثانية بين كل واحدة).
+
+          - اللينك: $URL/health
+          - الرد: \`${DETAIL:-لا شيء}\`
+          - الفحص: $run_url
+
+          الإيشو دي هتتقفل لوحدها أول ما السيرفر يرجع.
+          EOF
+          )"
+          fi

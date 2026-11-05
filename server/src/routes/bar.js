@@ -188,7 +188,9 @@ export default async function barRoutes(app, deps) {
     bar.post('/counter', async (req) => {
       const delta = req.body?.delta;
       if (delta !== 1 && delta !== -1) throw invalid('delta', 'لازم 1 أو -1');
-      return service.adjustCounter(req.ctx, delta);
+      // Sent again by the offline queue when the first reply was lost: applied once.
+      const requestId = /^[A-Za-z0-9_-]{8,64}$/.test(req.headers['x-request-id'] ?? '') ? req.headers['x-request-id'] : null;
+      return service.adjustCounter(req.ctx, delta, requestId);
     });
 
     // The link this branch pastes into its POS (created the first time it is asked for).

@@ -104,12 +104,79 @@ async function adjustCount(delta) {
     renderCounter(counter);
     toast(delta > 0 ? `عدّينا رقم ${counter.last}. الجاي ${counter.next}` : `رجعنا رقم. الجاي ${counter.next}`);
   } catch (err) {
+    if (isOffline(err)) {
+      enqueue({ kind: 'counter', delta });
+      const next = Math.max(1, (Number($('count-next').textContent) || 1) + delta);
+      renderCounter({ next, last: next > 1 ? next - 1 : null });
+      return;
+    }
     toast(err.message, 'error');
     if (err.status === 409) refreshState();
   }
 }
 
+// ---------- no connection: taps are kept and sent when it is back ----------
+
+const QUEUE_KEY = `sp:queue:${shopId}`;
+const isOffline = (err) => err.status === 0;
+let queue = [];
+let flushing = false;
+
+try {
+  queue = JSON.parse(localStorage.getItem(QUEUE_KEY) ?? '[]');
+} catch {
+  queue = [];
+}
+
+function saveQueue() {
+  try {
+    localStorage.setItem(QUEUE_KEY, JSON.stringify(queue));
+  } catch {
+    /* private mode: the queue still lives in memory */
+  }
+  const n = queue.length;
+  $('offline').hidden = !n;
+  $('offline').textContent = n
+    ? `مفيش اتصال بالسيرفر. ${n === 1 ? 'فيه دوسة محفوظة' : n === 2 ? 'فيه دوستين محفوظين' : `فيه ${n} دوسات محفوظة`}، وهيتبعتوا أول ما الاتصال يرجع. العملاء مش هيترن عليهم لحد ساعتها.`
+    : '';
+}
+
+function enqueue(item) {
+  const rid = Array.from(crypto.getRandomValues(new Uint8Array(12)), (b) => b.toString(16).padStart(2, '0')).join('');
+  queue.push({ ...item, rid });
+  saveQueue();
+  toast('اتسجّل على الجهاز، وهيتبعت أول ما الاتصال يرجع');
+}
+
+// In order, one at a time. "Already done" (404/409) counts as sent; no connection stops here.
+async function flushQueue() {
+  if (flushing || !queue.length) return;
+  flushing = true;
+  try {
+    while (queue.length) {
+      const item = queue[0];
+      try {
+        if (item.kind === 'status') {
+          await api(`${base}/orders/${encodeURIComponent(item.id)}/status`, { method: 'POST', body: { status: item.status } });
+        } else {
+          await api(`${base}/counter`, { method: 'POST', body: { delta: item.delta }, headers: { 'x-request-id': item.rid } });
+        }
+      } catch (err) {
+        if (isOffline(err)) return;
+      }
+      queue.shift();
+      saveQueue();
+    }
+    toast('الاتصال رجع، وكل الدوسات اتبعتت');
+  } finally {
+    flushing = false;
+    if (!queue.length) refreshState();
+  }
+}
+
 // ---------- actions ----------
+
+const NEXT_STATUS = { preparing: 'ready', ready: 'picked' };
 
 async function act(id, path, body) {
   try {
@@ -117,6 +184,14 @@ async function act(id, path, body) {
     upsert(updated);
     return updated;
   } catch (err) {
+    // Status changes wait for the connection; the screen moves on right away.
+    const o = orders.get(id);
+    const status = path === 'advance' ? NEXT_STATUS[o?.status] : body?.status;
+    if (isOffline(err) && o && status) {
+      enqueue({ kind: 'status', id, status });
+      upsert({ ...o, status });
+      return null;
+    }
     toast(err.message, 'error');
     if (err.status === 404 || err.status === 409) refreshState();
     return null;
@@ -270,6 +345,8 @@ function keepSoundOn() {
 // ---------- boot ----------
 
 async function refreshState() {
+  // Taps still waiting to be sent would be undone by the server's older view.
+  if (queue.length) return;
   try {
     const state = await api(`${base}/state`);
     applyState(state);
@@ -374,12 +451,19 @@ async function boot() {
     (online) => {
       $('dot').dataset.online = String(online);
       $('dot').title = online ? 'متصل' : 'مش متصل';
-      if (online) refreshState();
+      if (!online) return;
+      if (queue.length) flushQueue();
+      else refreshState();
     },
   );
+  saveQueue();
+  flushQueue();
 
   // Late tiles must turn red on time, so the grid re-renders every 15s.
-  setInterval(renderGrid, 15_000);
+  setInterval(() => {
+    renderGrid();
+    flushQueue();
+  }, 15_000);
   // The count restarts at midnight with no event to announce it.
   setInterval(refreshState, 60_000);
   const lateToggle = $('late-chime');

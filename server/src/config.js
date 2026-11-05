@@ -48,6 +48,8 @@ export function loadConfig(env = process.env) {
     nonceRotateSeconds: int(env.NONCE_ROTATE_SECONDS, 60, 5, 3600),
     claimRatePerMin: int(env.CLAIM_RATE_PER_MIN, 6, 1, 100000),
     claimIpRatePerMin: int(env.CLAIM_IP_RATE_PER_MIN, 120, 1, 100000),
+    // Where "cashier screen closed in busy hours" alerts go (needs SMTP_HOST too).
+    alertEmail: str(env.ALERT_EMAIL, ''),
     loginRatePerMin: int(env.LOGIN_RATE_PER_MIN, 5, 1, 100000),
     jobIntervalSeconds: int(env.JOB_INTERVAL_SECONDS, 60, 1, 3600),
     jobBatch: int(env.JOB_BATCH, 100, 1, 100000),

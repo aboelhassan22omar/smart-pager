@@ -66,7 +66,15 @@ export function createService({ control, tenants, bus, notifier, screens, config
     return { order, shop };
   }
 
-  function adjustCounter(ctx, delta) {
+  const recentRequests = new Map(); // `${branch}|${request id}` -> at
+  function adjustCounter(ctx, delta, requestId = null) {
+    const key = requestId ? `${ctx.branch.id}|${requestId}` : null;
+    if (key && recentRequests.has(key)) return ctx.store.counter();
+    if (key) {
+      const now = Date.now();
+      for (const [k, at] of recentRequests) if (now - at > 600_000) recentRequests.delete(k);
+      recentRequests.set(key, now);
+    }
     const counter = ctx.store.adjustCounter(delta);
     bus.emit(channels(ctx.branch.id).bar, 'counter', counter);
     return counter;
