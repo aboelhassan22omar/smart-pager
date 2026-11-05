@@ -38,7 +38,7 @@ describe('reading orders from POS payloads', () => {
   });
 
   test('Loyverse: the receipt inside the envelope, with its dining option', () => {
-    assert.deepEqual(readOrders(loyverse(1008)), [{ number: 1008, delivery: false, cancelled: false }]);
+    assert.deepEqual(readOrders(loyverse(1008)), [{ number: 1008, ref: '2-1008', delivery: false, cancelled: false }]);
     assert.equal(readOrders(loyverse(1009, 'Delivery'))[0].delivery, true);
     assert.equal(readOrders(loyverse(1010, 'Dine in', { cancelled_at: '2026-11-05T18:00:00Z' }))[0].cancelled, true);
     assert.equal(readOrders(loyverse(1011, 'Dine in', { receipt_type: 'REFUND' }))[0].cancelled, true);
@@ -46,13 +46,13 @@ describe('reading orders from POS payloads', () => {
 
   test('Foodics: order.number (not the business or customer number); delivery needs the code on the link', () => {
     const [order] = readOrders(foodics(55, 3), { deliveryCode: '3' });
-    assert.deepEqual(order, { number: 55, delivery: true, cancelled: false });
+    assert.deepEqual(order, { number: 55, ref: null, delivery: true, cancelled: false });
     assert.equal(readOrders(foodics(55, 3))[0].delivery, false, 'a bare number means nothing without the code');
     assert.equal(readOrders(foodics(56, 1), { deliveryCode: '3' })[0].delivery, false);
   });
 
   test('other shapes: flat, Arabic, several orders, nothing usable', () => {
-    assert.deepEqual(readOrders({ order_number: '12', order_type: 'توصيل' }), [{ number: 12, delivery: true, cancelled: false }]);
+    assert.deepEqual(readOrders({ order_number: '12', order_type: 'توصيل' }), [{ number: 12, ref: null, delivery: true, cancelled: false }]);
     assert.equal(readOrders({ ticketNo: 'T-9', channel: 'Talabat' })[0].delivery, true);
     assert.equal(readOrders({ pos_reference: 'Order 00001-001-0042' })[0].number, 42);
     assert.deepEqual(readOrders({ orders: [{ number: 1 }, { number: 2, status: 'cancelled' }] }).map((o) => [o.number, o.cancelled]), [[1, false], [2, true]]);
@@ -115,14 +115,14 @@ describe('the POS link', () => {
     await b.send({ number: 10, type: 'takeaway' }); // never scans
     await b.send({ number: 11, type: 'dine_in' });
     const asked = await b.scan({ canPick: true });
-    assert.deepEqual(asked.data, { choose: [10, 11] });
+    assert.deepEqual(asked.data, { choose: ['10', '11'] }, 'labels, as printed on the receipts');
     assert.equal((await b.state()).orders.length, 0, 'no order until they pick');
     const picked = await b.scan({ canPick: true, pick: 11 });
     assert.equal(picked.data.number, 11);
     const again = await b.scan({ canPick: true, pick: 11 });
     assert.equal(again.status, 409, 'a number is given once');
     assert.equal((await b.scan({ canPick: true, pick: 'new' })).data.number, 12, 'not on the list: the count goes on');
-    assert.equal((await b.scan({ pick: '10' })).status, 400);
+    assert.equal((await b.scan({ pick: 'abc' })).status, 400);
   });
 
   test('apps that cannot show a choice get the newest number', async () => {

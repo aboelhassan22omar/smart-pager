@@ -246,7 +246,17 @@ export default async function barRoutes(app, deps) {
         }
         Object.assign(fields, await pinFields(config.cookieSecret, body.newPin));
       }
-      if (!Object.keys(fields).length) throw invalid(null, 'مفيش تغييرات تتحفظ');
+      if ('posOnly' in body) fields.pos_only = body.posOnly === true ? 1 : 0;
+      let day = null;
+      if ('dayStartHour' in body) day = { dayStartHour: integer(body, 'dayStartHour', 0, 12) };
+      if (!Object.keys(fields).length && !day) throw invalid(null, 'مفيش تغييرات تتحفظ');
+      if (day) req.ctx.store.setDay(day);
+      if (!Object.keys(fields).length) {
+        const updated = req.ctx.store.getShop();
+        service.publishShop(req.ctx, updated);
+        bus.emit(channels(req.ctx.branch.id).bar, 'counter', req.ctx.store.counter());
+        return { shop: barShop(updated), qr: qrInfo(updated, config) };
+      }
 
       const updated = req.ctx.store.updateShop(fields);
       if (fields.pin_hash) setSession(reply, updated);

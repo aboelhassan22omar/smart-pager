@@ -7,12 +7,15 @@ import { canClaim } from '../plans.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { FEEDBACK_WINDOW_MS, OPEN_STATUSES } from '../store.js';
-import { dayIn } from '../util.js';
+import { branchTz, dayIn } from '../util.js';
 import { publicShop, reviewEnabled, reviewUrl } from '../views.js';
 
 const MAX_SUBSCRIPTIONS = 5;
 const B64URL_RE = /^[A-Za-z0-9_-]+={0,2}$/;
 const HEX_TOKEN_RE = /^[0-9a-f]{64,512}$/;
+const CLIENT_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
+// A receipt number: "41", or "2-1008" from a POS with several terminals.
+const PICK_RE = /^\d{1,4}(-\d{1,4})?$/;
 
 function decodedLength(value) {
   return typeof value === 'string' && value.length <= 256 && B64URL_RE.test(value)
@@ -51,10 +54,14 @@ export function validateLiveActivity(payload) {
 }
 
 export default async function customerRoutes(app, { config, control, tenants, bus, notifier, service, screens }) {
+  // Per phone (the page's own id), plus a much higher cap per IP: on mobile data in Egypt many
+  // phones share one IP, so an IP-only limit turned away real customers at rush hour.
   const claimLimiter = createRateLimiter({ limit: config.claimRatePerMin });
+  const claimIpLimiter = createRateLimiter({ limit: config.claimIpRatePerMin });
   const deviceLimiter = createRateLimiter(DEVICE_CLAIMS);
   app.addHook('onClose', async () => {
     claimLimiter.close();
+    claimIpLimiter.close();
     deviceLimiter.close();
   });
 
@@ -75,10 +82,13 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       return { order, shop: req.ctx.store.getShop() };
     }
 
-    b.get('/', async (req) => publicShop(req.ctx.store.getShop(), { today: dayIn(config.tz) }));
+    b.get('/', async (req) => publicShop(req.ctx.store.getShop(), { today: dayIn(branchTz(req.ctx.branch, config)) }));
 
     b.post('/claim', async (req, reply) => {
-      const limit = claimLimiter.take(`${req.ctx.branch.id}|${req.ip}`);
+      const clientId = req.headers['x-client-id'];
+      const perClient = CLIENT_ID_RE.test(clientId ?? '') ? `c|${clientId}` : `ip|${req.ip}`;
+      const limit = [claimLimiter.take(`${req.ctx.branch.id}|${perClient}`), claimIpLimiter.take(`${req.ctx.branch.id}|${req.ip}`)]
+        .find((l) => !l.ok) ?? { ok: true };
       if (!limit.ok) {
         reply.header('retry-after', String(limit.retryAfter));
         throw new HttpError(429, 'محاولات كتير. استنى دقيقة وجرّب تاني');
@@ -86,7 +96,7 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       // Suspended or trial over: no new orders (open ones finish normally).
       if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الخدمة متوقفة مؤقتًا، اسأل الكاشير');
       const { n, k, pick, canPick } = req.body ?? {};
-      if (pick != null && pick !== 'new' && !Number.isInteger(pick)) throw new HttpError(400, 'الرقم ده مش مظبوط', { field: 'pick' });
+      if (pick != null && pick !== 'new' && !PICK_RE.test(String(pick))) throw new HttpError(400, 'الرقم ده مش مظبوط', { field: 'pick' });
       const branchId = req.ctx.branch.id;
 
       // Loyalty on: the order is tied to this device (token created on its first claim).

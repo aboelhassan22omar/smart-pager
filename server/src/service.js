@@ -4,6 +4,7 @@ import { loyaltyEnabled, loyaltyView } from './loyalty.js';
 import { etaStats, queueFor } from './queue.js';
 import { rollupBranch } from './rollups.js';
 import { OPEN_STATUSES } from './store.js';
+import { branchTz } from './util.js';
 import { barShop, publicOrder, qrInfo } from './views.js';
 
 const NEXT_STATUS = { preparing: 'ready', ready: 'picked' };
@@ -17,7 +18,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
 
   /** What the customer sees: the public order plus its queue position / ETA. */
   function customerView(ctx, order, shop) {
-    const stats = order.status === 'preparing' ? etaStats(ctx, { tz: config.tz, cache: etaCache }) : null;
+    const stats = order.status === 'preparing' ? etaStats(ctx, { tz: branchTz(ctx.branch, config), cache: etaCache }) : null;
     const fb = order.status === 'picked' ? ctx.store.getFeedback(order.id) : null;
     return { ...publicOrder(order, shop), queue: queueFor(ctx, order, stats), feedback: fb ? { rating: fb.rating } : null };
   }
@@ -28,7 +29,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
     const ch = channels(ctx.branch.id);
     const sent = lastQueue.get(ctx.branch.id) ?? new Map();
     lastQueue.set(ctx.branch.id, sent);
-    const stats = etaStats(ctx, { tz: config.tz, cache: etaCache });
+    const stats = etaStats(ctx, { tz: branchTz(ctx.branch, config), cache: etaCache });
     const live = new Set();
     for (const order of ctx.store.openOrders()) {
       if (order.status !== 'preparing') continue;
@@ -78,7 +79,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
   function posOrders(ctx, orders) {
     const results = orders.map((order) => ({ ...order, result: ctx.store.posOrder(order) }));
     const last = results.at(-1);
-    posEvent(ctx, { number: last.number, delivery: last.delivery, cancelled: last.cancelled });
+    posEvent(ctx, { number: last.ref ?? last.number, delivery: last.delivery, cancelled: last.cancelled });
     publishCounter(ctx);
     return results;
   }
@@ -161,7 +162,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
       const id = ids[(rollupCursor + i) % ids.length];
       try {
         const ctx = tenants.get(id);
-        if (ctx?.store.getShop()) rollupBranch(ctx.store, { tz: config.tz, now });
+        if (ctx?.store.getShop()) rollupBranch(ctx.store, { tz: branchTz(ctx.branch, config), now });
       } catch (err) {
         log.error({ branch: id, err }, 'rollup failed');
       }

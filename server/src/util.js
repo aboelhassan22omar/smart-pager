@@ -51,6 +51,31 @@ export function startOfDayIn(tz, now = Date.now()) {
   return Date.UTC(p.year, p.month - 1, p.day) - p.offset;
 }
 
+const HOUR = 3_600_000;
+
+/** A branch's timezone: its own, or the server's (TZ). */
+export const branchTz = (branch, config) => branch?.tz || config.tz;
+
+/** True for an IANA timezone name the runtime knows (Africa/Cairo, Asia/Riyadh, ...). */
+export function isTimeZone(value) {
+  if (typeof value !== 'string' || !value || value.length > 64) return false;
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The business day (YYYY-MM-DD) a moment belongs to, for a branch whose day starts at
+ * `startHour` local time: open till 3am with a 6am start, 1am still counts as yesterday.
+ */
+export const businessDay = (tz, startHour, now = Date.now()) => dayIn(tz, new Date(now - startHour * HOUR));
+
+/** Epoch ms when the current business day started. */
+export const businessDayStart = (tz, startHour, now = Date.now()) => startOfDayIn(tz, now - startHour * HOUR) + startHour * HOUR;
+
 const dayFormats = new Map();
 
 // Calendar day (YYYY-MM-DD) in the shop timezone; order numbers reset when it changes.

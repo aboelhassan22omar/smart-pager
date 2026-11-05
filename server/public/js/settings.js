@@ -223,7 +223,17 @@ async function copyText(text, message) {
   toast(message);
 }
 
+const hourLabel = (h) => {
+  if (h === 0) return '12 بالليل';
+  if (h === 12) return '12 الضهر';
+  return h < 6 ? `${h} بالليل` : `${h} الصبح`;
+};
+
 function bindPos() {
+  $('pos-only').addEventListener('change', async (e) => {
+    const on = e.target.checked;
+    if (await save({ posOnly: on })) toast(on ? 'الأرقام بقت من السيستم بس' : 'أي حد يمسح الكود ياخد رقم تاني');
+  });
   $('pos-copy').addEventListener('click', () => copyText(pos.url, 'اللينك اتنسخ'));
   $('pos-message-copy').addEventListener('click', () => copyText($('pos-message').value, 'الرسالة اتنسخت'));
   $('pos-test').addEventListener('click', async () => {
@@ -276,6 +286,9 @@ function renderShop() {
   numbers.maxNumber.value = shop.maxNumber;
   numbers.expireHours.value = shop.expireHours;
   numbers.lateAfterMinutes.value = shop.lateAfterMinutes;
+  numbers.dayStartHour.value = String(shop.dayStartHour ?? 0);
+  $('tz-note').textContent = `توقيت الفرع: ${shop.timezone ?? 'توقيت مصر (الافتراضي)'}. لو الفرع في بلد تانية كلّم Aurexis تغيّره.`;
+  $('pos-only').checked = Boolean(shop.posOnly);
   for (const radio of document.querySelectorAll('input[name="qrMode"]')) radio.checked = radio.value === shop.qrMode;
   const printable = shop.qrMode !== 'dynamic';
   $('static-actions').hidden = !printable;
@@ -302,6 +315,7 @@ function bindForms() {
       maxNumber: Number(f.maxNumber.value),
       expireHours: Number(f.expireHours.value),
       lateAfterMinutes: Number(f.lateAfterMinutes.value),
+      dayStartHour: Number(f.dayStartHour.value),
     }, e.target);
     if (ok) toast('الأرقام اتحفظت');
   });
@@ -368,6 +382,7 @@ async function boot() {
   $('download-static').href = `${base}/qr.svg?kind=static&download=1`;
   $('download-static').innerHTML = `${icons.download()}<span>نزّل الكود الثابت (SVG)</span>`;
   $('logout').innerHTML = `${icons.logout()}<span>خروج من الجهاز ده</span>`;
+  $('day-start').innerHTML = Array.from({ length: 13 }, (_, h) => `<option value="${h}">${hourLabel(h)}</option>`).join('');
   renderShop();
   bindLogo();
   bindAccent();

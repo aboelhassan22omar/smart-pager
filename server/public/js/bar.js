@@ -26,6 +26,8 @@ const lateChimeOn = () => {
     return false;
   }
 };
+// What the receipt says: "2-1008" from a POS with several terminals, else the number.
+const receiptNo = (o) => o.ref ?? String(o.number);
 const isLate = (o, now = Date.now()) => o.status === 'preparing' && now - o.createdAt > lateAfterMs;
 
 // ---------- render ----------
@@ -46,9 +48,9 @@ function tileHtml(o) {
   return `
     <button class="tile${fresh.has(o.id) ? ' is-new' : ''}${late ? ' is-late' : ''}" role="listitem" type="button"
             data-id="${esc(o.id)}" data-status="${esc(o.status)}"
-            aria-label="طلب ${esc(o.number)}، ${esc(label)}${gift ? '، عليه مكافأة' : ''}">
+            aria-label="طلب ${esc(receiptNo(o))}، ${esc(label)}${gift ? '، عليه مكافأة' : ''}">
       ${gift ? `<span class="tile-gift" title="عليه مكافأة">${icons.gift(16)}</span>` : ''}
-      <span class="tile-num num">${esc(o.number)}</span>
+      <span class="tile-num num">${esc(receiptNo(o))}</span>
       <span class="tile-foot">
         <span class="tile-status">${icon}${esc(label)}${esc(rings)}</span>
         <span>${esc(elapsedLabel(o.createdAt))}</span>
@@ -125,9 +127,9 @@ async function advance(id) {
   const o = orders.get(id);
   if (!o) return;
   const updated = await act(id, 'advance');
-  if (updated?.status === 'ready') toast(`رقم ${updated.number} جاهز. بنرن على العميل`);
+  if (updated?.status === 'ready') toast(`رقم ${receiptNo(updated)} جاهز. بنرن على العميل`);
   if (updated?.status === 'picked') {
-    toast(hasReward(o) ? `رقم ${updated.number} اتسلّم. المكافأة متسلّمتش، هتفضل لطلبه الجاي` : `رقم ${updated.number} اتسلّم`);
+    toast(hasReward(o) ? `رقم ${receiptNo(updated)} اتسلّم. المكافأة متسلّمتش، هتفضل لطلبه الجاي` : `رقم ${receiptNo(updated)} اتسلّم`);
   }
 }
 
@@ -137,7 +139,7 @@ function openSheet(id) {
   const o = orders.get(id);
   if (!o) return;
   sheetOrderId = id;
-  $('sheet-title').textContent = `طلب رقم ${o.number}`;
+  $('sheet-title').textContent = `طلب رقم ${receiptNo(o)}`;
   $('sheet-sub').textContent = `${STATUS_LABEL[o.status]}، ${elapsedLabel(o.createdAt)}`;
   const buttons = $('sheet').querySelectorAll('[data-act]');
   for (const b of buttons) {
@@ -179,13 +181,13 @@ async function onSheetAction(button) {
   closeSheet();
   if (a === 'renotify') {
     const o = await act(id, 'renotify');
-    if (o) toast(`رنّينا على رقم ${o.number} تاني`);
+    if (o) toast(`رنّينا على رقم ${receiptNo(o)} تاني`);
   } else if (a === 'redeem') {
     const o = await act(id, 'redeem');
-    if (o) toast(`مكافأة رقم ${o.number} اتسجّلت`);
+    if (o) toast(`مكافأة رقم ${receiptNo(o)} اتسجّلت`);
   } else {
     const o = await act(id, 'status', { status: a });
-    if (o && a === 'cancelled') toast(`طلب ${o.number} اتلغى`);
+    if (o && a === 'cancelled') toast(`طلب ${receiptNo(o)} اتلغى`);
   }
   return undefined;
 }

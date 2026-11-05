@@ -359,6 +359,34 @@
   text-align: center;
 }
 
+.others {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.other-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+}
+
+.other-chip .num {
+  font-size: var(--fs-md);
+  font-weight: 700;
+}
+
 .pick {
   display: grid;
   gap: 12px;

@@ -68,6 +68,8 @@ export const publicOrder = (order, shop) => ({
   shopId: shop.id,
   shopName: shop.name,
   number: order.number,
+  // What the customer's receipt says, when a POS terminal prefixes it ("2-1008").
+  ref: order.ref ?? null,
   status: order.status,
   message: statusMessage(order, shop),
   createdAt: order.created_at,
@@ -86,6 +88,9 @@ export const barShop = (shop) => ({
   lateAfterMinutes: shop.late_after_minutes ?? 10,
   reviewClicks: shop.review_clicks ?? 0,
   themeVersion: shop.theme_version ?? 0,
+  posOnly: Boolean(shop.pos_only),
+  dayStartHour: shop.day_start_hour ?? 0,
+  timezone: shop.tz ?? null,
 });
 
 export function qrInfo(shop, config) {

@@ -4,7 +4,7 @@
 import { brandTheme } from '../public/js/color.js';
 import { featureFlags, planView } from './plans.js';
 import { median, rollupBranch, summarize } from './rollups.js';
-import { dayIn, dayStartIn, localSlot, startOfDayIn } from './util.js';
+import { branchTz, businessDayStart, dayIn, dayStartIn, localSlot, startOfDayIn } from './util.js';
 import { staleDevices } from './apps.js';
 import { DEMO_ID } from './demo.js';
 import { unseal } from './vault.js';
@@ -52,10 +52,14 @@ function deviceCounts({ control, screens }, brandId) {
 function branchSummary({ tenants, screens, config }, branch, now, { withPin = false, apps = {} } = {}) {
   const ctx = tenants.get(branch.id);
   const shop = ctx?.store.getShop();
-  const stats = shop ? branchStats(ctx, shop, { since: startOfDayIn(config.tz, now), now }) : null;
+  // "Today" is the branch's business day, in its own timezone.
+  const since = businessDayStart(branchTz(branch, config), branch.day_start_hour ?? 0, now);
+  const stats = shop ? branchStats(ctx, shop, { since, now }) : null;
   const ratings = shop ? ratingSummary(ctx, now) : { avg: null, count: 0, low: [] };
   return {
     id: branch.id,
+    timezone: branch.tz ?? null,
+    dayStartHour: branch.day_start_hour ?? 0,
     accentColor: shop?.accent_color ?? null,
     brandId: branch.brand_id,
     name: branch.name,
@@ -223,9 +227,12 @@ export function brandAnalytics(deps, brandId, { from, to, branchId = null, now =
     const ctx = tenants.get(branch.id);
     const shop = ctx?.store.getShop();
     if (!shop) continue;
-    rollupBranch(ctx.store, { tz, now }); // fresh numbers for the current hour
+    const btz = branchTz(branch, config);
+    const bStart = dayStartIn(btz, from);
+    const bEnd = startOfDayIn(btz, dayStartIn(btz, to) + DAY + 3_600_000 - 3_600_000);
+    rollupBranch(ctx.store, { tz: btz, now }); // fresh numbers for the current hour
     const rows = ctx.store.db.prepare('SELECT * FROM hourly_stats WHERE hour_start >= ? AND hour_start < ? ORDER BY hour_start')
-      .all(start, endExact);
+      .all(bStart, bEnd);
 
     const totals = emptyTotals();
     const daily = new Map(days.map((d) => [d, { day: d, ...emptyTotals() }]));
@@ -233,9 +240,9 @@ export function brandAnalytics(deps, brandId, { from, to, branchId = null, now =
     const waitPairs = [];
     for (const row of rows) {
       addInto(totals, row);
-      const day = dayIn(tz, new Date(row.hour_start));
+      const day = dayIn(btz, new Date(row.hour_start));
       if (daily.has(day)) addInto(daily.get(day), row);
-      const slot = localSlot(tz, row.hour_start);
+      const slot = localSlot(btz, row.hour_start);
       heatmap[slot.weekday][slot.hour] += row.orders;
       prepPairs.push([row.prep_median_s, row.prep_count]);
       waitPairs.push([row.wait_median_s, row.wait_count]);
@@ -245,7 +252,7 @@ export function brandAnalytics(deps, brandId, { from, to, branchId = null, now =
     let wait = null;
     if (exact) {
       const lateMs = (shop.late_after_minutes ?? 10) * 60_000;
-      const orders = ctx.store.db.prepare('SELECT * FROM orders WHERE created_at >= ? AND created_at < ?').all(start, endExact);
+      const orders = ctx.store.db.prepare('SELECT * FROM orders WHERE created_at >= ? AND created_at < ?').all(bStart, bEnd);
       const s = summarize(orders, lateMs, now);
       prep = s.prep;
       wait = s.wait;

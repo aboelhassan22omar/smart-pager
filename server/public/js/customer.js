@@ -11,6 +11,9 @@ const CLOSED = ['picked', 'expired', 'cancelled'];
 const STATUS_ICON = { preparing: 'clock', ready: 'check', picked: 'check', expired: 'cross', cancelled: 'cross' };
 const RING_EVERY_MS = 2600;
 const POLL_MS = 10_000;
+// POS-only branches: how long the page waits for the cashier's system to send this order.
+const POS_WAIT_MS = 45_000;
+const MAX_OTHERS = 3;
 
 const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
@@ -18,6 +21,8 @@ const params = new URLSearchParams(location.search);
 const storageKey = `sp:order:${shopId}`;
 // Loyalty device token: lives in an httpOnly cookie, mirrored here in case the cookie is lost.
 const deviceKey = `sp:dev:${shopId}`;
+// Other open orders of this phone at this branch (a second order while the first is cooking).
+const othersKey = `sp:others:${shopId}`;
 // Every customer call is scoped to this branch; an order id is only valid under its own branch.
 const branchApi = `/api/b/${encodeURIComponent(shopId)}`;
 const chime = new Chime();
@@ -48,6 +53,19 @@ const store = {
   },
 };
 
+// What the receipt says: "2-1008" from a POS with several terminals, else the number.
+const label = (o) => o.ref ?? String(o.number);
+
+// This phone's own id for the claim rate limit (phones on mobile data share IPs).
+function clientId() {
+  let id = store.get('sp:cid');
+  if (!id) {
+    id = Array.from(crypto.getRandomValues(new Uint8Array(16)), (b) => b.toString(16).padStart(2, '0')).join('');
+    store.set('sp:cid', id);
+  }
+  return id;
+}
+
 function paintLogo(el, size) {
   el.textContent = '';
   if (shop?.logoUrl) {
@@ -63,7 +81,10 @@ function paintLogo(el, size) {
   }
 }
 
+let splashDone = false;
 async function holdSplash() {
+  if (splashDone) return;
+  splashDone = true;
   const left = SPLASH_MIN_MS - (performance.now() - startedAt);
   if (left > 0) await sleep(left);
   const splash = $('splash');
@@ -77,8 +98,7 @@ async function holdSplash() {
 }
 
 function fatal(message) {
-  $('card').hidden = true;
-  $('enable').hidden = true;
+  for (const id of ['card', 'enable', 'pick', 'again', 'waiting']) $(id).hidden = true;
   $('fatal-message').textContent = message;
   $('fatal').hidden = false;
 }
@@ -127,11 +147,11 @@ function render() {
   const card = $('card');
   card.dataset.status = order.status;
   $('card-shop').textContent = order.shopName;
-  $('card-number').textContent = String(order.number);
+  $('card-number').textContent = label(order);
   $('card-message').textContent = order.message;
   $('card-icon').innerHTML = icons[STATUS_ICON[order.status] ?? 'clock'](20);
   $('card-when').textContent = elapsedLabel(order.createdAt);
-  document.title = `طلب ${order.number} — ${order.shopName}`;
+  document.title = `طلب ${label(order)} — ${order.shopName}`;
 
   const closed = CLOSED.includes(order.status);
   $('enable').hidden = closed || order.status === 'ready';
@@ -220,7 +240,7 @@ function renderReview() {
 
 function showReady() {
   $('ready-mark').innerHTML = icons.check(72);
-  $('ready-number').textContent = String(order.number);
+  $('ready-number').textContent = label(order);
   $('ready-message').textContent = order.message;
   $('ready').hidden = false;
   document.body.classList.add('is-ready');
@@ -397,20 +417,135 @@ async function resolveOrder() {
   }
   const n = params.get('n');
   const k = params.get('k');
-  if ((!current || CLOSED.includes(current.status)) && (n || k)) {
-    current = await claimOrder();
-  }
-  return current;
+  if (!n && !k) return current;
+  // Scanned again while an order is still open: a second order, or just checking the first?
+  if (current && !CLOSED.includes(current.status)) return { again: current };
+  return claimOrder();
 }
 
+function only(id) {
+  for (const el of ['card', 'enable', 'pick', 'again', 'waiting']) $(el).hidden = el !== id;
+}
+
+// A POS-only branch has no number until the cashier's system sends the order: wait for it.
 async function claimOrder(pick) {
   const n = params.get('n');
   const k = params.get('k');
-  const claimed = await api(`${branchApi}/claim`, {
-    method: 'POST', body: { n: n ?? undefined, k: k ?? undefined, canPick: true, pick }, headers: deviceHeaders(),
+  const started = Date.now();
+  for (;;) {
+    try {
+      const claimed = await api(`${branchApi}/claim`, {
+        method: 'POST',
+        body: { n: n ?? undefined, k: k ?? undefined, canPick: true, pick },
+        headers: { ...deviceHeaders(), 'x-client-id': clientId() },
+      });
+      if (claimed.deviceToken) store.set(deviceKey, claimed.deviceToken);
+      $('waiting').hidden = true;
+      return claimed;
+    } catch (err) {
+      if (!err.data?.wait) throw err;
+      if (Date.now() - started > POS_WAIT_MS) throw new Error('طلبك موصلش من الكاشير. اسأل الكاشير وامسح الكود تاني');
+      await holdSplash(); // the wait has to be on screen, not behind the splash
+      only('waiting');
+      await sleep(3000);
+    }
+  }
+}
+
+function askAgain(previous) {
+  only('again');
+  $('again-number').textContent = label(previous);
+  return new Promise((resolve, reject) => {
+    $('again').onclick = async (e) => {
+      const choice = e.target.closest('[data-again]')?.dataset.again;
+      if (!choice) return;
+      if (choice === 'back') return resolve(previous);
+      e.target.disabled = true;
+      try {
+        resolve(await claimOrder());
+      } catch (err) {
+        e.target.disabled = false;
+        reject(err);
+      }
+      return undefined;
+    };
   });
-  if (claimed.deviceToken) store.set(deviceKey, claimed.deviceToken);
-  return claimed;
+}
+
+// ---------- other open orders of this phone ----------
+
+const others = new Map(); // id -> { order, events }
+
+function saveOthers() {
+  store.set(othersKey, JSON.stringify([...others.keys()]));
+}
+
+function renderOthers() {
+  const list = [...others.values()].map((e) => e.order);
+  $('others').hidden = !list.length;
+  $('others').innerHTML = list.length
+    ? `<span>طلبك التاني:</span>${list.map((o) => `<button class="other-chip" type="button" data-other="${esc(o.id)}">
+        <span class="num">${esc(label(o))}</span> ${o.status === 'ready' ? 'جاهز' : 'بيتحضّر'}</button>`).join('')}`
+    : '';
+}
+
+function dropOther(id) {
+  others.get(id)?.events?.close();
+  others.delete(id);
+  saveOthers();
+  renderOthers();
+}
+
+// Watches an order in the background; the moment it is ready it takes the screen and rings.
+function addOther(o) {
+  if (!o || CLOSED.includes(o.status) || others.has(o.id) || o.id === order?.id) return;
+  if (others.size >= MAX_OTHERS) dropOther(others.keys().next().value);
+  const entry = { order: o, events: new EventSource(`${branchApi}/orders/${encodeURIComponent(o.id)}/events`) };
+  others.set(o.id, entry);
+  entry.events.addEventListener('order', (e) => {
+    entry.order = JSON.parse(e.data);
+    if (CLOSED.includes(entry.order.status)) dropOther(o.id);
+    else if (entry.order.status === 'ready') switchTo(o.id);
+    else renderOthers();
+  });
+  entry.events.addEventListener('renotify', (e) => {
+    entry.order = JSON.parse(e.data);
+    switchTo(o.id);
+  });
+  saveOthers();
+  renderOthers();
+}
+
+function switchTo(id) {
+  const entry = others.get(id);
+  if (!entry) return;
+  dropOther(id);
+  const previous = order;
+  stopRinging(false);
+  order = entry.order;
+  store.set(storageKey, order.id);
+  history.replaceState(null, '', `${location.pathname}?o=${encodeURIComponent(order.id)}`);
+  Object.assign(review, { rating: 0, comment: '', sent: false });
+  addOther(previous);
+  render();
+  connect();
+}
+
+async function restoreOthers() {
+  let ids = [];
+  try {
+    ids = JSON.parse(store.get(othersKey) ?? '[]');
+  } catch {
+    ids = [];
+  }
+  for (const id of ids.slice(0, MAX_OTHERS)) {
+    try {
+      addOther(await api(`${branchApi}/orders/${encodeURIComponent(id)}`));
+    } catch {
+      /* gone */
+    }
+  }
+  saveOthers();
 }
 
 // Several numbers from the POS are waiting: the customer picks the one on their receipt.
@@ -427,12 +562,9 @@ function pickNumber(numbers, note = '') {
     $('pick').onclick = async (e) => {
       const button = e.target.closest('[data-pick]');
       if (!button) return;
-      const pick = button.dataset.pick === 'new' ? 'new' : Number(button.dataset.pick);
       try {
-        const claimed = await claimOrder(pick);
+        const claimed = await claimOrder(button.dataset.pick);
         $('pick').hidden = true;
-        $('card').hidden = false;
-        $('enable').hidden = false;
         resolve(claimed);
       } catch (err) {
         if (err.data?.choose) resolve(pickNumber(err.data.choose, err.message));
@@ -464,6 +596,16 @@ async function boot() {
   }
   await holdSplash();
 
+  let previous = null;
+  if (resolved?.again) {
+    previous = resolved.again;
+    try {
+      resolved = await askAgain(previous);
+    } catch (err) {
+      resolved = null;
+      failure = err.message;
+    }
+  }
   if (resolved?.choose) {
     try {
       resolved = await pickNumber(resolved.choose);
@@ -479,9 +621,16 @@ async function boot() {
   store.set(storageKey, resolved.id);
   history.replaceState(null, '', `${location.pathname}?o=${encodeURIComponent(resolved.id)}`);
   order = resolved;
+  only('card');
   render();
   connect();
   loadLoyalty();
+  if (previous && previous.id !== order.id) addOther(previous);
+  restoreOthers();
+  $('others').addEventListener('click', (e) => {
+    const chip = e.target.closest('[data-other]');
+    if (chip) switchTo(chip.dataset.other);
+  });
 
   $('enable').addEventListener('click', onEnable);
   setInterval(() => {
