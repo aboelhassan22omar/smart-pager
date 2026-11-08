@@ -132,7 +132,7 @@ export function superOverview(deps, now = Date.now()) {
   }
   for (const brand of byBrand.values()) {
     brand.owners = deps.control.ownersOfBrand(brand.id).map((o) => ({
-      id: o.id, username: o.username, email: o.email, password: unseal(secret, o.password_sealed),
+      id: o.id, username: o.username, email: o.email, phone: o.phone, password: unseal(secret, o.password_sealed),
     }));
   }
   return { brands: [...byBrand.values()], live: liveNow(deps, apps), publicUrl: deps.config.publicUrl, serverNow: now };

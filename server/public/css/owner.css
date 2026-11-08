@@ -1,0 +1,306 @@
+/* Brand owner page (/brand/:brand), phone first.
+   Phone: one section at a time with a tab bar at the thumb. Tablet and up: the same
+   sections as pills in the header. Colors come from the tokens (and the brand's logo theme). */
+
+.owner {
+  --tabbar-h: 64px;
+}
+
+.min-w-0 {
+  min-width: 0;
+}
+
+/* ---------- header ---------- */
+
+.owner-bar {
+  padding: calc(10px + env(safe-area-inset-top)) 0 10px;
+  background: color-mix(in srgb, var(--bg) 92%, transparent);
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.owner-logo {
+  display: grid;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--surface-2);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.owner-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.owner-title {
+  margin: 0;
+  font-size: var(--fs-md);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.owner-sub {
+  margin: 0;
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.owner-tabs .nav-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 14px;
+  font-size: var(--fs-sm);
+}
+
+/* ---------- sections ---------- */
+
+.owner-main {
+  display: grid;
+  gap: 20px;
+  padding-block: 16px 24px;
+}
+
+.owner-pane {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+
+.owner-pane > * {
+  min-width: 0;
+}
+
+/* Today across every branch. */
+.today {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.today-tile {
+  display: grid;
+  gap: 2px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-tile);
+  background: var(--surface);
+}
+
+.today-tile span {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.today-tile strong {
+  font-size: var(--fs-xl);
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.today-tile strong.is-alert {
+  color: var(--danger);
+}
+
+.today-note {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+}
+
+.today-note .dot {
+  width: 8px;
+  height: 8px;
+  background: var(--surface-2);
+}
+
+.today-note .dot[data-online='true'] {
+  background: var(--ready);
+}
+
+.owner .card-actions .btn {
+  flex: 1 1 0;
+}
+
+/* ---------- account ---------- */
+
+.account-card {
+  display: grid;
+  gap: 4px;
+  padding: 6px 16px;
+  border: 1px solid var(--line);
+  border-radius: var(--r-card);
+  background: var(--surface);
+}
+
+.account-card > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 52px;
+  border-bottom: 1px solid var(--line);
+}
+
+.account-card > div:last-child {
+  border-bottom: 0;
+}
+
+.account-card dt {
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  font-weight: 400;
+}
+
+.account-card dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+  text-align: end;
+}
+
+.account-actions {
+  display: grid;
+  gap: 8px;
+}
+
+/* ---------- phone ---------- */
+
+@media (max-width: 767.98px) {
+  body.has-tabbar {
+    padding-bottom: calc(var(--tabbar-h, 64px) + env(safe-area-inset-bottom));
+  }
+
+  body.has-tabbar .powered-by.is-inline {
+    padding-bottom: 16px;
+  }
+
+  body.has-tabbar .toast {
+    bottom: calc(var(--tabbar-h, 64px) + 12px + env(safe-area-inset-bottom));
+  }
+
+  .tabbar {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 0;
+    z-index: 1030;
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+    padding: 6px 4px env(safe-area-inset-bottom);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    border-top: 1px solid var(--line);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+
+  .tabbar button {
+    display: grid;
+    justify-items: center;
+    align-content: center;
+    gap: 3px;
+    min-width: 0;
+    border: 0;
+    background: none;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+
+  .tabbar .tab-icon {
+    display: grid;
+    place-items: center;
+    width: 56px;
+    height: 28px;
+    border-radius: 999px;
+    transition: background-color 160ms var(--ease);
+  }
+
+  .tabbar button[aria-current='page'] {
+    color: var(--text);
+  }
+
+  .tabbar button[aria-current='page'] .tab-icon {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+    color: var(--accent);
+  }
+
+  .tabbar button:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: -2px;
+    border-radius: var(--r-control);
+  }
+
+  .owner .branch-card {
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .owner .dash-head h2 {
+    font-size: var(--fs-lg);
+  }
+
+  /* Analytics: period buttons as one row, dates side by side, branch underneath. */
+  .owner .filters {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: end;
+  }
+
+  .owner .presets {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .owner .presets .btn {
+    padding-inline: 6px;
+  }
+
+  .owner .filters .field.inline {
+    min-width: 0;
+  }
+
+  .owner .filters .field.inline:last-child {
+    grid-column: 1 / -1;
+  }
+
+  .owner .stat-tiles {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .owner .stat-tile {
+    padding: 12px;
+  }
+
+  .owner .stat-value {
+    font-size: var(--fs-xl);
+  }
+
+  .owner .chart-card {
+    padding: 14px;
+  }
+}
+
+/* The branch column stays put while the numbers scroll sideways. */
+.owner .data-table th[scope='row'] {
+  position: sticky;
+  inset-inline-start: 0;
+  z-index: 1;
+  min-width: 120px;
+  max-width: 180px;
+  background: var(--surface);
+  overflow-wrap: anywhere;
+}

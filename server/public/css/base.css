@@ -303,6 +303,12 @@ select {
   direction: ltr;
 }
 
+/* Username and password (owner): plain text size, no PIN spacing. */
+.login-account .input {
+  font-size: var(--fs-md);
+  letter-spacing: normal;
+}
+
 /* ---------- toast ---------- */
 
 .toast {
@@ -371,6 +377,26 @@ select {
   font-size: 0.8125rem;
   font-weight: 700;
   letter-spacing: 0.22em;
+}
+
+/* Dashboards: the footer closes the page instead of covering its bottom. */
+body[data-powered='inline'] {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 0;
+}
+
+.powered-by.is-inline {
+  position: static;
+  height: auto;
+  margin-top: auto;
+  padding: 20px 0 calc(16px + env(safe-area-inset-bottom));
+  background: none;
+  border-top: 0;
+}
+
+body[data-powered='inline'] .toast {
+  bottom: calc(16px + env(safe-area-inset-bottom));
 }
 
 body.is-ready .powered-by {

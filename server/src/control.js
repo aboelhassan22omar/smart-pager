@@ -131,6 +131,10 @@ export const CONTROL_MIGRATIONS = [
   ALTER TABLE branches ADD COLUMN tz TEXT;
   ALTER TABLE branches ADD COLUMN day_start_hour INTEGER NOT NULL DEFAULT 0;
   `,
+  // 9: the brand owner's phone number (optional, like the email).
+  `
+  ALTER TABLE owners ADD COLUMN phone TEXT;
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -161,8 +165,9 @@ export class ControlStore {
       setPlanStatus: p('UPDATE branches SET plan_status = ? WHERE id = ?'),
       owner: p('SELECT * FROM owners WHERE id = ?'),
       ownerByName: p('SELECT * FROM owners WHERE username = ?'),
-      brandOwners: p('SELECT id, brand_id, username, email, password_sealed, created_at, last_login_at FROM owners WHERE brand_id = ? ORDER BY id'),
-      insertOwner: p('INSERT INTO owners (brand_id, username, email, password_hash, password_sealed, created_at) VALUES (?, ?, ?, ?, ?, ?)'),
+      brandOwners: p('SELECT id, brand_id, username, email, phone, password_sealed, created_at, last_login_at FROM owners WHERE brand_id = ? ORDER BY id'),
+      insertOwner: p('INSERT INTO owners (brand_id, username, email, phone, password_hash, password_sealed, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)'),
+      ownerContact: p('UPDATE owners SET email = ?, phone = ? WHERE id = ?'),
       resetOwner: p('UPDATE owners SET password_hash = ?, password_sealed = ?, pw_version = pw_version + 1 WHERE id = ?'),
       renameOwner: p('UPDATE owners SET username = ? WHERE id = ?'),
       trashBranch: p('UPDATE branches SET deleted_at = ?, deleted_reason = ? WHERE id = ? AND deleted_at IS NULL'),
@@ -342,9 +347,15 @@ export class ControlStore {
     return this.sql.brandOwners.all(brandId);
   }
 
-  createOwner({ brandId, username, email = null, passwordHash, passwordSealed = null }) {
-    const res = this.sql.insertOwner.run(brandId, username, email, passwordHash, passwordSealed, Date.now());
+  createOwner({ brandId, username, email = null, phone = null, passwordHash, passwordSealed = null }) {
+    const res = this.sql.insertOwner.run(brandId, username, email, phone, passwordHash, passwordSealed, Date.now());
     return this.getOwner(Number(res.lastInsertRowid));
+  }
+
+  /** Email and phone, both optional (null clears). */
+  setOwnerContact(id, { email = null, phone = null }) {
+    this.sql.ownerContact.run(email, phone, id);
+    return this.getOwner(id);
   }
 
   /** New password; bumping pw_version signs every existing owner session out. */

@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { superOverview } from '../aggregate.js';
 import { appKeyOf, appView, brandAppDir, iconFile } from '../apps.js';
 import { channels } from '../bus.js';
+import { cleanEmail, cleanPhone } from '../contact.js';
 import { backupStatus, runBackup } from '../backup.js';
 import { HttpError } from '../errors.js';
 import { DAY_MS, effectivePlan, FEATURES, planView } from '../plans.js';
@@ -108,7 +109,7 @@ export default async function superRoutes(app, deps) {
     }
 
     const ownerResult = (owner, brandId, password) => ({
-      owner: { id: owner.id, username: owner.username, brandId },
+      owner: { id: owner.id, username: owner.username, email: owner.email ?? null, phone: owner.phone ?? null, brandId },
       password,
       loginUrl: `${config.publicUrl}/brand/${brandId}`,
     });
@@ -118,21 +119,21 @@ export default async function superRoutes(app, deps) {
     s.post('/brands/:brand/owners', async (req, reply) => {
       const brandId = req.params.brand;
       if (!control.getBrand(brandId)) throw new HttpError(404, 'البراند ده مش موجود');
-      const { username, email = null } = req.body ?? {};
+      const { username } = req.body ?? {};
       checkUsername(username);
-      const cleanEmail = typeof email === 'string' && email.trim() ? email.trim().slice(0, 200) : null;
+      const contact = { email: cleanEmail(req.body?.email), phone: cleanPhone(req.body?.phone) };
       const password = req.body?.password ? checkPassword(req.body.password) : randomId(9);
       const fields = await passwordFields(config.cookieSecret, password);
       const existing = control.ownerByUsername(username);
       if (existing && existing.brand_id !== brandId) throw new HttpError(409, 'اسم المستخدم ده مستخدم في براند تاني', { field: 'username' });
       const owner = existing
         ? control.resetOwnerPassword(existing.id, fields)
-        : control.createOwner({ brandId, username, email: cleanEmail, ...fields });
+        : control.createOwner({ brandId, username, ...contact, ...fields });
       audit(req, existing ? 'owner.reset' : 'owner.create', { brandId, detail: { username } });
       return reply.code(existing ? 200 : 201).send(ownerResult(owner, brandId, password));
     });
 
-    // Edit an owner in place: username and/or password. Only a new password signs them out.
+    // Edit an owner in place: username, password, email, phone. Only a new password signs them out.
     s.post('/brands/:brand/owners/:owner', async (req) => {
       const brandId = req.params.brand;
       const owner = control.getOwner(Number(req.params.owner));
@@ -144,6 +145,13 @@ export default async function superRoutes(app, deps) {
         if (control.ownerByUsername(username)) throw new HttpError(409, 'اسم المستخدم ده مستخدم قبل كده', { field: 'username' });
         updated = control.renameOwner(owner.id, username);
         audit(req, 'owner.rename', { brandId, detail: { from: owner.username, username } });
+      }
+      if (body.email !== undefined || body.phone !== undefined) {
+        updated = control.setOwnerContact(owner.id, {
+          email: body.email !== undefined ? cleanEmail(body.email) : owner.email,
+          phone: body.phone !== undefined ? cleanPhone(body.phone) : owner.phone,
+        });
+        audit(req, 'owner.contact', { brandId, detail: { username: updated.username } });
       }
       const password = body.password ? checkPassword(body.password) : null;
       if (password) {
