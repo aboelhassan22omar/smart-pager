@@ -1,5 +1,6 @@
 // "Powered by AUREXIS" footer, fixed at the bottom of every page (splash included).
-// Not inside a brand's cashier app: that one carries the brand's name only.
+// Dashboards (<body data-powered="inline">) end with it instead, so on a phone it never
+// covers what is being read. Not inside a brand's app: that one carries the brand's name only.
 
 import { isCashierApp } from './util.js';
 
@@ -12,7 +13,7 @@ export function mountPoweredBy(doc) {
 
   const footer = doc.createElement('footer');
   footer.id = 'powered-by';
-  footer.className = 'powered-by';
+  footer.className = doc.body.dataset?.powered === 'inline' ? 'powered-by is-inline' : 'powered-by';
   footer.setAttribute('dir', 'ltr');
 
   const link = doc.createElement('a');

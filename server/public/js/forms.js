@@ -6,6 +6,20 @@
 
 import { esc } from './util.js';
 
+// On a phone the keyboard would cover half the sheet before anything is read: focus the
+// sheet itself there, and the first field only with a real keyboard.
+const touch = () => typeof matchMedia === 'function' && matchMedia('(pointer: coarse)').matches;
+
+/** Puts a sheet on screen; the page behind it stops scrolling until it closes. */
+function mountSheet(backdrop) {
+  document.body.append(backdrop);
+  document.body.classList.add('has-sheet');
+  return () => {
+    backdrop.remove();
+    if (!document.querySelector('.sheet-backdrop')) document.body.classList.remove('has-sheet');
+  };
+}
+
 function fieldHtml(f) {
   if (f.type === 'heading') return `<h3 class="form-heading">${esc(f.label)}</h3>`;
   const id = `f-${f.name}`;
@@ -40,27 +54,29 @@ export function openForm({ title, intro = '', fields = [], submit = 'حفظ', da
   const backdrop = document.createElement('div');
   backdrop.className = 'sheet-backdrop';
   backdrop.innerHTML = `
-    <form class="sheet form-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" novalidate>
-      <h2 id="sheet-title">${esc(title)}</h2>
-      ${intro ? `<p class="muted">${esc(intro)}</p>` : ''}
-      <div class="stack">${fields.map(fieldHtml).join('')}</div>
-      <p class="form-error" hidden></p>
+    <form class="sheet form-sheet" role="dialog" aria-modal="true" aria-labelledby="sheet-title" tabindex="-1" novalidate>
+      <div class="sheet-body">
+        <h2 id="sheet-title">${esc(title)}</h2>
+        ${intro ? `<p class="muted">${esc(intro)}</p>` : ''}
+        <div class="stack">${fields.map(fieldHtml).join('')}</div>
+        <p class="form-error" hidden></p>
+      </div>
       <div class="sheet-actions">
         <button class="btn ${danger ? 'btn-danger-solid' : 'btn-primary'} btn-block" type="submit">${esc(submit)}</button>
         <button class="btn btn-quiet btn-block" type="button" data-close>رجوع</button>
       </div>
     </form>`;
-  document.body.append(backdrop);
+  const close = mountSheet(backdrop);
   const form = backdrop.querySelector('form');
   const error = form.querySelector('.form-error');
-  const close = () => backdrop.remove();
   backdrop.addEventListener('click', (e) => {
     if (e.target === backdrop || e.target.closest('[data-close]')) close();
   });
   backdrop.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') close();
   });
-  (form.querySelector('input, select') ?? form.querySelector('[type=submit]')).focus();
+  if (touch()) form.focus({ preventScroll: true });
+  else (form.querySelector('input, select') ?? form.querySelector('[type=submit]')).focus();
 
   form.addEventListener('submit', async (e) => {
     e.preventDefault();
@@ -75,6 +91,7 @@ export function openForm({ title, intro = '', fields = [], submit = 'حفظ', da
     } catch (err) {
       error.textContent = err.message;
       error.hidden = false;
+      error.scrollIntoView({ block: 'nearest' });
       const field = err.data?.field && form.elements[err.data.field];
       field?.setAttribute('aria-invalid', 'true');
       field?.focus();
@@ -98,9 +115,9 @@ export function showResult({ title, lines }) {
         <button class="btn btn-quiet btn-block" type="button" data-close>تمام</button>
       </div>
     </div>`;
-  document.body.append(backdrop);
+  const close = mountSheet(backdrop);
   backdrop.addEventListener('click', async (e) => {
-    if (e.target === backdrop || e.target.closest('[data-close]')) backdrop.remove();
+    if (e.target === backdrop || e.target.closest('[data-close]')) close();
     if (e.target.closest('[data-copy]')) {
       await navigator.clipboard?.writeText(lines.map(([k, v]) => `${k}: ${v}`).join('\n')).catch(() => {});
       e.target.closest('[data-copy]').textContent = 'اتنسخ';

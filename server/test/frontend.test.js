@@ -49,7 +49,7 @@ function fakeDocument() {
 describe('pages', () => {
   for (const page of PAGES) {
     test(`${page} is Arabic RTL`, () => {
-      assert.match(read(page), /<html lang="ar" dir="rtl">/);
+      assert.match(read(page), /<html lang="ar" dir="rtl"( data-bs-theme="dark")?>/);
     });
 
     test(`${page} mounts Powered by AUREXIS`, () => {
@@ -342,5 +342,38 @@ describe('service worker', () => {
       assert.equal(sw.shown.length, 1);
       assert.deepEqual(sw.closed, ['order-abc123']);
     }
+  });
+});
+
+describe('dashboards on Bootstrap', () => {
+  for (const page of ['public/brand.html', 'public/super.html']) {
+    test(`${page}: Bootstrap RTL first, our bridge and tokens after it`, () => {
+      const html = read(page);
+      const order = ['/vendor/bootstrap/bootstrap.rtl.min.css', '/css/bs-bridge.css', '/css/base.css', '/css/admin.css'].map((href) => html.indexOf(`href="${href}"`));
+      assert.ok(order.every((i) => i > 0), 'all four stylesheets are linked');
+      assert.deepEqual([...order].sort((a, b) => a - b), order, 'in this order');
+      assert.match(html, /data-bs-theme="dark"/);
+      assert.match(html, /<body data-powered="inline">/, 'Powered by closes the page, never covers it');
+    });
+  }
+
+  test('the vendored Bootstrap is the RTL build, with its license and no source map link', () => {
+    const css = read('public/vendor/bootstrap/bootstrap.rtl.min.css');
+    assert.match(css, /Bootstrap {2}v5\.3\.3/);
+    assert.doesNotMatch(css, /sourceMappingURL/);
+    assert.match(read('public/vendor/bootstrap/LICENSE'), /MIT License/);
+  });
+
+  test('owner page: one tab bar for phones, pills for wider screens, a pane per tab', () => {
+    const html = read('public/brand.html');
+    assert.equal((html.match(/data-tabs/g) ?? []).length, 2);
+    for (const pane of ['branches', 'analytics', 'apps', 'account']) assert.match(html, new RegExp(`data-pane="${pane}"`));
+  });
+
+  test('inline Powered by: a class, not the fixed bar', () => {
+    const doc = fakeDocument();
+    doc.body.dataset = { powered: 'inline' };
+    const footer = mountPoweredBy(doc);
+    assert.equal(footer.className, 'powered-by is-inline');
   });
 });

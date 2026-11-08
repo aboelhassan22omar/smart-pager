@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="ar" dir="rtl">
+<html lang="ar" dir="rtl" data-bs-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -7,33 +7,50 @@
   <meta name="color-scheme" content="dark">
   <meta name="robots" content="noindex">
   <title>فروعي — Smart Pager</title>
+  <link rel="stylesheet" href="/vendor/bootstrap/bootstrap.rtl.min.css">
+  <link rel="stylesheet" href="/css/bs-bridge.css">
   <link rel="stylesheet" href="/css/base.css">
   <link rel="stylesheet" href="/css/admin.css">
+  <link rel="stylesheet" href="/css/owner.css">
   <script type="module" src="/js/powered.js"></script>
   <script type="module" src="/js/brand.js"></script>
 </head>
-<body>
+<body data-powered="inline">
   <div id="login-root"></div>
 
-  <div id="app" hidden>
-    <header class="topbar">
-      <h1 id="brand-name"></h1>
-      <nav>
-        <button class="icon-link" id="logout" type="button" aria-label="خروج" title="خروج"></button>
-      </nav>
+  <div id="app" class="owner" hidden>
+    <header class="owner-bar sticky-top">
+      <div class="container-xl d-flex align-items-center gap-3">
+        <span class="owner-logo" id="brand-logo" aria-hidden="true"></span>
+        <div class="flex-grow-1 min-w-0">
+          <h1 class="owner-title text-truncate" id="brand-name"></h1>
+          <p class="owner-sub text-truncate" id="owner-line"></p>
+        </div>
+        <nav class="nav nav-pills owner-tabs d-none d-md-flex" aria-label="الأقسام" data-tabs></nav>
+      </div>
     </header>
 
-    <main class="dash">
-      <div class="dash-head">
-        <div><h2>الفروع</h2><p class="sub" id="owner-line"></p></div>
-      </div>
-      <div id="branches"></div>
-      <section class="apps-section" id="app-section" aria-labelledby="h-app" hidden>
+    <main class="container-xl owner-main">
+      <section class="owner-pane" id="pane-branches" data-pane="branches" aria-labelledby="h-branches">
+        <h2 class="visually-hidden" id="h-branches">الفروع</h2>
+        <div id="today" class="today" aria-label="النهارده في كل الفروع"></div>
+        <div id="branches"></div>
+      </section>
+
+      <section class="owner-pane analytics" id="analytics" data-pane="analytics" aria-label="التحليلات" hidden></section>
+
+      <section class="owner-pane" data-pane="apps" aria-labelledby="h-app" hidden>
         <div class="dash-head"><h2 id="h-app">تطبيق الكاشير</h2></div>
         <div id="app-body" class="stack-lg"></div>
       </section>
-      <section class="analytics" id="analytics" aria-label="التحليلات"></section>
+
+      <section class="owner-pane" data-pane="account" aria-labelledby="h-account" hidden>
+        <div class="dash-head"><h2 id="h-account">حسابي</h2></div>
+        <div id="account-body" class="stack-lg"></div>
+      </section>
     </main>
+
+    <nav class="tabbar d-md-none" aria-label="الأقسام" data-tabs></nav>
   </div>
 </body>
 </html>

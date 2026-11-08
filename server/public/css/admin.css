@@ -238,7 +238,25 @@
   z-index: 1100;
   display: grid;
   align-items: end;
+  overscroll-behavior: contain;
   background: rgb(0 0 0 / 0.5);
+  animation: sheet-fade 160ms var(--ease);
+}
+
+body.has-sheet {
+  overflow: hidden;
+}
+
+@keyframes sheet-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@keyframes sheet-rise {
+  from {
+    transform: translateY(24px);
+  }
 }
 
 .sheet {
@@ -255,8 +273,63 @@
 
 .sheet h2 {
   margin: 0;
-  font-size: var(--fs-xl);
+  overflow-wrap: anywhere;
+  font-size: var(--fs-lg);
   font-weight: 600;
+  line-height: 1.35;
+}
+
+.sheet {
+  animation: sheet-rise 200ms var(--ease);
+}
+
+/* Form sheets: the fields scroll, the buttons stay in reach at the bottom. */
+.form-sheet {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.form-sheet .sheet-body {
+  display: grid;
+  gap: 14px;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 20px var(--gutter) 16px;
+}
+
+.form-sheet .sheet-body > p {
+  margin: 0;
+  font-size: var(--fs-sm);
+}
+
+.form-sheet .sheet-actions {
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  padding: 12px var(--gutter) calc(12px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--line);
+  background: var(--surface);
+}
+
+.form-sheet:focus {
+  outline: none;
+}
+
+@media (min-width: 768px) {
+  .sheet-backdrop {
+    align-items: center;
+    padding: 24px;
+  }
+
+  .sheet {
+    border-radius: var(--r-card);
+  }
+
+  .sheet h2 {
+    font-size: var(--fs-xl);
+  }
 }
 
 .sheet > p {
@@ -1202,4 +1275,22 @@
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
+}
+
+/* ---------- phones: smaller section titles, tighter cards ---------- */
+
+@media (max-width: 560px) {
+  .dash {
+    gap: 22px;
+    margin-top: 14px;
+  }
+
+  .dash-head h2 {
+    font-size: var(--fs-lg);
+    overflow-wrap: anywhere;
+  }
+
+  .branch-card {
+    padding: 14px;
+  }
 }

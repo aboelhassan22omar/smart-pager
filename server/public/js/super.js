@@ -186,6 +186,8 @@ function ownerCredsHtml(brand) {
         <div><dt>رابط الدخول</dt><dd dir="ltr"><a href="${esc(url)}" target="_blank" rel="noopener">${esc(url.replace(/^https?:\/\//, ''))}</a>${copyBtn(url)}</dd></div>
         <div><dt>اسم المستخدم</dt><dd dir="ltr"><span>${esc(owner.username)}</span>${copyBtn(owner.username)}</dd></div>
         <div><dt>كلمة السر</dt><dd dir="ltr">${password}</dd></div>
+        ${owner.email ? `<div><dt>الإيميل</dt><dd dir="ltr"><a href="mailto:${esc(owner.email)}">${esc(owner.email)}</a>${copyBtn(owner.email)}</dd></div>` : ''}
+        ${owner.phone ? `<div><dt>التليفون</dt><dd dir="ltr"><a href="tel:${esc(owner.phone)}">${esc(owner.phone)}</a>${copyBtn(owner.phone)}</dd></div>` : ''}
       </dl>
       <button class="btn btn-sm" data-act="owner" data-id="${esc(brand.id)}" type="button">تعديل</button>
     </div>`;
@@ -512,11 +514,12 @@ function ownerAccount(brandId) {
     fields: [
       { name: 'username', label: 'اسم المستخدم', dir: 'ltr' },
       { name: 'email', label: 'الإيميل (اختياري)', type: 'email', dir: 'ltr' },
+      { name: 'phone', label: 'التليفون (اختياري)', type: 'tel', inputmode: 'tel', dir: 'ltr', placeholder: '01xxxxxxxxx' },
       { name: 'password', label: 'كلمة السر (اختياري)', type: 'text', dir: 'ltr' },
     ],
     submit: 'احفظ',
     onSubmit: async (v) => {
-      const body = { username: v.username.trim(), email: v.email || null };
+      const body = { username: v.username.trim(), email: v.email || null, phone: v.phone || null };
       if (v.password) body.password = v.password;
       await post(`/brands/${encodeURIComponent(brandId)}/owners`, body);
       await done('الحساب اتعمل، وبياناته ظاهرة تحت اسم البراند');
@@ -524,7 +527,7 @@ function ownerAccount(brandId) {
   });
 }
 
-// Username and password in place. Only a new password signs the owner out.
+// Username, password, email and phone in place. Only a new password signs the owner out.
 function editOwner(brandId, owner) {
   openForm({
     title: 'بيانات صاحب البراند',
@@ -535,10 +538,12 @@ function editOwner(brandId, owner) {
         name: 'password', label: 'كلمة السر (8 حروف على الأقل)', type: 'text', dir: 'ltr',
         value: owner.password ?? '', placeholder: owner.password ? '' : 'اكتب كلمة سر جديدة',
       },
+      { name: 'email', label: 'الإيميل (اختياري)', type: 'email', dir: 'ltr', value: owner.email ?? '' },
+      { name: 'phone', label: 'التليفون (اختياري)', type: 'tel', inputmode: 'tel', dir: 'ltr', value: owner.phone ?? '', placeholder: '01xxxxxxxxx' },
     ],
     submit: 'احفظ',
     onSubmit: async (v) => {
-      const body = { username: v.username.trim() };
+      const body = { username: v.username.trim(), email: v.email ?? '', phone: v.phone ?? '' };
       if (v.password && v.password !== owner.password) body.password = v.password;
       await post(`/brands/${encodeURIComponent(brandId)}/owners/${owner.id}`, body);
       await done('اتحفظ');

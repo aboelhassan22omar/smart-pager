@@ -3,6 +3,7 @@ import path from 'node:path';
 import { verifyPin } from '../auth.js';
 import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
 import { appView } from '../apps.js';
+import { cleanEmail, cleanPhone } from '../contact.js';
 import { DEMO_LOCKED, isDemo } from '../demo.js';
 import { HttpError } from '../errors.js';
 import { LOYALTY_EVERY, REWARD_TEXT_MAX } from '../loyalty.js';
@@ -98,11 +99,21 @@ export default async function brandRoutes(app, deps) {
       return tenants.resolve(branch.id);
     }
 
+    const ownerView = (o) => ({ username: o.username, email: o.email ?? null, phone: o.phone ?? null });
+
     b.get('/overview', async (req) => ({
       ...brandOverview(deps, req.params.brand),
-      owner: { username: req.owner.username },
+      owner: ownerView(req.owner),
       demo: isDemo(req.params.brand),
     }));
+
+    // The owner's own email and phone (both optional; empty clears).
+    b.post('/account', async (req) => {
+      const body = req.body ?? {};
+      const owner = control.setOwnerContact(req.owner.id, { email: cleanEmail(body.email), phone: cleanPhone(body.phone) });
+      control.audit({ actor: `owner:${owner.id}`, action: 'owner.contact', brandId: req.params.brand, ip: req.ip });
+      return { owner: ownerView(owner) };
+    });
 
     // ?from=YYYY-MM-DD&to=YYYY-MM-DD[&branch=<id>]  (at most 366 days)
     function analyticsQuery(req) {

@@ -16,7 +16,7 @@ let appView = null;
 function showLogin() {
   const root = $('login-root');
   root.innerHTML = `
-    <form class="login" novalidate>
+    <form class="login login-account" novalidate>
       <h1>دخول صاحب البراند</h1>
       <input class="input" name="username" dir="ltr" autocomplete="username" placeholder="اسم المستخدم" aria-label="اسم المستخدم" required>
       <input class="input" name="password" type="password" autocomplete="current-password" placeholder="كلمة السر" aria-label="كلمة السر" required>
@@ -49,13 +49,79 @@ function showLogin() {
   });
 }
 
+// ---------- sections: a tab bar on phones, pills in the header on wider screens ----------
+
+const TABS = [
+  ['branches', 'الفروع', icons.store],
+  ['analytics', 'التحليلات', icons.chart],
+  ['apps', 'التطبيقات', icons.phone],
+  ['account', 'حسابي', icons.user],
+];
+const TAB_KEY = `sp:owner-tab:${brandId}`;
+
+function renderTabs() {
+  for (const nav of document.querySelectorAll('[data-tabs]')) {
+    const pills = nav.classList.contains('nav');
+    nav.innerHTML = TABS.map(([id, label, icon]) => (pills
+      ? `<button class="nav-link" type="button" data-tab="${id}">${icon(18)}${label}</button>`
+      : `<button type="button" data-tab="${id}"><span class="tab-icon">${icon(22)}</span>${label}</button>`)).join('');
+    nav.addEventListener('click', (e) => {
+      const el = e.target.closest('[data-tab]');
+      if (el) showTab(el.dataset.tab, { scroll: true });
+    });
+  }
+}
+
+function showTab(id, { scroll = false } = {}) {
+  if (!TABS.some(([t]) => t === id)) id = 'branches';
+  for (const pane of document.querySelectorAll('[data-pane]')) pane.hidden = pane.dataset.pane !== id;
+  for (const el of document.querySelectorAll('[data-tab]')) {
+    const on = el.dataset.tab === id;
+    el.classList.toggle('active', on);
+    if (on) el.setAttribute('aria-current', 'page');
+    else el.removeAttribute('aria-current');
+  }
+  if (location.hash !== `#${id}`) history.replaceState(null, '', `#${id}`);
+  try {
+    localStorage.setItem(TAB_KEY, id);
+  } catch {
+    /* private mode */
+  }
+  if (scroll) window.scrollTo({ top: 0 });
+}
+
+function firstTab() {
+  const fromHash = location.hash.slice(1);
+  if (fromHash) return fromHash;
+  try {
+    return localStorage.getItem(TAB_KEY) ?? 'branches';
+  } catch {
+    return 'branches';
+  }
+}
+
+/** Today in every branch together, above the cards. */
+function todayHtml(branches) {
+  const sum = (k) => branches.reduce((n, b) => n + (b[k] ?? 0), 0);
+  const open = branches.filter((b) => b.screens > 0).length;
+  const late = sum('lateToday');
+  return `
+    <div class="today-tile"><span>طلبات النهارده</span><strong class="num">${sum('ordersToday')}</strong></div>
+    <div class="today-tile"><span>مفتوح دلوقتي</span><strong class="num">${sum('openNow')}</strong></div>
+    <div class="today-tile"><span>متأخر</span><strong class="num ${late ? 'is-alert' : ''}">${late}</strong></div>
+    <p class="today-note"><span class="dot" data-online="${open > 0}"></span>الكاشير مفتوح في ${open} من ${branches.length} ${branches.length === 1 ? 'فرع' : 'فروع'}</p>`;
+}
+
 function render() {
   applyTheme(document.documentElement, data.brand.theme);
   $('brand-name').textContent = data.brand.name;
+  $('brand-name').title = data.brand.name;
   document.title = `فروعي — ${data.brand.name}`;
   $('owner-line').textContent = data.demo ? 'نسخة الديمو: ده اللي صاحب المحل بيشوفه' : `داخل باسم ${data.owner.username}`;
-  // The demo signs visitors in by itself; logging out would only strand them on a login form.
-  $('logout').hidden = Boolean(data.demo);
+  const logo = data.branches.find((b) => b.logoUrl)?.logoUrl;
+  $('brand-logo').innerHTML = logo ? `<img src="${esc(logo)}" alt="">` : esc(data.brand.name.slice(0, 1));
+  $('today').innerHTML = data.branches.length ? todayHtml(data.branches) : '';
+  renderAccount();
   const now = Date.now();
   $('branches').innerHTML = data.branches.length
     ? `<div class="cards">${data.branches.map((b) => branchCardHtml(b, {
@@ -66,17 +132,57 @@ function render() {
     : '<p class="empty-note">لسه مفيش فروع. كلّم Aurexis عشان نضيفها.</p>';
 }
 
+// ---------- account: the owner's own email and phone ----------
+
+const notSet = '<span class="muted">مش متسجّل</span>';
+
+function renderAccount() {
+  const o = data.owner;
+  // The demo signs visitors in by itself; editing or logging out would only strand them.
+  $('account-body').innerHTML = `
+    <dl class="account-card">
+      <div><dt>اسم المستخدم</dt><dd dir="ltr">${esc(o.username)}</dd></div>
+      <div><dt>الإيميل</dt><dd dir="ltr">${o.email ? esc(o.email) : notSet}</dd></div>
+      <div><dt>التليفون</dt><dd dir="ltr">${o.phone ? esc(o.phone) : notSet}</dd></div>
+    </dl>
+    <p class="muted small">الإيميل والتليفون اختياريين. بنستخدمهم عشان نكلمك لو فيه حاجة تخص الفروع أو الاشتراك.</p>
+    ${data.demo ? '' : `
+    <div class="account-actions">
+      <button class="btn btn-primary" data-act="contact" type="button">عدّل الإيميل والتليفون</button>
+      <button class="btn btn-quiet" data-act="logout" type="button">${icons.logout(20)}خروج</button>
+    </div>`}`;
+}
+
+function accountAction(act) {
+  if (act === 'logout') {
+    api(`${base}/logout`, { method: 'POST' }).finally(() => location.reload());
+    return;
+  }
+  openForm({
+    title: 'بياناتك',
+    intro: 'الاتنين اختياريين. سيب الخانة فاضية عشان تشيلها.',
+    fields: [
+      { name: 'email', label: 'الإيميل', type: 'email', dir: 'ltr', value: data.owner.email ?? '', placeholder: 'name@example.com' },
+      { name: 'phone', label: 'التليفون', type: 'tel', inputmode: 'tel', dir: 'ltr', value: data.owner.phone ?? '', placeholder: '01xxxxxxxxx' },
+    ],
+    onSubmit: async (v) => {
+      const res = await api(`${base}/account`, { method: 'POST', body: { email: v.email ?? '', phone: v.phone ?? '' } });
+      data.owner = res.owner;
+      renderAccount();
+      toast('اتحفظ');
+    },
+  });
+}
+
 // ---------- cashier app: link + password to forward, and where it is installed ----------
 
 const copyBtn = (value) => `<button class="link-btn" data-copy="${esc(value)}" type="button">انسخ</button>`;
 
 function renderApp() {
-  const section = $('app-section');
   if (!appView) {
-    section.hidden = true;
+    $('app-body').innerHTML = '<p class="empty-note">مش قادرين نجيب بيانات التطبيق دلوقتي. جرّب كمان شوية.</p>';
     return;
   }
-  section.hidden = false;
   if (!appView.enabled) {
     $('app-body').innerHTML = '<p class="empty-note">تطبيق الكاشير لسه مش متفعّل لبراندك. كلّم Aurexis عشان يتفعّل.</p>';
     return;
@@ -235,7 +341,10 @@ async function boot() {
     }
   }
   $('app').hidden = false;
-  $('logout').innerHTML = icons.logout(22);
+  document.body.classList.add('has-tabbar');
+  renderTabs();
+  showTab(firstTab());
+  addEventListener('hashchange', () => showTab(location.hash.slice(1)));
   render();
   await loadApp();
   mountAnalytics($('analytics'), { base, branches: data.branches });
@@ -245,9 +354,9 @@ async function boot() {
   });
   setInterval(refresh, POLL_MS);
 
-  $('logout').addEventListener('click', async () => {
-    await api(`${base}/logout`, { method: 'POST' });
-    location.reload();
+  $('account-body').addEventListener('click', (e) => {
+    const el = e.target.closest('[data-act]');
+    if (el) accountAction(el.dataset.act);
   });
   $('branches').addEventListener('click', (e) => {
     const el = e.target.closest('[data-act]');
