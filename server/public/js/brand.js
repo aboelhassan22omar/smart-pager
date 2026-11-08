@@ -1,7 +1,7 @@
 import { mountAnalytics } from './analytics.js';
 import { watchAppUpdates } from './app-update.js';
 import { applyTheme } from './color.js';
-import { appInviteText, branchCardHtml, devicesHtml } from './dashboard.js';
+import { appInviteText, branchCardHtml, devicesHtml, renewalHtml, renewalInfo } from './dashboard.js';
 import { openForm } from './forms.js';
 import { icons } from './icons.js';
 import { toast } from './staff.js';
@@ -110,7 +110,23 @@ function todayHtml(branches) {
     <div class="today-tile"><span>طلبات النهارده</span><strong class="num">${sum('ordersToday')}</strong></div>
     <div class="today-tile"><span>مفتوح دلوقتي</span><strong class="num">${sum('openNow')}</strong></div>
     <div class="today-tile"><span>متأخر</span><strong class="num ${late ? 'is-alert' : ''}">${late}</strong></div>
-    <p class="today-note"><span class="dot" data-online="${open > 0}"></span>الكاشير مفتوح في ${open} من ${branches.length} ${branches.length === 1 ? 'فرع' : 'فروع'}</p>`;
+    <p class="today-note"><span class="dot" data-online="${open > 0}"></span>الكاشير مفتوح في ${open} من ${branches.length} ${branches.length === 1 ? 'فرع' : 'فروع'}</p>
+    ${renewalsDueHtml(branches)}`;
+}
+
+/** Branches to renew within a week (or already late), soonest first. */
+function renewalsDueHtml(branches) {
+  const due = branches
+    .map((b) => ({ b, r: renewalInfo(b.plan, b.lastPayment) }))
+    .filter(({ r }) => r?.soon)
+    .sort((x, y) => (x.b.plan.until ?? 0) - (y.b.plan.until ?? 0));
+  if (!due.length) return '';
+  return `
+    <div class="renewals-due" role="note">
+      <strong>${due.length === 1 ? 'فرع محتاج تجديد قريب' : `${due.length} فروع محتاجة تجديد قريب`}</strong>
+      <ul>${due.map(({ b, r }) => `<li><span>${esc(b.name)}</span><span>${esc(r.title)}</span></li>`).join('')}</ul>
+      <span class="muted small">التجديد بيتم مع Aurexis. كلّمنا قبل المعاد عشان الفرع مايقفش.</span>
+    </div>`;
 }
 
 function render() {
@@ -127,6 +143,7 @@ function render() {
   $('branches').innerHTML = data.branches.length
     ? `<div class="cards">${data.branches.map((b) => branchCardHtml(b, {
       now,
+      extra: renewalHtml(b.plan, b.lastPayment),
       actions: `<button class="btn btn-sm" data-act="features" data-branch="${esc(b.id)}" type="button">الخصائص</button>
         <button class="btn btn-sm" data-act="rename" data-branch="${esc(b.id)}" type="button">غيّر الاسم</button>`,
     })).join('')}</div>`

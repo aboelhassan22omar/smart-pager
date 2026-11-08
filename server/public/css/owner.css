@@ -132,6 +132,43 @@
   flex: 1 1 0;
 }
 
+.renewals-due {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 55%, transparent);
+  border-radius: var(--r-tile);
+  background: color-mix(in srgb, var(--danger) 8%, var(--surface));
+}
+
+.renewals-due ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-sm);
+}
+
+.renewals-due li {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.renewals-due li span:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.renewals-due li span:last-child {
+  flex: none;
+  color: var(--danger);
+}
+
 /* ---------- the owner's own app ---------- */
 
 .owner-app {

@@ -88,3 +88,50 @@ describe('owner contact: super and owner', () => {
     assert.equal((await client(server.url).post('/api/brand/phonebrand/account', { email: 'a@b.co' })).status, 401, 'needs the owner session');
   });
 });
+
+describe('renewal: cancel a paid plan, days left everywhere', () => {
+  let server;
+  let su;
+
+  before(async () => {
+    server = await startServer({ SUPER_PASSWORD_HASH: await hashPin(SUPER_PASSWORD) });
+    su = client(server.url);
+    await su.post('/api/super/login', { password: SUPER_PASSWORD });
+    await su.post('/api/super/brands', { id: 'kebab', name: 'كبابجي' });
+    await su.post('/api/super/brands/kebab/branches', { id: 'kebab-a', name: 'الفرع', pin: '1234', qrMode: 'static' });
+    await su.post('/api/super/brands/kebab/owners', { username: 'kebab.owner', password: 'kebab-owner-pass' });
+  });
+  after(() => server?.stop());
+
+  const day = (offset) => new Date(Date.now() + offset * 86_400_000).toISOString().slice(0, 10);
+
+  test('super: a paid branch goes back to a free trial of N days from today; payments stay on record', async () => {
+    const paid = await su.post('/api/super/branches/kebab-a/payments', { amountEgp: 750, periodStart: day(0), periodEnd: day(60) });
+    assert.equal(paid.data.plan.status, 'active');
+
+    assert.equal((await su.post('/api/super/branches/kebab-a/restart-trial', { days: 0 })).status, 400);
+    const res = await su.post('/api/super/branches/kebab-a/restart-trial', { days: 4 });
+    assert.equal(res.status, 200);
+    assert.equal(res.data.plan.status, 'trial');
+    assert.equal(res.data.plan.daysLeft, 4);
+
+    const branch = (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'kebab').branches[0];
+    assert.equal(branch.paidUntil, null, 'the paid period is gone');
+    assert.equal(branch.plan.status, 'trial');
+    assert.deepEqual(branch.lastPayment.amountEgp, 750, 'the payment stays in the history');
+    const audit = (await su.get('/api/super/audit?limit=50')).data.entries.map((e) => e.action);
+    assert.ok(audit.includes('branch.trial_restart'));
+  });
+
+  test('owner and cashier see how long until the renewal', async () => {
+    const owner = client(server.url);
+    await owner.post('/api/brand/login', { username: 'kebab.owner', password: 'kebab-owner-pass' });
+    const card = (await owner.get('/api/brand/kebab/overview')).data.branches[0];
+    assert.deepEqual([card.plan.status, card.plan.daysLeft, card.lastPayment.amountEgp], ['trial', 4, 750]);
+
+    const bar = client(server.url);
+    await bar.post('/api/bar/login', { shopId: 'kebab-a', pin: '1234' });
+    const { plan } = (await bar.get('/api/bar/kebab-a/state')).data;
+    assert.deepEqual([plan.status, plan.daysLeft], ['trial', 4]);
+  });
+});

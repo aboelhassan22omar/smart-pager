@@ -157,6 +157,7 @@ export class ControlStore {
       touch: p('UPDATE branches SET last_activity_at = ? WHERE id = ?'),
       setTrial: p('UPDATE branches SET trial_ends_at = ? WHERE id = ?'),
       setPaidUntil: p('UPDATE branches SET paid_until = ? WHERE id = ?'),
+      restartTrial: p('UPDATE branches SET paid_until = NULL, trial_ends_at = ? WHERE id = ?'),
       setSuspended: p('UPDATE branches SET suspended_manual = ? WHERE id = ?'),
       setForcedOff: p('UPDATE branches SET forced_off = ? WHERE id = ?'),
       setReviewFlag: p('UPDATE branches SET ff_review = ? WHERE id = ?'),
@@ -249,6 +250,13 @@ export class ControlStore {
   }
 
   // ---- plans ----
+
+  /** Ends any paid period and puts the branch on a free trial until `at` (payments stay on record). */
+  restartTrial(id, at) {
+    this.sql.restartTrial.run(at, id);
+    this.refreshPlanStatuses();
+    return this.getBranch(id);
+  }
 
   setTrialEnd(id, at) {
     this.sql.setTrial.run(at, id);
