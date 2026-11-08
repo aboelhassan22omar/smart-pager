@@ -3,8 +3,10 @@ package cc.aurexis.pager.cashier;
 import android.app.Activity;
 import android.app.DownloadManager;
 import android.content.ActivityNotFoundException;
+import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
+import android.content.IntentFilter;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -36,20 +38,27 @@ import java.net.URLEncoder;
 /**
  * The whole app: one WebView locked to the brand's server. Everything the cashier sees comes
  * from the server, so the app itself holds no business logic, only assets/pager.json
- * ({server, brand, key}) that the server writes into each brand's APK.
+ * ({server, brand, key, role, build}) that the server writes into each brand's APK.
+ *
+ * Two apps come from this code: the cashier app (cc.aurexis.pager.cashier, role "cashier") and
+ * the brand owner's app (cc.aurexis.pager.owner, role "owner"; build.sh renames the package).
+ * An update is a new APK from the server, installed over this one: when it finishes downloading,
+ * the installer opens by itself.
  */
 public class MainActivity extends Activity {
     private static final int FILE_REQUEST = 1;
+    private static final String APK_TYPE = "application/vnd.android.package-archive";
 
     private WebView web;
     private String server;
     private String startUrl;
     private ValueCallback<Uri[]> pendingFiles;
+    private long apkDownload = -1;
+    private BroadcastReceiver downloadDone;
 
     @Override
     protected void onCreate(Bundle state) {
         super.onCreate(state);
-        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         getWindow().setStatusBarColor(Color.parseColor("#1e1f21"));
         getWindow().setNavigationBarColor(Color.parseColor("#1e1f21"));
 
@@ -80,9 +89,14 @@ public class MainActivity extends Activity {
             return;
         }
         server = config.optString("server").replaceAll("/+$", "");
+        String role = "owner".equals(config.optString("role")) ? "owner" : "cashier";
+        // A cashier screen stays on; the owner's app sleeps like any app.
+        if ("cashier".equals(role)) getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         String version = versionName();
         startUrl = server + "/app/" + enc(config.optString("brand")) + "/start?k=" + enc(config.optString("key"))
-                + "&platform=android&v=" + enc(version) + "&model=" + enc(Build.MANUFACTURER + " " + Build.MODEL);
+                + "&platform=android&role=" + role + "&b=" + enc(config.optString("build")) + "&v=" + enc(version)
+                + "&model=" + enc(Build.MANUFACTURER + " " + Build.MODEL);
+        listenForApkDownloads();
 
         setUpWebView(version);
         if (state == null || web.restoreState(state) == null) web.loadUrl(startUrl);
@@ -162,12 +176,38 @@ public class MainActivity extends Activity {
                         .setTitle(name)
                         .setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
                         .setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);
-                ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(req);
+                long id = ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).enqueue(req);
+                if (APK_TYPE.equals(mime) || name.endsWith(".apk")) apkDownload = id;
                 Toast.makeText(this, "بيتنزّل في Downloads", Toast.LENGTH_SHORT).show();
             } catch (RuntimeException e) {
                 Toast.makeText(this, "التنزيل مش متاح على الجهاز ده", Toast.LENGTH_SHORT).show();
             }
         });
+    }
+
+    /** When the update APK this app downloaded is complete, open the installer on it. */
+    private void listenForApkDownloads() {
+        downloadDone = new BroadcastReceiver() {
+            @Override
+            public void onReceive(Context context, Intent intent) {
+                long id = intent.getLongExtra(DownloadManager.EXTRA_DOWNLOAD_ID, -1);
+                if (id == -1 || id != apkDownload) return;
+                apkDownload = -1;
+                Uri apk = ((DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE)).getUriForDownloadedFile(id);
+                if (apk == null) return;
+                try {
+                    startActivity(new Intent(Intent.ACTION_VIEW)
+                            .setDataAndType(apk, APK_TYPE)
+                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK));
+                } catch (ActivityNotFoundException e) {
+                    Toast.makeText(MainActivity.this, "افتح التحديث من Downloads", Toast.LENGTH_LONG).show();
+                }
+            }
+        };
+        IntentFilter filter = new IntentFilter(DownloadManager.ACTION_DOWNLOAD_COMPLETE);
+        // The download manager is another app: the receiver has to be exported (Android 13+ asks).
+        if (Build.VERSION.SDK_INT >= 33) registerReceiver(downloadDone, filter, Context.RECEIVER_EXPORTED);
+        else registerReceiver(downloadDone, filter);
     }
 
     /** A message page that retries the start URL by itself when `retry` is set. */
@@ -263,6 +303,13 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        if (downloadDone != null) {
+            try {
+                unregisterReceiver(downloadDone);
+            } catch (IllegalArgumentException ignored) {
+                // never registered
+            }
+        }
         if (web != null) web.destroy();
         super.onDestroy();
     }

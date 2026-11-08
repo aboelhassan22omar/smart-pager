@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- Cashier app: a locked-down WebView on the brand's Pocket Pager server.
-     The label, icon and assets/pager.json are filled in per brand by the server (server/src/native/apk.js). -->
+     The label, icon and assets/pager.json are filled in per brand by the server (server/src/native/apk.js).
+     build.sh also emits it as cc.aurexis.pager.owner: the brand owner's app, same code, role "owner". -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="cc.aurexis.pager.cashier">
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Updates: the new APK from the server opens in the system installer, over this app. -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <application
         android:label="@string/app_name"

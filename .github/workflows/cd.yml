@@ -283,11 +283,11 @@ jobs:
           ls -la native
           # shellcheck disable=SC2029
           ssh prod "mkdir -p '$DEPLOY_PATH/native'"
-          for f in cashier-template.apk cashier-template.exe versions.json; do
+          for f in cashier-template.apk owner-template.apk cashier-template.exe versions.json; do
             scp "native/$f" "prod:$DEPLOY_PATH/native/$f.new"
           done
           # shellcheck disable=SC2029
-          ssh prod "cd '$DEPLOY_PATH/native' && for f in cashier-template.apk cashier-template.exe versions.json; do mv -f \"\$f.new\" \"\$f\"; done"
+          ssh prod "cd '$DEPLOY_PATH/native' && for f in cashier-template.apk owner-template.apk cashier-template.exe versions.json; do mv -f \"\$f.new\" \"\$f\"; done"
 
       - name: Update changed services
         env:

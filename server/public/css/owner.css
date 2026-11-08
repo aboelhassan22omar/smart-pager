@@ -132,6 +132,19 @@
   flex: 1 1 0;
 }
 
+/* ---------- the owner's own app ---------- */
+
+.owner-app {
+  display: grid;
+  gap: 12px;
+}
+
+.owner-app-actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 8px;
+}
+
 /* ---------- account ---------- */
 
 .account-card {

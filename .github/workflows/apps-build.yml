@@ -2,7 +2,8 @@ name: Cashier apps
 
 # Builds the cashier app templates (apps/android, apps/windows) and proves them on real platforms.
 # Called by ci.yml on PRs that touch the apps, and by cd.yml to ship new templates.
-# Artifacts: cashier-android (cashier-template.apk), cashier-windows (cashier-template.exe).
+# Artifacts: cashier-android (cashier-template.apk + owner-template.apk), cashier-windows (cashier-template.exe,
+# which is also the owner's Windows app).
 on:
   workflow_call:
 
@@ -37,7 +38,7 @@ jobs:
         run: |
           ANDROID_JAR="$ANDROID_HOME/platforms/$PLATFORM/android.jar" \
           BUILD_TOOLS="$ANDROID_HOME/build-tools/$BUILD_TOOLS" \
-            bash apps/android/build.sh "$RUNNER_TEMP/cashier-template.apk"
+            bash apps/android/build.sh "$RUNNER_TEMP/cashier-template.apk" "$RUNNER_TEMP/owner-template.apk"
       - run: npm ci --omit=dev
         working-directory: server
       - name: Brand apk passes Google's apksigner, aapt2 and zipalign
@@ -51,10 +52,27 @@ jobs:
           grep -q "application-label:'كافيه التجربة'" "$RUNNER_TEMP/badging.txt"
           grep -q "minSdkVersion:'24'" "$RUNNER_TEMP/badging.txt"
           "$BT/zipalign" -c -p 4 "$RUNNER_TEMP/brand.apk"
+          grep -q "package: name='cc.aurexis.pager.cashier'" "$RUNNER_TEMP/badging.txt"
+          grep -q "uses-permission: name='android.permission.REQUEST_INSTALL_PACKAGES'" "$RUNNER_TEMP/badging.txt"
+      # The owner's app: its own package (installs next to the cashier app), its own label.
+      - name: Owner apk passes the same checks
+        run: |
+          set -euo pipefail
+          BT="$ANDROID_HOME/build-tools/$BUILD_TOOLS"
+          node apps/brand-package.mjs android "$RUNNER_TEMP/owner-template.apk" "$RUNNER_TEMP/owner.apk" owner
+          "$BT/apksigner" verify --verbose --min-sdk-version 24 "$RUNNER_TEMP/owner.apk" | tee "$RUNNER_TEMP/owner-verify.txt"
+          grep -q 'Verified using v2 scheme (APK Signature Scheme v2): true' "$RUNNER_TEMP/owner-verify.txt"
+          "$BT/aapt2" dump badging "$RUNNER_TEMP/owner.apk" | tee "$RUNNER_TEMP/owner-badging.txt" | head -12
+          grep -q "package: name='cc.aurexis.pager.owner'" "$RUNNER_TEMP/owner-badging.txt"
+          grep -q "application-label:'إدارة كافيه التجربة'" "$RUNNER_TEMP/owner-badging.txt"
+          grep -q "launchable-activity: name='cc.aurexis.pager.cashier.MainActivity'" "$RUNNER_TEMP/owner-badging.txt"
+          "$BT/zipalign" -c -p 4 "$RUNNER_TEMP/owner.apk"
       - uses: actions/upload-artifact@v7
         with:
           name: cashier-android
-          path: ${{ runner.temp }}/cashier-template.apk
+          path: |
+            ${{ runner.temp }}/cashier-template.apk
+            ${{ runner.temp }}/owner-template.apk
           if-no-files-found: error
 
   android-device:
