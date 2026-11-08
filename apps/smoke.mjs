@@ -77,7 +77,9 @@ try {
       const installed = path.join(process.env.LOCALAPPDATA, 'Programs', 'smoke-cashier', 'smoke-cashier.exe');
       const desktop = spawnSync('powershell.exe', ['-NoProfile', '-Command', "[Environment]::GetFolderPath('Desktop')"], { encoding: 'utf8' }).stdout.trim();
       const shortcut = path.join(desktop, 'تجربة.lnk');
-      const icon = path.join(path.dirname(installed), 'icon.ico');
+      // The icon is named per build (icon-<build>.ico), so Windows never shows a cached old one.
+      const iconName = fs.readdirSync(path.dirname(installed)).find((f) => /^icon-[0-9a-z]+\.ico$/.test(f)) ?? 'icon-<build>.ico';
+      const icon = path.join(path.dirname(installed), iconName);
       for (const [what, file] of [['installed exe', installed], ['desktop shortcut', shortcut], ['brand icon', icon]]) {
         const ok = fs.existsSync(file);
         console.log(`${ok ? 'ok  ' : 'MISSING'} ${what}: ${file}`);
