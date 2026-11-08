@@ -16,6 +16,36 @@ export function planText(plan) {
   return `${label}، فاضل ${plan.daysLeft} يوم`;
 }
 
+const fmtDay = (ts) => new Intl.DateTimeFormat('ar-EG-u-nu-latn', { day: 'numeric', month: 'long' }).format(ts);
+const daysText = (n) => (n === 0 ? 'آخر يوم النهارده' : n === 1 ? 'فاضل يوم واحد' : n === 2 ? 'فاضل يومين' : `فاضل ${n} ${n <= 10 ? 'أيام' : 'يوم'}`);
+export const RENEW_SOON_DAYS = 7;
+
+/**
+ * How long until this branch has to renew: { title, detail, soon } or null when it never
+ * expires (no trial, no paid period). `soon`: 7 days or less, or already late / stopped.
+ */
+export function renewalInfo(plan, lastPayment = null) {
+  const paid = lastPayment ? `آخر دفعة ${lastPayment.amountEgp} جنيه` : '';
+  if (plan.status === 'suspended') {
+    return { title: 'الفرع متوقف', detail: plan.reason === 'manual' ? 'اتوقف من الإدارة' : 'جدّد الاشتراك عشان يرجع يشتغل', soon: true };
+  }
+  if (plan.until == null) return null;
+  const left = plan.daysLeft ?? 0;
+  if (plan.status === 'past_due') {
+    return { title: `الاشتراك خلص: ${left <= 1 ? 'الفرع هيقف بكره' : `الفرع هيقف بعد ${left} أيام`}`, detail: [`جدّد قبل ${fmtDay(plan.until)}`, paid].filter(Boolean).join('، '), soon: true };
+  }
+  if (plan.status === 'trial') {
+    return { title: `التجربة المجانية: ${daysText(left)}`, detail: `بتخلص ${fmtDay(plan.until)}، وبعدها الفرع محتاج اشتراك`, soon: left <= RENEW_SOON_DAYS };
+  }
+  return { title: `التجديد: ${daysText(left)}`, detail: [`الاشتراك لحد ${fmtDay(plan.until)}`, paid].filter(Boolean).join('، '), soon: left <= RENEW_SOON_DAYS };
+}
+
+export function renewalHtml(plan, lastPayment) {
+  const r = renewalInfo(plan, lastPayment);
+  if (!r) return '';
+  return `<p class="renewal" data-soon="${r.soon}"><strong>${esc(r.title)}</strong><span>${esc(r.detail)}</span></p>`;
+}
+
 export function ago(ts, now = Date.now()) {
   if (!ts) return null;
   const m = Math.floor((now - ts) / 60000);

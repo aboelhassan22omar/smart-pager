@@ -336,6 +336,30 @@ select {
   pointer-events: none;
 }
 
+/* How long until a branch renews (owner cards, cashier settings). */
+.renewal {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-control);
+  background: var(--bg);
+  font-size: var(--fs-sm);
+}
+
+.renewal span {
+  color: var(--muted);
+  font-size: var(--fs-xs);
+}
+
+.renewal[data-soon='true'] {
+  border-inline-start: 3px solid var(--danger);
+}
+
+.renewal[data-soon='true'] strong {
+  color: var(--danger);
+}
+
 /* ---------- "a new version of the app" (inside the apps) ---------- */
 
 .app-update {

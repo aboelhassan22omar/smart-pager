@@ -558,6 +558,7 @@ function branchMenu(id) {
   const items = [
     ['payment', 'سجّل دفعة'],
     ['trial', 'مدّ التجربة'],
+    ['restart-trial', 'ألغِ الاشتراك وابدأ تجربة'],
     ['qr', 'افتح شاشة الكود'],
     ['rename', 'غيّر الاسم'],
     ['timezone', 'البلد (التوقيت)'],
@@ -620,6 +621,14 @@ function branchAction(op, b) {
     openForm({
       title: 'مدّ التجربة', fields: [{ name: 'days', label: 'كام يوم زيادة؟', type: 'number', value: '7', dir: 'ltr' }],
       onSubmit: async (v) => { await post(`${path}/trial`, { days: Number(v.days) }); await done('التجربة اتمدّت'); },
+    });
+  } else if (op === 'restart-trial') {
+    openForm({
+      title: `ألغِ اشتراك ${b.name}`,
+      intro: 'الاشتراك المدفوع هيتلغي، والفرع هيبقى تجربة مجانية من النهارده لعدد الأيام ده بس. لو مادفعش قبل ما تخلص، الفرع بيقف ويتنقل للسلة. الدفعات القديمة بتفضل في السجل.',
+      fields: [{ name: 'days', label: 'التجربة كام يوم من النهارده؟', type: 'number', value: '4', dir: 'ltr' }],
+      submit: 'ألغِ الاشتراك وابدأ التجربة', danger: true,
+      onSubmit: async (v) => { await post(`${path}/restart-trial`, { days: Number(v.days) }); await done('الاشتراك اتلغى والتجربة بدأت النهارده'); },
     });
   } else if (op === 'payment') {
     openForm({

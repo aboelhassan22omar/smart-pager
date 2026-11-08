@@ -377,3 +377,27 @@ describe('dashboards on Bootstrap', () => {
     assert.equal(footer.className, 'powered-by is-inline');
   });
 });
+
+describe('renewal wording (owner cards, cashier settings)', async () => {
+  const { renewalInfo } = await import('../public/js/dashboard.js');
+  const until = Date.UTC(2026, 11, 1);
+
+  test('trial and paid periods: days left, soon from 7 days', () => {
+    assert.deepEqual(
+      [renewalInfo({ status: 'trial', until, daysLeft: 4 }).title, renewalInfo({ status: 'trial', until, daysLeft: 4 }).soon],
+      ['التجربة المجانية: فاضل 4 أيام', true],
+    );
+    const paid = renewalInfo({ status: 'active', until, daysLeft: 23 }, { amountEgp: 750 });
+    assert.equal(paid.title, 'التجديد: فاضل 23 يوم');
+    assert.match(paid.detail, /آخر دفعة 750 جنيه/);
+    assert.equal(paid.soon, false);
+    assert.equal(renewalInfo({ status: 'active', until, daysLeft: 1 }).title, 'التجديد: فاضل يوم واحد');
+    assert.equal(renewalInfo({ status: 'active', until, daysLeft: 0 }).title, 'التجديد: آخر يوم النهارده');
+  });
+
+  test('no expiry: nothing to show; late or stopped: always flagged', () => {
+    assert.equal(renewalInfo({ status: 'active', until: null, daysLeft: null }), null);
+    assert.equal(renewalInfo({ status: 'past_due', until, daysLeft: 2 }).soon, true);
+    assert.equal(renewalInfo({ status: 'suspended', reason: 'unpaid', until: null }).title, 'الفرع متوقف');
+  });
+});

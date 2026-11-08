@@ -50,6 +50,11 @@ function deviceCounts({ control, screens }, brandId) {
 }
 
 /** `withPin`: the super's view also carries the current staff PIN (null when not known). */
+function lastPayment(control, branchId) {
+  const p = control.payments(branchId)[0];
+  return p ? { amountEgp: p.amount_egp, periodEnd: p.period_end } : null;
+}
+
 function branchSummary(deps, branch, now, { withPin = false, apps = {} } = {}) {
   const { tenants, screens, config } = deps;
   const ctx = tenants.get(branch.id);
@@ -70,6 +75,7 @@ function branchSummary(deps, branch, now, { withPin = false, apps = {} } = {}) {
     plan: planView(branch, now),
     paidUntil: branch.paid_until ?? null,
     trialEndsAt: branch.trial_ends_at ?? null,
+    lastPayment: lastPayment(deps.control, branch.id),
     features: featureFlags(branch),
     toggles: { review: Boolean(branch.ff_review), loyalty: Boolean(branch.ff_loyalty), promo: Boolean(branch.ff_promo) },
     forcedOff: JSON.parse(branch.forced_off || '[]'),

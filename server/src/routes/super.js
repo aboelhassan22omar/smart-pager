@@ -305,6 +305,17 @@ export default async function superRoutes(app, deps) {
       return { plan: planView(control.getBranch(ctx.branch.id)) };
     });
 
+    // Cancel the paid plan: the branch is on a free trial of `days` from today, then stops
+    // unless paid. Recorded payments stay in its history.
+    s.post('/branches/:branch/restart-trial', async (req) => {
+      const ctx = branchCtx(req);
+      const days = Number(req.body?.days);
+      if (!Number.isInteger(days) || days < 1 || days > 90) throw bad('days', 'عدد الأيام من 1 لـ 90');
+      const branch = control.restartTrial(ctx.branch.id, Date.now() + days * DAY_MS);
+      audit(req, 'branch.trial_restart', { ...req.audit, detail: { days, paidUntilBefore: ctx.branch.paid_until ?? null } });
+      return { plan: planView(branch) };
+    });
+
     s.post('/branches/:branch/payments', async (req) => {
       const ctx = branchCtx(req);
       const body = req.body ?? {};

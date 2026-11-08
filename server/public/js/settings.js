@@ -1,4 +1,5 @@
 import { accentFromImage, applyTheme, brandTheme, MONO_COLOR, readableAccent } from './color.js';
+import { renewalHtml } from './dashboard.js';
 import { icons } from './icons.js';
 import { loadStaffState, toast } from './staff.js';
 import { api, elapsedLabel, esc, shopIdFromPath } from './util.js';
@@ -367,6 +368,15 @@ function bindForms() {
   });
 }
 
+/** How long until this branch renews (or that it is stopped), at the top of the page. */
+function renderPlan(plan) {
+  const html = plan ? renewalHtml(plan) : '';
+  $('plan-group').hidden = !html;
+  $('plan-panel').innerHTML = html
+    ? `${html}<p class="muted small">التجديد بيعمله صاحب البراند مع Aurexis. لو المعاد قرّب، بلّغه.</p>`
+    : '';
+}
+
 async function boot() {
   let state;
   try {
@@ -377,6 +387,7 @@ async function boot() {
   }
   shop = state.shop;
   $('app').hidden = false;
+  renderPlan(state.plan);
   $('back').href = `/bar/${encodeURIComponent(shopId)}`;
   $('back').innerHTML = icons.back(22);
   $('download-static').href = `${base}/qr.svg?kind=static&download=1`;
