@@ -1,10 +1,11 @@
 import { mountAnalytics } from './analytics.js';
+import { watchAppUpdates } from './app-update.js';
 import { applyTheme } from './color.js';
 import { appInviteText, branchCardHtml, devicesHtml } from './dashboard.js';
 import { openForm } from './forms.js';
 import { icons } from './icons.js';
 import { toast } from './staff.js';
-import { api, esc, shopIdFromPath } from './util.js';
+import { api, esc, isCashierApp, isIOS, shopIdFromPath } from './util.js';
 
 const POLL_MS = 30_000;
 const $ = (id) => document.getElementById(id);
@@ -178,6 +179,39 @@ function accountAction(act) {
 
 const copyBtn = (value) => `<button class="link-btn" data-copy="${esc(value)}" type="button">انسخ</button>`;
 
+// ---------- the owner's own app ----------
+
+let ownerApp = null;
+
+function ownerAppHtml() {
+  if (isCashierApp()) {
+    return `<div class="creds"><p class="muted">إنت فاتح تطبيقك دلوقتي. لما تنزل نسخة جديدة هيظهر لك شريط «حدّث» فوق.</p></div>`;
+  }
+  const p = ownerApp?.platforms ?? {};
+  const btn = (id, label) => (p[id]?.available
+    ? `<a class="btn btn-primary" href="${esc(p[id].url)}" download>${icons.download(20)}${label}</a>`
+    : `<button class="btn" type="button" disabled>${label} (لسه بيتجهز)</button>`);
+  const ios = isIOS(navigator)
+    ? '<p class="muted small">على الآيفون مفيش تطبيق: افتح الصفحة دي من Safari، ودوس مشاركة ← «إضافة إلى الشاشة الرئيسية». هتبقى أيقونة زي التطبيق.</p>'
+    : '';
+  return `
+    <div class="creds owner-app">
+      <p>صفحتك دي كتطبيق على موبايلك أو الكمبيوتر، باسم «إدارة ${esc(data.brand.name)}» ولوجو البراند. بتفتح على فروعك على طول.</p>
+      <div class="owner-app-actions">${btn('android', 'نزّل لأندرويد')}${btn('windows', 'نزّل لويندوز')}</div>
+      ${ios}
+      <p class="muted small">ده غير تطبيق الكاشير، والاتنين يتركبوا على نفس الموبايل عادي. لما اللوجو أو الاسم يتغيّر، التطبيق بيقولك «حدّث» ويتحدّث من غير ما تمسحه.</p>
+    </div>`;
+}
+
+async function loadOwnerApp() {
+  try {
+    ownerApp = await api(`${base}/owner-app`);
+  } catch {
+    ownerApp = null;
+  }
+  $('owner-app-body').innerHTML = ownerAppHtml();
+}
+
 function renderApp() {
   if (!appView) {
     $('app-body').innerHTML = '<p class="empty-note">مش قادرين نجيب بيانات التطبيق دلوقتي. جرّب كمان شوية.</p>';
@@ -341,12 +375,13 @@ async function boot() {
     }
   }
   $('app').hidden = false;
+  watchAppUpdates();
   document.body.classList.add('has-tabbar');
   renderTabs();
   showTab(firstTab());
   addEventListener('hashchange', () => showTab(location.hash.slice(1)));
   render();
-  await loadApp();
+  await Promise.all([loadApp(), loadOwnerApp()]);
   mountAnalytics($('analytics'), { base, branches: data.branches });
   $('app-body').addEventListener('click', (e) => {
     const el = e.target.closest('[data-act], [data-copy]');

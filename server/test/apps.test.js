@@ -329,7 +329,8 @@ describe('cashier app flow', () => {
     assert.equal(entry.name, 'cil-cashier.exe');
     const at = entry.data.indexOf(MARKER) + MARKER.length;
     const config = JSON.parse(entry.data.subarray(at, at + 1004).toString('utf8').trim());
-    assert.deepEqual(config, { server: server.url, brand: 'cil', key: appKey, name: 'سيلانترو' });
+    assert.match(config.build, /^[0-9a-f]{12}$/);
+    assert.deepEqual(config, { server: server.url, brand: 'cil', key: appKey, name: 'سيلانترو', role: 'cashier', build: config.build });
   });
 
   test('downloads are counted for the dashboards', async () => {
@@ -552,5 +553,122 @@ describe('cashier app remote support', () => {
     const d3 = (await su.get('/api/super/brands/rsup/app')).data.devices.find((d) => d.name === 'كاشير 3');
     await superPost(`/brands/rsup/devices/${d3.id}/revoke`);
     assert.ok(!(await names()).includes('كاشير 3'));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// The owner's app, and updates of installed apps (new template, new logo)
+// ---------------------------------------------------------------------------
+
+describe('owner app and app updates', () => {
+  let server;
+  let nativeDir;
+  let su;
+  let appKey;
+  const superPost = (p, body) => su.post(`/api/super${p}`, body);
+  const files = (zip) => Object.fromEntries(readZip(zip).map((e) => [e.name, e.data]));
+  const exeConfig = (exe) => {
+    const at = exe.indexOf(MARKER) + MARKER.length;
+    return JSON.parse(exe.subarray(at, at + 1004).toString('utf8').trim());
+  };
+  const cookies = (c) => [...c.jar].map(([k, v]) => `${k}=${v}`).join('; ');
+
+  before(async () => {
+    nativeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-native-'));
+    fs.writeFileSync(path.join(nativeDir, 'cashier-template.apk'), templateApk());
+    fs.writeFileSync(path.join(nativeDir, 'owner-template.apk'), templateApk());
+    fs.writeFileSync(path.join(nativeDir, 'cashier-template.exe'), templateExe());
+    fs.writeFileSync(path.join(nativeDir, 'versions.json'), JSON.stringify({ android: '1.1.0', windows: '1.1.0' }));
+    server = await startServer({ SUPER_PASSWORD_HASH: await hashPin(SUPER_PASSWORD), NATIVE_DIR: nativeDir });
+    su = client(server.url);
+    await su.post('/api/super/login', { password: SUPER_PASSWORD });
+    await superPost('/brands', { id: 'upd', name: 'كافيه التحديث' });
+    await superPost('/brands/upd/branches', { id: 'upd-a', name: 'الفرع', pin: '2580' });
+    await superPost('/brands/upd/owners', { username: 'upd.owner', password: 'upd-owner-pass' });
+  });
+  after(async () => {
+    await server?.stop();
+    fs.rmSync(nativeDir, { recursive: true, force: true });
+  });
+
+  async function ownerClient() {
+    const c = client(server.url);
+    await c.post('/api/brand/login', { username: 'upd.owner', password: 'upd-owner-pass' });
+    return c;
+  }
+
+  test('the owner downloads their own app, no cashier password needed', async () => {
+    const owner = await ownerClient();
+    const view = (await owner.get('/api/brand/upd/owner-app')).data;
+    assert.equal(view.platforms.android.available, true);
+    assert.equal(view.platforms.windows.available, true);
+    assert.equal((await client(server.url).get('/api/brand/upd/owner-app')).status, 401);
+
+    const apk = Buffer.from(await (await fetch(server.url + view.platforms.android.url)).arrayBuffer());
+    const config = JSON.parse(files(apk)['assets/pager.json']);
+    assert.equal(config.role, 'owner');
+    assert.match(config.build, /^[0-9a-f]{12}$/);
+    appKey = config.key;
+    assert.ok(arscStrings(files(apk)['resources.arsc']).includes('إدارة كافيه التحديث'), 'its own launcher name');
+
+    const zip = await fetch(server.url + view.platforms.windows.url);
+    assert.match(zip.headers.get('content-disposition'), /filename="upd-owner\.zip"/);
+    const [entry] = readZip(Buffer.from(await zip.arrayBuffer()));
+    assert.equal(entry.name, 'upd-owner.exe');
+    assert.deepEqual([exeConfig(entry.data).role, exeConfig(entry.data).name], ['owner', 'إدارة كافيه التحديث']);
+
+    const cashierWithOwnerLink = view.platforms.android.url.replace('role=owner', 'role=cashier');
+    assert.equal((await fetch(server.url + cashierWithOwnerLink)).status, 403, 'a link is for one app');
+  });
+
+  test('the owner app opens the owner page; a wrong key does not', async () => {
+    const start = await fetch(`${server.url}/app/upd/start?k=${appKey}&platform=android&role=owner&b=abc123&v=1.1.0`, { redirect: 'manual' });
+    assert.equal(start.status, 302);
+    assert.equal(start.headers.get('location'), '/brand/upd');
+    const set = start.headers.getSetCookie().join(' ');
+    assert.match(set, /sp_app=android/);
+    assert.match(set, /sp_appb=upd%7Cowner%7Cabc123%7C1\.1\.0|sp_appb=upd\|owner\|abc123\|1\.1\.0/);
+    const wrong = await client(server.url).get('/app/upd/start?k=nope&platform=android&role=owner');
+    assert.equal(wrong.status, 200, 'the setup page, not the owner page');
+  });
+
+  test('update check: same build quiet, a new logo offers the update, only when signed in', async () => {
+    const owner = await ownerClient();
+    const current = JSON.parse(files(Buffer.from(await (await fetch(server.url + (await owner.get('/api/brand/upd/owner-app')).data.platforms.android.url)).arrayBuffer()))['assets/pager.json']).build;
+    const start = await fetch(`${server.url}/app/upd/start?k=${appKey}&platform=android&role=owner&b=${current}&v=1.1.0`, { redirect: 'manual' });
+    for (const c of start.headers.getSetCookie()) {
+      const [pair] = c.split(';');
+      owner.jar.set(pair.slice(0, pair.indexOf('=')), pair.slice(pair.indexOf('=') + 1));
+    }
+    assert.deepEqual((await owner.get('/api/app/update')).data, { update: false });
+
+    const upload = (size) => su.request('POST', `/api/super/brands/upd/app-icon?size=${size}`, { body: png(size, [10, 120, 200]), headers: { 'content-type': 'image/png' } });
+    assert.equal((await upload(432)).status, 200);
+    const info = (await owner.get('/api/app/update')).data;
+    assert.equal(info.update, true);
+    assert.equal(info.platform, 'android');
+    assert.equal(info.inApp, true);
+    assert.match(info.url, /^\/app\/upd\/download\/android\?t=.+&role=owner$/);
+    const fresh = JSON.parse(files(Buffer.from(await (await fetch(server.url + info.url)).arrayBuffer()))['assets/pager.json']);
+    assert.notEqual(fresh.build, current, 'the new download carries the new build');
+
+    const signedOut = client(server.url);
+    for (const k of ['sp_app', 'sp_appb']) signedOut.jar.set(k, owner.jar.get(k));
+    assert.deepEqual((await signedOut.get('/api/app/update')).data, { update: false });
+  });
+
+  test('a cashier app from before 1.1.0 (no build) is offered the newer template', async () => {
+    const app = client(server.url);
+    await app.get(`/app/upd/start?k=${appKey}&platform=windows&v=1.0.0`);
+    assert.deepEqual((await app.get('/api/app/update')).data, { update: false }, 'not linked yet');
+    assert.equal((await app.post('/api/app/upd/link', { k: appKey, platform: 'windows', branchId: 'upd-a', pin: '2580' })).status, 200);
+    const info = (await app.get('/api/app/update')).data;
+    assert.equal(info.update, true);
+    assert.equal(info.inApp, false, 'it gets the zip to run by hand');
+    assert.match(info.rawUrl, /&raw=1$/);
+    const raw = await fetch(server.url + info.rawUrl, { headers: { cookie: cookies(app) } });
+    assert.equal(raw.headers.get('content-type'), 'application/octet-stream');
+    const exe = Buffer.from(await raw.arrayBuffer());
+    assert.equal(exeConfig(exe).role, 'cashier', 'the bare exe for the in-app updater');
   });
 });

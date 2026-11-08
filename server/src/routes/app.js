@@ -1,13 +1,15 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pinFingerprint, verifyPin } from '../auth.js';
-import { APP_PLATFORMS, appKeyOf, branchPinFp, readIcon } from '../apps.js';
+import { APP_PLATFORMS, appKeyOf, branchPinFp, readIcon, updateInfo } from '../apps.js';
 import { HttpError } from '../errors.js';
 import { pngToIco } from '../native/exe.js';
 import { PUBLIC_DIR } from '../paths.js';
 import { createRateLimiter } from '../ratelimit.js';
+import { APP_ROLES, appLabel } from '../native/packages.js';
 import {
-  deviceFromRequest, downloadToken, requireJson, setAppCookie, setDeviceSession, setStaffSession, verifyDownloadToken,
+  appFromRequest, deviceFromRequest, downloadToken, requireJson, requireOwner, setAppCookie, setDeviceSession,
+  setStaffSession, verifyAppLinkToken, verifyDownloadToken,
 } from '../sessions.js';
 import { SHOP_ID_RE } from '../store.js';
 import { randomId, safeEqual } from '../util.js';
@@ -16,8 +18,11 @@ import { randomId, safeEqual } from '../util.js';
 //   /app/<brand>                       download page (password set by the super)
 //   /app/<brand>/download/<platform>   the brand's own build, behind a short-lived token
 //   /app/<brand>/start                 where the installed app opens: a linked device goes
-//                                      straight to its bar, a new one picks its branch + PIN
-// The apps themselves only hold { server, brand, key }; see apps/ and src/native/.
+//                                      straight to its bar, a new one picks its branch + PIN;
+//                                      the owner's app (role=owner) goes to the owner page
+//   /api/app/update                    is a newer build of this installed app out? (new
+//                                      template, new logo, renamed brand)
+// The apps themselves only hold { server, brand, key, role, build }; see apps/ and src/native/.
 
 const NAME_MAX = 40;
 
@@ -81,20 +86,24 @@ export default async function appRoutes(app, deps) {
     };
   });
 
+  // ?t=<token>[&role=owner][&raw=1]: the password page's token (cashier app), or a signed-in
+  // link (the owner's app, an update). raw=1: the bare Windows exe, for the in-app updater.
   app.get('/app/:brand/download/:platform', async (req, reply) => {
     const plain = (status, text) => reply.code(status).type('text/plain; charset=utf-8').header('cache-control', 'no-store').send(text);
     const brand = liveBrand(req.params.brand);
     const { platform } = req.params;
-    if (!brand || !APP_PLATFORMS.includes(platform)) return plain(404, 'مش موجود');
-    if (!verifyDownloadToken(config, brand, req.query.t)) {
+    const role = req.query.role ?? 'cashier';
+    if (!brand || !APP_PLATFORMS.includes(platform) || !APP_ROLES.includes(role)) return plain(404, 'مش موجود');
+    const byPassword = role === 'cashier' && verifyDownloadToken(config, brand, req.query.t);
+    if (!byPassword && !verifyAppLinkToken(config, brand.id, role, req.query.t)) {
       return plain(403, 'اللينك ده خلص. ارجع لصفحة التحميل واكتب الباسورد تاني.');
     }
     const appKey = appKeyOf(control, brand.id);
     const png = platform === 'android' && brand.app_icon_at ? readIcon(config, brand, 432).png : null;
-    const pkg = packages.build(platform, { id: brand.id, name: brand.name, appKey }, { png });
+    const pkg = packages.build(platform, { id: brand.id, name: brand.name, appKey, iconAt: brand.app_icon_at }, { png, role, raw: req.query.raw === '1' });
     if (!pkg) return plain(503, 'النسخة دي لسه مش جاهزة. جرّب كمان شوية.');
-    audit(req, 'app.download', { actor: 'download', brandId: brand.id, detail: { platform } });
-    const display = `${brand.name}.${pkg.fileName.split('.').pop()}`;
+    audit(req, 'app.download', { actor: 'download', brandId: brand.id, detail: { platform, role } });
+    const display = `${appLabel(brand.name, role)}.${pkg.fileName.split('.').pop()}`;
     return reply
       .type(pkg.type)
       .header('cache-control', 'no-store')
@@ -125,7 +134,14 @@ export default async function appRoutes(app, deps) {
   app.get('/app/:brand/start', async (req, reply) => {
     const brand = liveBrand(req.params.brand);
     const { platform } = req.query;
-    if (APP_PLATFORMS.includes(platform)) setAppCookie(reply, config, platform);
+    const role = req.query.role === 'owner' ? 'owner' : 'cashier';
+    if (APP_PLATFORMS.includes(platform)) {
+      setAppCookie(reply, config, platform, brand && {
+        brand: brand.id, role, build: cleanText(req.query.b, 20), version: cleanText(req.query.v, 20),
+      });
+    }
+    // The owner's app is the owner page, signed in like any browser (14 days).
+    if (brand && role === 'owner' && keyOk(brand, req.query.k)) return reply.redirect(`/brand/${encodeURIComponent(brand.id)}`);
     const device = brand ? deviceFromRequest(req, deps) : null;
     if (device && device.brand_id === brand.id) {
       const branch = control.getBranch(device.branch_id);
@@ -183,6 +199,23 @@ export default async function appRoutes(app, deps) {
       actor: `device:${device.id}`, brandId: brand.id, branchId: branch.id, detail: { name: device.name, platform: device.platform },
     });
     return { url: `/bar/${encodeURIComponent(branch.id)}` };
+  });
+
+  // Is a newer build of this installed app out? Only for an app that is signed in: a linked
+  // cashier device of the brand, or the owner's app with the owner's session.
+  app.get('/api/app/update', async (req) => {
+    const app = appFromRequest(req);
+    const brand = app && liveBrand(app.brand);
+    if (!brand || !APP_ROLES.includes(app.role)) return { update: false };
+    if (app.role === 'cashier' && deviceFromRequest(req, deps)?.brand_id !== brand.id) return { update: false };
+    if (app.role === 'owner') {
+      try {
+        requireOwner(req, deps, brand.id);
+      } catch {
+        return { update: false };
+      }
+    }
+    return updateInfo(deps, brand, app);
   });
 
   // Error log from a linked app (public/js/app-report.js). Anything else is ignored quietly.

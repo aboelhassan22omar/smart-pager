@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { pinFingerprint } from './auth.js';
 import { PUBLIC_DIR } from './paths.js';
+import { appLinkToken } from './sessions.js';
 import { randomId } from './util.js';
 import { unseal } from './vault.js';
 
@@ -27,6 +28,50 @@ export function readIcon(config, brand, size) {
 }
 
 export const appKeyOf = (control, brandId) => control.ensureAppKey(brandId, randomId(18));
+
+/** -1, 0 or 1 for dotted versions ("1.0.0" < "1.1.0"). */
+export function compareVersions(a, b) {
+  const pa = String(a).split('.').map(Number);
+  const pb = String(b).split('.').map(Number);
+  for (let i = 0; i < Math.max(pa.length, pb.length); i++) {
+    const d = (pa[i] || 0) - (pb[i] || 0);
+    if (d) return Math.sign(d);
+  }
+  return 0;
+}
+
+/** The owner's app needs templates that know about roles (1.1.0 and later). */
+export const OWNER_APP_SINCE = '1.1.0';
+
+/**
+ * Whether an installed app ({ platform, role, build, version }) should update, and where from.
+ * Apps from 1.1.0 send their build and compare exactly; older ones only know their version.
+ */
+export function updateInfo({ config, packages }, brand, app, now = Date.now()) {
+  const none = { update: false };
+  if (!APP_PLATFORMS.includes(app.platform)) return none;
+  const current = packages.buildId(app.platform, { id: brand.id, name: brand.name, iconAt: brand.app_icon_at }, app.role);
+  if (!current) return none;
+  const latest = packages.status(app.role)[app.platform].version;
+  const update = app.build ? app.build !== current : Boolean(latest && app.version && compareVersions(app.version, latest) < 0);
+  if (!update) return none;
+  const t = encodeURIComponent(appLinkToken(config, brand.id, app.role));
+  const url = `/app/${brand.id}/download/${app.platform}?t=${t}&role=${app.role}`;
+  // From 1.1.0 the Windows app swaps its own exe (raw), older ones get the zip to run by hand.
+  return { update: true, platform: app.platform, inApp: Boolean(app.build), url, rawUrl: app.platform === 'windows' ? `${url}&raw=1` : null, at: now };
+}
+
+/** The owner's own app: what can be downloaded now, with signed-in links. */
+export function ownerAppView({ config, packages }, brand) {
+  const status = packages.status('owner');
+  const t = encodeURIComponent(appLinkToken(config, brand.id, 'owner'));
+  return {
+    platforms: Object.fromEntries(APP_PLATFORMS.map((p) => {
+      const ready = status[p].available && Boolean(status[p].version) && compareVersions(status[p].version, OWNER_APP_SINCE) >= 0;
+      return [p, { available: ready, version: status[p].version, url: ready ? `/app/${brand.id}/download/${p}?t=${t}&role=owner` : null }];
+    })),
+  };
+}
 
 export const appUrl = (config, brandId) => `${config.publicUrl}/app/${brandId}`;
 

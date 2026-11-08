@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
-# Builds the cashier app TEMPLATE apk: unsigned, generic label/icon, no assets/pager.json.
-# The server turns it into each brand's apk (label, icon, config) and signs it (server/src/native/apk.js).
+# Builds the app TEMPLATE apks: unsigned, generic label/icon, no assets/pager.json.
+# The server turns them into each brand's apk (label, icon, config) and signs it (server/src/native/apk.js).
+#   out.apk         the cashier app, package cc.aurexis.pager.cashier
+#   owner-out.apk   the brand owner's app: the same app as cc.aurexis.pager.owner, so both
+#                   install side by side on one phone (default: owner-template.apk next to out.apk)
 #
-#   ANDROID_JAR=<sdk>/platforms/android-35/android.jar BUILD_TOOLS=<sdk>/build-tools/35.0.1 ./build.sh [out.apk]
+#   ANDROID_JAR=<sdk>/platforms/android-35/android.jar BUILD_TOOLS=<sdk>/build-tools/35.0.1 ./build.sh [out.apk [owner-out.apk]]
 #
 # No Gradle: aapt2 (resources), javac, R8 (shrink + obfuscate to classes.dex). Needs JDK 17+ and Python 3.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
 OUT="${1:-$HERE/build/cashier-template.apk}"
+OWNER_OUT="${2:-$(dirname "$OUT")/owner-template.apk}"
 : "${ANDROID_JAR:?set ANDROID_JAR to platforms/android-35/android.jar}"
 : "${BUILD_TOOLS:?set BUILD_TOOLS to build-tools/35.x}"
 VERSION_NAME="$(cat "$HERE/VERSION")"
@@ -27,6 +31,12 @@ cd "$HERE"
   --min-sdk-version 24 --target-sdk-version 35 \
   --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
   "$B/res.zip"
+# The owner's app: same resources and code under its own package (classes keep theirs).
+"$BUILD_TOOLS/aapt2" link -o "$B/owner-base.apk" -I "$ANDROID_JAR" --manifest AndroidManifest.xml \
+  --rename-manifest-package cc.aurexis.pager.owner \
+  --min-sdk-version 24 --target-sdk-version 35 \
+  --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" \
+  "$B/res.zip"
 
 # Lambdas compile against the build-tools stubs; R8 desugars them below.
 BOOT="$ANDROID_JAR:$BUILD_TOOLS/core-lambda-stubs.jar"
@@ -40,9 +50,12 @@ java -cp "$BUILD_TOOLS/lib/d8.jar" com.android.tools.r8.R8 --release --min-api 2
   --output "$B/dex" "${CLASSES[@]}"
 
 cp "$B/base.apk" "$OUT"
-"$PY" - "$OUT" "$B/dex/classes.dex" <<'PY'
+cp "$B/owner-base.apk" "$OWNER_OUT"
+for apk in "$OUT" "$OWNER_OUT"; do
+"$PY" - "$apk" "$B/dex/classes.dex" <<'PY'
 import sys, zipfile
 with zipfile.ZipFile(sys.argv[1], 'a', zipfile.ZIP_DEFLATED) as z:
     z.write(sys.argv[2], 'classes.dex')
 PY
-echo "template: $OUT ($VERSION_NAME / $VERSION_CODE)"
+done
+echo "templates: $OUT, $OWNER_OUT ($VERSION_NAME / $VERSION_CODE)"

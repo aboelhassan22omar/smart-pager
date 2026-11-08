@@ -2,7 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { verifyPin } from '../auth.js';
 import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
-import { appView } from '../apps.js';
+import { appView, ownerAppView } from '../apps.js';
 import { cleanEmail, cleanPhone } from '../contact.js';
 import { DEMO_LOCKED, isDemo } from '../demo.js';
 import { HttpError } from '../errors.js';
@@ -189,6 +189,9 @@ export default async function brandRoutes(app, deps) {
     // ---- cashier app: the download link to pass on, and the devices it is installed on ----
 
     b.get('/app', async (req) => appView(deps, control.getBrand(req.params.brand)));
+
+    // The owner's own app (Android, Windows): signed-in download links.
+    b.get('/owner-app', async (req) => ownerAppView(deps, control.getBrand(req.params.brand)));
 
     function ownDevice(req) {
       const device = control.getDevice(req.params.device);

@@ -15,6 +15,8 @@ export const OWNER_COOKIE = 'sp_owner';
 export const DEVICE_COOKIE = 'sp_device';
 // Readable by the page: "this is the cashier app" (no "Powered by", no browser-only hints).
 export const APP_COOKIE = 'sp_app';
+// Which installed app this is: `${brand}|${role}|${build}|${version}` (role: cashier | owner).
+export const APP_BUILD_COOKIE = 'sp_appb';
 export const SUPER_COOKIE = 'sp_super';
 
 const cookieOptions = (config, maxAge) => ({
@@ -63,8 +65,18 @@ export function deviceFromRequest(req, { config, control }) {
   return device;
 }
 
-export function setAppCookie(reply, config, platform) {
-  reply.setCookie(APP_COOKIE, platform, { sameSite: 'strict', secure: config.secureCookies, path: '/', maxAge: DEVICE_MAX_AGE });
+export function setAppCookie(reply, config, platform, app = null) {
+  const opts = { sameSite: 'strict', secure: config.secureCookies, path: '/', maxAge: DEVICE_MAX_AGE };
+  reply.setCookie(APP_COOKIE, platform, opts);
+  if (app) reply.setCookie(APP_BUILD_COOKIE, [app.brand, app.role, app.build ?? '', app.version ?? ''].join('|'), { ...opts, httpOnly: true });
+}
+
+/** { platform, brand, role, build, version } of the app this request comes from, or null. */
+export function appFromRequest(req) {
+  const platform = req.cookies[APP_COOKIE];
+  const [brand, role, build, version] = String(req.cookies[APP_BUILD_COOKIE] ?? '').split('|');
+  if (!platform || !brand) return null;
+  return { platform, brand, role: role || 'cashier', build: build || null, version: version || null };
 }
 
 // ---- app downloads: a short-lived token in the link, so any download manager can fetch it ----
@@ -81,6 +93,19 @@ export function downloadToken(config, brand) {
 export function verifyDownloadToken(config, brand, token) {
   const s = verifyValue(config.cookieSecret, downloadKey(brand.id), token);
   return Boolean(s) && Date.now() < Number(s.exp) && Boolean(brand.app_password_hash) && s.fp === pinFingerprint(brand.app_password_hash);
+}
+
+// The same kind of link for someone already signed in: the owner downloading their own app, or an
+// installed app fetching its update. Bound to the brand and the app (role), not to the password.
+const appLinkKey = (brandId, role) => `app-link:${brandId}:${role}`;
+
+export function appLinkToken(config, brandId, role) {
+  return signValue(config.cookieSecret, appLinkKey(brandId, role), { exp: Date.now() + DOWNLOAD_TOKEN_MS });
+}
+
+export function verifyAppLinkToken(config, brandId, role, token) {
+  const s = verifyValue(config.cookieSecret, appLinkKey(brandId, role), token);
+  return Boolean(s) && Date.now() < Number(s.exp);
 }
 
 // ---- brand owner ----

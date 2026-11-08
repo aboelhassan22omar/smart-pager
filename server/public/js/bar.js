@@ -1,4 +1,5 @@
 import { Chime } from './chime.js';
+import { watchAppUpdates } from './app-update.js';
 import { accentFromImage, applyTheme } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, staffEvents, toast } from './staff.js';
@@ -409,6 +410,7 @@ async function boot() {
     return;
   }
   $('app').hidden = false;
+  watchAppUpdates();
   $('link-qr').href = `/qr/${encodeURIComponent(shopId)}`;
   $('link-qr').innerHTML = icons.qr(22);
   $('link-settings').href = `/settings/${encodeURIComponent(shopId)}`;

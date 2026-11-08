@@ -2,11 +2,15 @@
 //
 // The binary holds no business logic. Its only per-brand data is a JSON config the server
 // writes into the CONFIG region below when it builds the brand's download
-// (server/src/native/exe.js): {"server": "...", "brand": "...", "key": "...", "name": "..."}.
+// (server/src/native/exe.js):
+//   {"server": "...", "brand": "...", "key": "...", "name": "...", "role": "cashier|owner", "build": "..."}
+// role "owner" is the brand owner's app: it opens the owner page, and lets the screen sleep.
 //
 // First run from anywhere (Downloads, inside the zip): the app copies itself to
-// %LOCALAPPDATA%\Programs\<brand>-cashier\, adds Desktop and Start menu shortcuts with the
-// brand name and icon, and restarts from there.
+// %LOCALAPPDATA%\Programs\<brand>-<role>\, adds Desktop and Start menu shortcuts with the
+// brand name and icon, and restarts from there. A new build (logo, name, template) refreshes
+// the icon and shortcuts on its first start. The page can ask for an update ("update:<url>"):
+// the app downloads the new exe, swaps it in and reopens.
 
 #![windows_subsystem = "windows"]
 
@@ -56,6 +60,24 @@ struct Config {
     brand: String,
     key: String,
     name: String,
+    role: String,
+    build: String,
+}
+
+impl Config {
+    fn owner(&self) -> bool {
+        self.role == "owner"
+    }
+
+    /// "<brand>-cashier" or "<brand>-owner": install folder, exe and single-instance names.
+    fn slug(&self) -> String {
+        format!("{}-{}", self.brand, self.role)
+    }
+
+    /// The icon file of this build: a new name per build, so Windows can't show a cached old one.
+    fn icon_name(&self) -> String {
+        format!("icon-{}.ico", if self.build.is_empty() { "0" } else { &self.build })
+    }
 }
 
 fn read_config() -> Option<Config> {
@@ -64,7 +86,16 @@ fn read_config() -> Option<Config> {
     let json = std::str::from_utf8(bytes.get(MARKER.len()..)?).ok()?.trim_matches(|c| c == ' ' || c == '\0');
     let v: serde_json::Value = serde_json::from_str(json).ok()?;
     let field = |k: &str| v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string();
-    let config = Config { server: field("server").trim_end_matches('/').to_string(), brand: field("brand"), key: field("key"), name: field("name") };
+    let role = if field("role") == "owner" { "owner".to_string() } else { "cashier".to_string() };
+    let build: String = field("build").chars().filter(|c| c.is_ascii_alphanumeric()).collect();
+    let config = Config {
+        server: field("server").trim_end_matches('/').to_string(),
+        brand: field("brand"),
+        key: field("key"),
+        name: field("name"),
+        role,
+        build,
+    };
     let local = config.server.starts_with("http://127.0.0.1:") || config.server.starts_with("http://localhost:");
     let id_ok = !config.brand.is_empty() && config.brand.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     ((config.server.starts_with("https://") || local) && id_ok).then_some(config)
@@ -97,7 +128,11 @@ fn encode(s: &str) -> String {
 }
 
 fn install_dir(config: &Config) -> Option<PathBuf> {
-    Some(PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("Programs").join(format!("{}-cashier", config.brand)))
+    Some(PathBuf::from(std::env::var_os("LOCALAPPDATA")?).join("Programs").join(config.slug()))
+}
+
+fn installed_exe(config: &Config, dir: &Path) -> PathBuf {
+    dir.join(format!("{}.exe", config.slug()))
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {
@@ -111,17 +146,24 @@ fn same_file(a: &Path, b: &Path) -> bool {
 /// Returns false (keep running from here) when anything goes wrong.
 fn install_and_relaunch(config: &Config, dir: &Path) -> bool {
     let Ok(current) = std::env::current_exe() else { return false };
-    let target = dir.join(format!("{}-cashier.exe", config.brand));
+    let target = installed_exe(config, dir);
     if same_file(&current, &target) {
         return false;
     }
     if std::fs::create_dir_all(dir).is_err() || std::fs::copy(&current, &target).is_err() {
         return false;
     }
+    make_shortcuts(config, dir, &target);
+    Command::new(&target).current_dir(dir).spawn().is_ok()
+}
+
+/// Downloads this build's icon and (re)makes the Desktop and Start menu shortcuts with it.
+fn make_shortcuts(config: &Config, dir: &Path, target: &Path) {
     // Values travel as environment variables, never spliced into the script.
     let script = r#"
 $ErrorActionPreference = 'SilentlyContinue'
-$ico = Join-Path $env:PAGER_DIR 'icon.ico'
+Get-ChildItem -LiteralPath $env:PAGER_DIR -Filter 'icon*.ico' | Where-Object { $_.Name -ne $env:PAGER_ICO } | Remove-Item -Force
+$ico = Join-Path $env:PAGER_DIR $env:PAGER_ICO
 try { Invoke-WebRequest -UseBasicParsing -Uri $env:PAGER_ICON -OutFile $ico } catch {}
 if (-not (Test-Path $ico)) { $ico = $env:PAGER_EXE }
 $shell = New-Object -ComObject WScript.Shell
@@ -141,12 +183,39 @@ foreach ($folder in @([Environment]::GetFolderPath('Desktop'), [Environment]::Ge
     let _ = Command::new("powershell.exe")
         .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
         .env("PAGER_DIR", dir)
-        .env("PAGER_EXE", &target)
+        .env("PAGER_EXE", target)
         .env("PAGER_NAME", if name.trim().is_empty() { "Cashier".to_string() } else { name })
-        .env("PAGER_ICON", format!("{}/app/{}/icon.ico", config.server, config.brand))
+        .env("PAGER_ICON", format!("{}/app/{}/icon.ico?v={}", config.server, config.brand, config.build))
+        .env("PAGER_ICO", config.icon_name())
         .creation_flags(CREATE_NO_WINDOW)
         .status();
-    Command::new(&target).current_dir(dir).spawn().is_ok()
+}
+
+/// The update the page asked for: fetch the new exe next to this one, close this app, swap the
+/// files (a running exe can be renamed, not overwritten) and open the new one. Nothing changes
+/// when the download fails.
+fn start_update(config: &Config, dir: &Path, url: &str) {
+    let script = r#"
+$ErrorActionPreference = 'Stop'
+$new = Join-Path $env:PAGER_DIR 'update.exe'
+try { Invoke-WebRequest -UseBasicParsing -Uri $env:PAGER_URL -OutFile $new } catch { exit 1 }
+if ((Get-Item -LiteralPath $new).Length -lt 100000) { Remove-Item -LiteralPath $new -Force; exit 1 }
+Stop-Process -Id ([int]$env:PAGER_PID) -Force -ErrorAction SilentlyContinue
+Start-Sleep -Milliseconds 800
+$old = $env:PAGER_EXE + '.old'
+Remove-Item -LiteralPath $old -Force -ErrorAction SilentlyContinue
+Move-Item -LiteralPath $env:PAGER_EXE -Destination $old -Force
+Move-Item -LiteralPath $new -Destination $env:PAGER_EXE -Force
+Start-Process -FilePath $env:PAGER_EXE -WorkingDirectory $env:PAGER_DIR
+"#;
+    let _ = Command::new("powershell.exe")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", script])
+        .env("PAGER_DIR", dir)
+        .env("PAGER_EXE", installed_exe(config, dir))
+        .env("PAGER_URL", url)
+        .env("PAGER_PID", std::process::id().to_string())
+        .creation_flags(CREATE_NO_WINDOW)
+        .spawn();
 }
 
 fn set_window_icon(hwnd: isize, ico: &Path) {
@@ -208,8 +277,8 @@ fn main() {
     };
     let title = if config.name.trim().is_empty() { "Cashier".to_string() } else { config.name.clone() };
 
-    // One window per brand: a second launch brings the open one to the front.
-    let mutex_name = wide(&format!("Local\\pager-cashier-{}", config.brand));
+    // One window per brand and app: a second launch brings the open one to the front.
+    let mutex_name = wide(&format!("Local\\pager-{}-{}", config.role, config.brand));
     let mutex: HANDLE = unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
     if unsafe { GetLastError() } == ERROR_ALREADY_EXISTS {
         let hwnd = unsafe { FindWindowW(std::ptr::null(), wide(&title).as_ptr()) };
@@ -232,16 +301,28 @@ fn main() {
         unsafe { CreateMutexW(std::ptr::null(), 0, mutex_name.as_ptr()) };
     }
     let data_dir = dir.clone().unwrap_or_else(std::env::temp_dir).join("data");
+    if let Some(dir) = &dir {
+        // First start of a new build (after an update): its icon and shortcuts.
+        let exe = installed_exe(&config, dir);
+        let _ = std::fs::remove_file(exe.with_extension("exe.old"));
+        if !dir.join(config.icon_name()).exists() {
+            make_shortcuts(&config, dir, &exe);
+        }
+    }
 
-    // A cashier screen stays on.
-    unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED) };
+    // A cashier screen stays on; the owner's app sleeps like any app.
+    if !config.owner() {
+        unsafe { SetThreadExecutionState(ES_CONTINUOUS | ES_DISPLAY_REQUIRED | ES_SYSTEM_REQUIRED) };
+    }
 
     let model = std::env::var("COMPUTERNAME").unwrap_or_default();
     let start = format!(
-        "{}/app/{}/start?k={}&platform=windows&v={}&model={}",
+        "{}/app/{}/start?k={}&platform=windows&role={}&b={}&v={}&model={}",
         config.server,
         config.brand,
         encode(&config.key),
+        config.role,
+        encode(&config.build),
         VERSION,
         encode(&model)
     );
@@ -259,11 +340,15 @@ fn main() {
         Err(_) => return,
     };
     if let Some(dir) = &dir {
-        set_window_icon(window.hwnd(), &dir.join("icon.ico"));
+        set_window_icon(window.hwnd(), &dir.join(config.icon_name()));
     }
 
     let server = config.server.clone();
     let own = move |url: &str| url == server || url.starts_with(&format!("{server}/"));
+    // "update:<url>" from the page (public/js/app-update.js): only the brand's own download link.
+    let update_prefix = format!("{}/app/{}/download/windows?", config.server, config.brand);
+    let update_dir = dir.clone();
+    let update_config = Config { name: String::new(), ..config };
     let mut context = WebContext::new(Some(data_dir));
     let webview = WebViewBuilder::new_with_web_context(&mut context)
         .with_html(boot_page(&start, &health, &title))
@@ -282,6 +367,14 @@ fn main() {
         .with_new_window_req_handler(move |url, _features| {
             open_outside(&url);
             NewWindowResponse::Deny
+        })
+        .with_ipc_handler(move |req| {
+            let Some(url) = req.body().strip_prefix("update:") else { return };
+            if let Some(dir) = &update_dir {
+                if url.starts_with(&update_prefix) {
+                    start_update(&update_config, dir, url);
+                }
+            }
         })
         .build(&window);
     let webview = match webview {
