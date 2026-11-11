@@ -564,6 +564,7 @@ function branchMenu(id) {
     ['rename', 'غيّر الاسم'],
     ['timezone', 'البلد (التوقيت)'],
     ['features', 'الخصائص'],
+    ['printer', 'كود الطلب على الفاتورة (الطابعة)'],
     [manualStop ? 'resume' : 'suspend', manualStop ? 'شغّل الفرع تاني' : 'وقّف الفرع'],
     ['trash', 'انقل لسلة المهملات'],
   ];
@@ -664,6 +665,8 @@ function branchAction(op, b) {
         await done('الخصائص اتحفظت');
       },
     });
+  } else if (op === 'printer') {
+    printerForm(b, path).catch((err) => toast(err.message, 'error'));
   } else if (op === 'suspend') {
     openForm({
       title: `وقّف ${b.name}؟`, intro: 'العملاء مش هيقدروا ياخدوا أرقام جديدة، والطلبات المفتوحة هتكمل عادي.',
@@ -673,6 +676,50 @@ function branchAction(op, b) {
   } else if (op === 'resume') {
     post(`${path}/resume`).then(() => done('الفرع اشتغل تاني')).catch((err) => toast(err.message, 'error'));
   }
+}
+
+// ---------- the receipt printer agent ----------
+
+function lastReceipt(last) {
+  if (!last) return 'لسه مفيش فاتورة عدّت على البرنامج.';
+  const when = new Date(last.at).toLocaleString('ar-EG');
+  const what = last.cancelled ? `ورقة إلغاء${last.number ? `، والطلب ${last.number} اتلغى` : ''}`
+    : last.skipped ? 'اتسابت من غير كود (تقرير)'
+    : last.stopped ? 'اتسابت من غير كود (الفرع متوقف)'
+      : last.receipt ? `رقم الفاتورة اتقرا: ${last.receipt}` : `رقم الفاتورة ما اتقراش، فاتطبع رقم ${last.number}`;
+  return `آخر فاتورة (${when}): ${what}.`;
+}
+
+// Settings per branch; the install command is what runs (once, as admin) on its cashier PC.
+async function printerForm(b, path) {
+  const view = await api(`/api/super${path}/printer`);
+  openForm({
+    title: `كود الطلب على فاتورة ${b.name}`,
+    intro: `برنامج صغير على جهاز الكاشير بيزوّد كود الطلب في آخر كل فاتورة بتتطبع، من غير ما نلمس سيستم المطعم. لو النت وقع، الفاتورة بتتطبع عادي من غير الكود. ${lastReceipt(view.last)}`,
+    fields: [
+      { name: 'enabled', type: 'toggle', label: 'شغّال للفرع ده', value: view.enabled },
+      {
+        name: 'pattern', label: 'إزاي نقرا رقم الفاتورة (اختياري)', dir: 'ltr', value: view.pattern, placeholder: String.raw`Order\s*#?\s*(\d+)`,
+        hint: 'سيبها فاضية: بنقرا «Order / Invoice / Bill No» و«رقم الفاتورة / رقم الطلب». الرقم اللي بين القوسين هو رقم الطلب. لو ما اتقراش، بيتطبع رقم من العدّ فوق الكود.',
+      },
+      { name: 'skip', label: 'ورق ما ياخدش كود لو فيه (اختياري)', dir: 'ltr', value: view.skip, hint: 'سيبها فاضية: التقارير (Z / X report، تقرير، وردية، تقفيل) بتطلع من غير كود.' },
+      { name: 'cancel', label: 'ورقة إلغاء الفاتورة فيها (اختياري)', dir: 'ltr', value: view.cancel, hint: 'سيبها فاضية: VOID / Cancelled / فاتورة مرتجع / ملغي. ورقة الإلغاء بتلغي طلب الفاتورة دي عندنا، والعميل بيشوف إنه اتلغى.' },
+      { name: 'printer', label: 'اسم طابعة الفواتير على الجهاز (اختياري)', dir: 'ltr', value: view.printer, hint: 'سيبه فاضي: البرنامج بيدوّر عليها لوحده، ولو فيه أكتر من طابعة بيسأل.' },
+      ...(view.commands ? [
+        { name: 'install', type: 'textarea', label: 'أمر التركيب: يتشغّل مرة واحدة على جهاز الكاشير', dir: 'ltr', value: view.commands.install, hint: 'افتح PowerShell والزق الأمر ودوس Enter. هيطلب صلاحية الأدمن. تشغيله تاني بيحدّث البرنامج.' },
+        { name: 'remove', type: 'textarea', label: 'أمر الإزالة: الطابعة بترجع زي ما كانت', dir: 'ltr', value: view.commands.remove },
+      ] : []),
+    ],
+    onSubmit: async (v) => {
+      const saved = await post(`${path}/printer`, { enabled: v.enabled === 'on', pattern: v.pattern ?? '', skip: v.skip ?? '', cancel: v.cancel ?? '', printer: v.printer ?? '' });
+      if (saved.enabled && saved.commands) {
+        await navigator.clipboard?.writeText(saved.commands.install).catch(() => {});
+        await done('اتحفظ، وأمر التركيب اتنسخ. شغّله على جهاز الكاشير');
+      } else {
+        await done(saved.enabled ? 'اتحفظ' : 'اتقفل للفرع ده. لو البرنامج متركّب، شغّل أمر الإزالة على الجهاز');
+      }
+    },
+  });
 }
 
 // ---------- cashier app ----------
