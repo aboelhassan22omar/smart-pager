@@ -1,7 +1,7 @@
 // Shared bits for the PIN-protected staff pages (bar, qr, settings).
 
 import { connectionWatch } from './app-report.js';
-import { api, esc, isCashierApp } from './util.js';
+import { api, esc, isCashierApp, noteBuild } from './util.js';
 
 export function toast(message, tone = 'info') {
   let el = document.getElementById('toast');
@@ -108,6 +108,14 @@ export function staffEvents(shopId, handlers, onStatus, { screen = 'bar' } = {})
     es = new EventSource(`/api/bar/${encodeURIComponent(shopId)}/events?screen=${screen}`);
     es.addEventListener('open', () => status(true));
     es.addEventListener('reload', () => location.reload());
+    // After a deploy the stream reconnects to the new server: its build says so right away.
+    es.addEventListener('hello', (e) => {
+      try {
+        noteBuild(JSON.parse(e.data).build);
+      } catch {
+        /* an older server */
+      }
+    });
     es.addEventListener('error', () => {
       status(false);
       if (es.readyState === EventSource.CLOSED) {

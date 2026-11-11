@@ -3,7 +3,7 @@ import { watchAppUpdates } from './app-update.js';
 import { accentFromImage, applyTheme } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, staffEvents, toast } from './staff.js';
-import { api, elapsedLabel, esc, shopIdFromPath } from './util.js';
+import { api, elapsedLabel, esc, holdReloadWhile, reloadOnNewVersion, shopIdFromPath } from './util.js';
 
 const LONG_PRESS_MS = 500;
 const MOVE_CANCEL_PX = 10;
@@ -478,6 +478,7 @@ function applyState(state) {
 }
 
 async function boot() {
+  reloadOnNewVersion();
   let state;
   try {
     state = await loadStaffState(shopId, $('login-root'));
@@ -513,6 +514,8 @@ async function boot() {
     shopId,
     {
       counter: liveCounter,
+      // The super changed this branch (plan, trial, payment, name...): the state, now.
+      state: refreshState,
       order: ({ action, order, counter }) => {
         liveCounter(counter);
         if (action === 'created') {
@@ -540,6 +543,8 @@ async function boot() {
   );
   saveQueue();
   flushQueue();
+  // A new version waits for taps made offline to be sent first.
+  holdReloadWhile(() => queue.length > 0);
 
   // Late tiles must turn red on time, so the grid re-renders every 15s.
   setInterval(() => {

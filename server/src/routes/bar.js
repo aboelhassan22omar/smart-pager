@@ -13,6 +13,7 @@ import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { newStaticKey, QR_MODES } from '../store.js';
 import { appleStatus, barShop, orderUrl, publicOrder, qrInfo } from '../views.js';
+import { buildId } from '../build.js';
 
 const STATUS_TARGETS = ['preparing', 'ready', 'picked', 'cancelled'];
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
@@ -137,16 +138,17 @@ export default async function barRoutes(app, deps) {
 
     bar.get('/events', async (req, reply) => {
       const sse = openSse(req, reply);
-      sse.send('hello', { serverNow: Date.now() });
+      sse.send('hello', { serverNow: Date.now(), build: buildId() });
       const branchId = req.ctx.branch.id;
       const channel = channels(branchId).bar;
       // A linked cashier app: "online now" on the dashboards while this stream is open.
       const device = deviceFromRequest(req, deps);
       const appDevice = device?.branch_id === branchId ? device.id : null;
-      // "reload" is addressed to one device (the super's "refresh screen"); everything else to all.
+      // "reload" with a device is for that device (the super's "refresh screen"); without one
+      // (the super reset the brand's data) for every screen of the branch.
       const listener = (event, data) => {
         if (event === 'reload') {
-          if (appDevice && data.deviceId === appDevice) sse.send('reload', {});
+          if (!data.deviceId || (appDevice && data.deviceId === appDevice)) sse.send('reload', {});
         } else {
           sse.send(event, data);
         }

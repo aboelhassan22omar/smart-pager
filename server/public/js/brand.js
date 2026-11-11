@@ -6,7 +6,7 @@ import { openForm } from './forms.js';
 import { icons } from './icons.js';
 import { TEXT_DEFAULTS, TEXT_GROUPS, TEXT_MAX } from './texts.js';
 import { toast } from './staff.js';
-import { api, esc, isCashierApp, isIOS, shopIdFromPath } from './util.js';
+import { api, esc, isCashierApp, isIOS, reloadOnNewVersion, shopIdFromPath } from './util.js';
 
 const POLL_MS = 30_000;
 const $ = (id) => document.getElementById(id);
@@ -444,6 +444,7 @@ async function refresh() {
 }
 
 async function boot() {
+  reloadOnNewVersion();
   for (;;) {
     try {
       data = await api(`${base}/overview`);

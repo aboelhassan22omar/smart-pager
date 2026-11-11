@@ -1,7 +1,7 @@
 import { applyTheme } from './color.js';
 import { icons } from './icons.js';
 import { loadStaffState, staffEvents } from './staff.js';
-import { esc, shopIdFromPath } from './util.js';
+import { esc, reloadOnNewVersion, shopIdFromPath } from './util.js';
 import { keepAwake } from './wakelock.js';
 
 const $ = (id) => document.getElementById(id);
@@ -150,6 +150,7 @@ function tick() {
 }
 
 async function boot() {
+  reloadOnNewVersion();
   let state;
   try {
     state = await loadStaffState(shopId, $('login-root'));
@@ -196,6 +197,7 @@ async function boot() {
         if (orderMode && order && ['cancelled', 'expired'].includes(order.status)) dropShown(order.id);
       },
       shop: reload,
+      state: reload,
     },
     (online) => {
       if (online) reload();
