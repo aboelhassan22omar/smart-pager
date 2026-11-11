@@ -9,6 +9,7 @@ import { backupStatus, runBackup } from '../backup.js';
 import { HttpError } from '../errors.js';
 import { DAY_MS, effectivePlan, FEATURES, planView } from '../plans.js';
 import { branchUrls, provisionBrand, provisionBranch } from '../provision.js';
+import { cleanPrinterConfig, printerCommands, printerConfig } from '../printer.js';
 import { createRateLimiter } from '../ratelimit.js';
 import {
   requireJson, requireSuper, setStaffSession, setSuperSession, SUPER_COOKIE, superEnabled,
@@ -333,6 +334,30 @@ export default async function superRoutes(app, deps) {
       ctx.store.setDay({ tz: tz || null });
       audit(req, 'branch.timezone', { ...req.audit, detail: { tz: tz || null } });
       return { ok: true };
+    });
+
+    // The receipt printer agent: its settings, the commands to install / remove it on the
+    // branch's PC, and the last receipt it saw (to fit the number pattern to that POS).
+    function printerView(ctx) {
+      const shop = ctx.store.getShop();
+      const settings = printerConfig(shop);
+      return {
+        enabled: Boolean(settings),
+        pattern: settings?.pattern ?? '', skip: settings?.skip ?? '', cancel: settings?.cancel ?? '', printer: settings?.printer ?? '',
+        commands: shop.pos_token ? printerCommands({ server: config.publicUrl, branch: shop.id, token: shop.pos_token }) : null,
+        last: shop.print_last ? JSON.parse(shop.print_last) : null,
+      };
+    }
+
+    s.get('/branches/:branch/printer', async (req) => printerView(branchCtx(req)));
+
+    s.post('/branches/:branch/printer', async (req) => {
+      const ctx = branchCtx(req);
+      const settings = cleanPrinterConfig(req.body ?? {});
+      const shop = ctx.store.getShop();
+      ctx.store.updateShop({ print_agent: settings ? JSON.stringify(settings) : null, ...(shop.pos_token ? {} : { pos_token: randomId(24) }) });
+      audit(req, 'branch.printer', { ...req.audit, detail: { enabled: Boolean(settings) } });
+      return printerView(ctx);
     });
 
     s.post('/branches/:branch/trial', async (req) => {
