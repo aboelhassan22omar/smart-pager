@@ -169,6 +169,17 @@ export const BRANCH_MIGRATIONS = [
   ALTER TABLE pos_numbers ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE orders ADD COLUMN receipt TEXT;
   `,
+  // 12: «رسالة للإدارة»: a box at the bottom of the order page, on/off per branch. One message
+  //     per order, read by the brand owner (analytics).
+  `
+  ALTER TABLE branch_settings ADD COLUMN message_box INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE messages (
+    order_id TEXT PRIMARY KEY,
+    text TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  );
+  CREATE INDEX messages_created_at ON messages (created_at);
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

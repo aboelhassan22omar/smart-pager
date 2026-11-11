@@ -220,6 +220,19 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       return reply.code(201).send({ ok: true });
     });
 
+    // «رسالة للإدارة»: one message per order, while it is open or up to 48 h after pickup.
+    b.post('/orders/:id/note', async (req, reply) => {
+      const { order, shop } = loadOrder(req, req.params.id);
+      if (!shop.message_box) throw new HttpError(404, 'الرسايل مش متاحة في الفرع ده');
+      const late = order.closed_at && Date.now() - order.closed_at > FEEDBACK_WINDOW_MS;
+      if (['cancelled', 'expired'].includes(order.status) || late) throw new HttpError(409, 'الرسايل مش متاحة للطلب ده');
+      const text = typeof req.body?.text === 'string' ? req.body.text.trim() : '';
+      if (!text) throw new HttpError(400, 'اكتب رسالتك الأول', { field: 'text' });
+      if (text.length > 500) throw new HttpError(400, 'الرسالة لحد 500 حرف', { field: 'text' });
+      if (!req.ctx.store.addMessage(order.id, text)) throw new HttpError(409, 'رسالتك وصلت قبل كده، شكراً');
+      return reply.code(201).send({ ok: true });
+    });
+
     b.post('/subscribe', async (req) => {
       const { orderId, kind, payload } = req.body ?? {};
       const { order, shop } = loadOrder(req, orderId);

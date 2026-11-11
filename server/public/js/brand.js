@@ -358,10 +358,15 @@ function featureFields(b) {
   const reviewHint = `خاص بفرع ${b.name} بس، ومن هنا بس بيتحط. من Google Business Profile بتاع الفرع ← اطلب تقييمات ← انسخ اللينك`;
   return [
     { type: 'heading', label: 'التقييم' },
-    featureToggle(b, 'review', 'التقييم بعد الاستلام', 'نجوم لينا وزرار تقييم جوجل، لكل العملاء'),
+    featureToggle(b, 'review', 'تقييم جوجل بعد الاستلام', 'زرار بيفتح للعميل خانة النجوم بتاعة جوجل على طول، لكل العملاء'),
     {
       name: 'googlePlaceId', label: 'لينك تقييم جوجل للفرع ده', dir: 'ltr', value: b.legacyReviewUrl ?? b.googlePlaceId ?? '',
       placeholder: 'https://g.page/r/…/review', hint: reviewHint,
+    },
+    { type: 'heading', label: 'رسالة للإدارة' },
+    {
+      name: 'messageBox', type: 'toggle', label: 'خانة «رسالة للإدارة» تحت صفحة الطلب',
+      hint: 'العميل يقدر يكتب شكوى أو اقتراح، والرسايل بتوصلك في التحليلات. رسالة واحدة لكل طلب', value: b.messageBox,
     },
     { type: 'heading', label: 'بطاقة الختم' },
     featureToggle(b, 'loyalty', 'ختم مع كل طلب', 'العميل بياخد ختم لما يستلم، وهدية كل كام طلب'),
@@ -410,6 +415,7 @@ function featureBody(b, v) {
     orderQr: v.orderQr === 'on',
     orderShare: v.orderShare === 'on',
     manualNumbers: v.manualNumbers === 'on',
+    messageBox: v.messageBox === 'on',
   };
 }
 
