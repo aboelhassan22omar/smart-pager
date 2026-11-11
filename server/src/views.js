@@ -70,6 +70,8 @@ export const publicOrder = (order, shop) => ({
   number: order.number,
   // What the customer's receipt says, when a POS terminal prefixes it ("2-1008").
   ref: order.ref ?? null,
+  // Takeaway numbers typed by the cashier: the receipt this order's number was given for.
+  receipt: order.receipt ?? null,
   status: order.status,
   message: statusMessage(order, shop),
   createdAt: order.created_at,
@@ -92,6 +94,7 @@ export const barShop = (shop) => ({
   posOnly: Boolean(shop.pos_only),
   orderQr: Boolean(shop.order_qr),
   orderShare: shop.order_share == null ? true : Boolean(shop.order_share),
+  manualNumbers: Boolean(shop.manual_numbers),
   dayStartHour: shop.day_start_hour ?? 0,
   timezone: shop.tz ?? null,
 });

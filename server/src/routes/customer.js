@@ -15,7 +15,7 @@ const B64URL_RE = /^[A-Za-z0-9_-]+={0,2}$/;
 const HEX_TOKEN_RE = /^[0-9a-f]{64,512}$/;
 const CLIENT_ID_RE = /^[A-Za-z0-9_-]{16,64}$/;
 // A receipt number: "41", or "2-1008" from a POS with several terminals.
-const PICK_RE = /^\d{1,4}(-\d{1,4})?$/;
+const PICK_RE = /^\d{1,6}(-\d{1,6})?$/;
 
 function decodedLength(value) {
   return typeof value === 'string' && value.length <= 256 && B64URL_RE.test(value)

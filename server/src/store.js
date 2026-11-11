@@ -16,6 +16,7 @@ const SETTING_COLUMNS = new Set([
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
   'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
   'pos_token', 'pos_last_event', 'theme_version', 'pos_only', 'order_qr', 'order_share',
+  'manual_numbers',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
@@ -49,9 +50,9 @@ export class BranchStore {
       insertSettings: p(`INSERT INTO branch_settings (id, pin_hash, pin_sealed, qr_mode, qr_nonce, qr_rotated_at, static_key, created_at)
                          VALUES (1, ?, ?, ?, ?, ?, ?, ?)`),
       rotate: p('UPDATE branch_settings SET qr_prev_nonce = qr_nonce, qr_nonce = ?, qr_rotated_at = ? WHERE id = 1'),
-      openNumbers: p(`SELECT number, ref FROM orders WHERE status IN ('preparing', 'ready')`),
+      openNumbers: p(`SELECT number, ref, receipt FROM orders WHERE status IN ('preparing', 'ready')`),
       setCounter: p('UPDATE branch_settings SET next_number = ?, number_day = ? WHERE id = 1'),
-      insertOrder: p(`INSERT INTO orders (id, number, ref, status, created_at) VALUES (?, ?, ?, 'preparing', ?)`),
+      insertOrder: p(`INSERT INTO orders (id, number, ref, status, created_at, receipt) VALUES (?, ?, ?, 'preparing', ?, ?)`),
       // Order reads carry the attached reward's state (loyalty) for the bar and customer views.
       order: p(`SELECT o.*, r.redeemed_at AS reward_redeemed_at FROM orders o
                 LEFT JOIN loyalty_rewards r ON r.id = o.reward_id WHERE o.id = ?`),
@@ -175,9 +176,9 @@ export class BranchStore {
       if (fromPos?.choose) return fromPos;
       const number = fromPos?.number ?? this.#allocateNumber(shop);
       const ref = fromPos?.ref ?? null;
-      if (shop.pos_token) this.#markPos(ref ?? String(number), number);
+      if (shop.pos_token || shop.manual_numbers) this.#markPos(fromPos?.key ?? ref ?? String(number), number);
       const id = randomId(16);
-      this.sql.insertOrder.run(id, number, ref, Date.now());
+      this.sql.insertOrder.run(id, number, ref, Date.now(), fromPos?.receipt ?? null);
       if (deviceHash) this.#attachDevice(id, deviceHash);
       if (dynamicOk) this.sql.rotate.run(newNonce(), Date.now());
       return { order: this.sql.order.get(id), shop: this.getShop(), rotated: dynamicOk };
@@ -194,7 +195,7 @@ export class BranchStore {
       const n = number ?? this.#allocateNumber(shop);
       if (shop.pos_token) this.#markPos(ref ?? String(n), n);
       const id = randomId(16);
-      this.sql.insertOrder.run(id, n, ref, Date.now());
+      this.sql.insertOrder.run(id, n, ref, Date.now(), null);
       return { order: this.sql.order.get(id), shop: this.getShop() };
     });
   }
@@ -236,8 +237,11 @@ export class BranchStore {
    * the customer waits for it. Returns { number, ref }, { choose }, or null for the count.
    */
   #fromPos(shop, pick, canPick) {
-    const waiting = shop.pos_token ? this.#posWaiting() : [];
-    const posOnly = Boolean(shop.pos_token && shop.pos_only);
+    // Takeaway numbers typed by the cashier: like POS-only, no number until the receipt is typed,
+    // and the customer always picks their receipt (even one waiting may be someone else's).
+    const manual = Boolean(shop.manual_numbers);
+    const waiting = shop.pos_token || manual ? this.#posWaiting() : [];
+    const posOnly = Boolean(shop.pos_token && shop.pos_only) || manual;
     const wait = () => new HttpError(409, 'طلبك لسه موصلش من الكاشير. ثواني وهيظهر', { wait: true });
     if (!waiting.length || pick === 'new') {
       if (posOnly) throw wait();
@@ -249,7 +253,7 @@ export class BranchStore {
       if (hit) return hit;
       throw new HttpError(409, 'الرقم ده حد تاني أخده. اختار رقم طلبك تاني', { choose: labels });
     }
-    if (waiting.length === 1) return waiting[0];
+    if (waiting.length === 1 && !(manual && canPick)) return waiting[0];
     return canPick ? { choose: labels } : waiting.at(-1);
   }
 
@@ -259,29 +263,65 @@ export class BranchStore {
    * the order number. Returns { number, ref }.
    */
   #fromReceipt(shop, receipt) {
-    const linked = Boolean(shop.pos_token && shop.pos_last_event);
+    const linked = Boolean(shop.pos_token && shop.pos_last_event) || Boolean(shop.manual_numbers);
     const hit = linked ? this.#posWaiting().find((w) => w.key === receipt) : null;
     if (hit) return hit;
     if (linked) throw new HttpError(409, 'طلبك لسه موصلش من الكاشير. ثواني وهيظهر', { wait: true });
     const number = Number(receipt.match(/(\d+)$/)[1]);
+    if (number > MAX_POS_NUMBER) throw new HttpError(400, 'رقم الفاتورة مش مظبوط', { field: 'receipt' });
     return { number, ref: receipt === String(number) ? null : receipt };
   }
 
   /** The open order a receipt number belongs to (several phones scan one receipt), or null. */
   openOrderByReceipt(receipt) {
     const row = this.db.prepare(`SELECT id FROM orders WHERE status IN ('preparing', 'ready')
-      AND (ref = ? OR (ref IS NULL AND CAST(number AS TEXT) = ?)) ORDER BY created_at DESC LIMIT 1`).get(receipt, receipt);
+      AND (receipt = ? OR (receipt IS NULL AND (ref = ? OR (ref IS NULL AND CAST(number AS TEXT) = ?))))
+      ORDER BY created_at DESC LIMIT 1`).get(receipt, receipt, receipt);
     return row ? this.getOrder(row.id) : null;
   }
 
-  /** Waiting POS numbers, oldest first: [{ key, number, ref }] (ref only with a terminal prefix). */
+  /**
+   * Waiting POS numbers, oldest first: [{ key, number, ref }] (ref only with a terminal prefix).
+   * A receipt typed by the cashier: { key: the receipt, number: its takeaway number, receipt }.
+   */
   #posWaiting(now = Date.now()) {
     const open = this.#openKeys();
-    return this.db.prepare(`SELECT ref, number FROM pos_numbers WHERE day = ? AND state = 'waiting' AND created_at >= ?
+    return this.db.prepare(`SELECT ref, number, manual FROM pos_numbers WHERE day = ? AND state = 'waiting' AND created_at >= ?
                             ORDER BY created_at, number`)
       .all(this.today(now), now - POS_WAITING_MS)
       .filter((r) => !open.has(r.ref))
-      .map((r) => ({ key: r.ref, number: r.number, ref: r.ref === String(r.number) ? null : r.ref }));
+      .map((r) => (r.manual
+        ? { key: r.ref, number: r.number, ref: null, receipt: r.ref }
+        : { key: r.ref, number: r.number, ref: r.ref === String(r.number) ? null : r.ref }));
+  }
+
+  /**
+   * Takeaway numbers typed by the cashier: the receipt says 27 (the POS counts dine-in and
+   * delivery too), the order gets the next takeaway number, 3, and waits for its customer's scan.
+   * `create` (order QR mode): the order exists now. The same receipt again today: its number.
+   */
+  manualReceipt(receipt, { create = false } = {}) {
+    return tx(this.db, () => {
+      const shop = this.getShop();
+      const today = this.today();
+      const now = Date.now();
+      const seen = this.db.prepare('SELECT number FROM pos_numbers WHERE day = ? AND ref = ?').get(today, receipt);
+      if (seen) {
+        // Typed again after a while: offered to customers again.
+        this.db.prepare(`UPDATE pos_numbers SET created_at = ? WHERE day = ? AND ref = ? AND state = 'waiting'`).run(now, today, receipt);
+        return { number: seen.number, repeated: true, order: null };
+      }
+      const number = this.#allocateNumber(shop);
+      let order = null;
+      if (create) {
+        const id = randomId(16);
+        this.sql.insertOrder.run(id, number, null, now, receipt);
+        order = this.sql.order.get(id);
+      }
+      this.db.prepare(`INSERT INTO pos_numbers (day, ref, number, state, created_at, manual) VALUES (?, ?, ?, ?, ?, 1)`)
+        .run(today, receipt, number, create ? 'done' : 'waiting', now);
+      return { number, repeated: false, order };
+    });
   }
 
   #markPos(key, number) {
@@ -329,7 +369,7 @@ export class BranchStore {
 
   /** Open orders by what the receipt says ("2-1008", or the plain number). */
   #openKeys() {
-    return new Set(this.sql.openNumbers.all().map((r) => r.ref ?? String(r.number)));
+    return new Set(this.sql.openNumbers.all().map((r) => r.receipt ?? r.ref ?? String(r.number)));
   }
 
   #allocateNumber(shop) {
@@ -359,7 +399,7 @@ export class BranchStore {
     const shop = this.sql.settings.get();
     const next = this.#nextFree(shop, this.today(), this.#openNumbers());
     const counter = { next, last: next > 1 ? next - 1 : null };
-    const waiting = shop.pos_token ? this.#posWaiting().length : 0;
+    const waiting = shop.pos_token || shop.manual_numbers ? this.#posWaiting().length : 0;
     return waiting ? { ...counter, waiting } : counter;
   }
 
@@ -381,8 +421,8 @@ export class BranchStore {
         if (back < 1) throw new HttpError(409, 'العد لسه في أوله، مفيش رقم نرجع له');
         if (open.has(back)) throw new HttpError(409, `رقم ${back} عليه طلب مفتوح. لو طلع بالغلط، ألغيه من شاشة الطلبات`);
         this.sql.setCounter.run(back, today);
-        // A number taken back isn't offered to customers any more.
-        this.db.prepare('DELETE FROM pos_numbers WHERE day = ? AND ref = ?').run(today, String(back));
+        // A number taken back isn't offered to customers any more (a typed receipt: by its number).
+        this.db.prepare('DELETE FROM pos_numbers WHERE day = ? AND (ref = ? OR (manual = 1 AND number = ?))').run(today, String(back), back);
       }
       return this.counter();
     });

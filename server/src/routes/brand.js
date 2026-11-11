@@ -52,6 +52,7 @@ export function ownerExtraFields(body) {
   // Order QR mode and sharing one order between phones: plain switches.
   if ('orderQr' in body) fields.order_qr = body.orderQr === true ? 1 : 0;
   if ('orderShare' in body) fields.order_share = body.orderShare === false ? 0 : 1;
+  if ('manualNumbers' in body) fields.manual_numbers = body.manualNumbers === true ? 1 : 0;
   if ('promoStartsAt' in body) fields.promo_starts_at = promoDay(body, 'promoStartsAt');
   if ('promoEndsAt' in body) fields.promo_ends_at = promoDay(body, 'promoEndsAt');
   if (fields.promo_starts_at && fields.promo_ends_at && fields.promo_ends_at < fields.promo_starts_at) {

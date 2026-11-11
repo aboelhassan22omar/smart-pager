@@ -149,6 +149,9 @@ function render() {
   card.dataset.status = order.status;
   $('card-shop').textContent = order.shopName;
   $('card-number').textContent = label(order);
+  // Takeaway numbers typed by the cashier: the receipt it was given for, under the number.
+  $('card-receipt').hidden = !order.receipt;
+  $('card-receipt').textContent = order.receipt ? `فاتورة ${order.receipt}` : '';
   $('card-message').textContent = order.status === 'picked' ? t('msg_picked') : order.message;
   $('card-icon').innerHTML = icons[STATUS_ICON[order.status] ?? 'clock'](20);
   $('card-when').textContent = elapsedLabel(order.createdAt);
@@ -514,6 +517,7 @@ async function claimOrder(pick) {
       await holdSplash(); // the wait has to be on screen, not behind the splash
       only('waiting');
       await sleep(3000);
+      if (pick === 'new') pick = undefined; // "mine isn't here": the next try offers what arrived
     }
   }
 }
@@ -633,7 +637,7 @@ function pickNumber(numbers, note = '') {
       try {
         const claimed = await claimOrder(button.dataset.pick);
         $('pick').hidden = true;
-        resolve(claimed);
+        resolve(claimed.choose ? pickNumber(claimed.choose) : claimed);
       } catch (err) {
         if (err.data?.choose) resolve(pickNumber(err.data.choose, err.message));
         else reject(err);

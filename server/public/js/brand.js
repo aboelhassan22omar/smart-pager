@@ -376,6 +376,11 @@ function featureFields(b) {
       name: 'orderShare', type: 'toggle', label: 'أكتر من موبايل على نفس الطلب',
       hint: 'كل اللي مسحوا الكود يتابعوا الطلب وموبايلاتهم كلها ترن. لو اتقفلت، أول موبايل بس', value: b.orderShare,
     },
+    { type: 'heading', label: 'أرقام التيكاواي' },
+    {
+      name: 'manualNumbers', type: 'toggle', label: 'الكاشير يكتب رقم الفاتورة',
+      hint: 'لو السيستم بيرقّم الصالة والديليفري والتيكاواي ورا بعض: الكاشير يكتب رقم فاتورة التيكاواي (مثلًا 27)، فتاخد رقم من عدّ التيكاواي بس (مثلًا 3). العميل يمسح الكود ويختار رقم فاتورته، ويشوف رقمه وقدامه كام واحد', value: b.manualNumbers,
+    },
     { type: 'heading', label: 'عرض وقت الانتظار' },
     featureToggle(b, 'promo', 'عرض تحت رقم الطلب', 'بيظهر بس وهو مستني طلبه'),
     { name: 'promoText', label: 'نص العرض', type: 'textarea', value: b.promoText, maxlength: 120, placeholder: 'مثلًا: جرّب الكرواسون الجديد' },
@@ -404,6 +409,7 @@ function featureBody(b, v) {
     promoEndsAt: v.promoEndsAt ?? '',
     orderQr: v.orderQr === 'on',
     orderShare: v.orderShare === 'on',
+    manualNumbers: v.manualNumbers === 'on',
   };
 }
 
