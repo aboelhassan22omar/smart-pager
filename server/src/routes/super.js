@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { superOverview } from '../aggregate.js';
 import { appKeyOf, appView, brandAppDir, iconFile } from '../apps.js';
 import { channels } from '../bus.js';
+import { isDemo } from '../demo.js';
 import { cleanEmail, cleanPhone } from '../contact.js';
 import { backupStatus, runBackup } from '../backup.js';
 import { HttpError } from '../errors.js';
@@ -159,6 +160,26 @@ export default async function superRoutes(app, deps) {
         audit(req, 'owner.reset', { brandId, detail: { username: updated.username } });
       }
       return ownerResult(updated, brandId, password);
+    });
+
+    // ---- start over after a test run ----
+
+    // Every branch of the brand loses its orders, analytics, ratings, stamp cards and POS
+    // numbers; the count starts at 1. A backup is taken first, and nothing is wiped if it fails.
+    s.post('/brands/:brand/reset-activity', async (req) => {
+      const brand = control.getBrand(req.params.brand);
+      if (!brand) throw new HttpError(404, 'البراند ده مش موجود');
+      if (isDemo(brand.id)) throw new HttpError(403, 'الديمو بيتصفّر لوحده');
+      if (req.body?.confirm !== brand.id) throw bad('confirm', `اكتب ${brand.id} عشان تأكد`);
+      const backup = await runBackup({ ...deps, log: req.log });
+      if (!backup.ok) throw new HttpError(500, 'النسخة الاحتياطية فشلت، فمسحناش حاجة. جرّب تاني');
+      const branches = control.branchesOfBrand(brand.id);
+      for (const branch of branches) {
+        tenants.resolve(branch.id).store.resetActivity();
+        bus.emit(channels(branch.id).bar, 'reload', {});
+      }
+      audit(req, 'brand.reset_activity', { brandId: brand.id, detail: { branches: branches.length, backupDay: backup.day } });
+      return { ok: true, branches: branches.length, backupDay: backup.day };
     });
 
     // ---- cashier app ----

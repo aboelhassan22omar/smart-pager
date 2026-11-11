@@ -135,3 +135,66 @@ describe('renewal: cancel a paid plan, days left everywhere', () => {
     assert.deepEqual([plan.status, plan.daysLeft], ['trial', 4]);
   });
 });
+
+describe('super: reset a brand after a test run', () => {
+  let server;
+  let su;
+
+  before(async () => {
+    server = await startServer({ SUPER_PASSWORD_HASH: await hashPin(SUPER_PASSWORD) });
+    su = client(server.url);
+    await su.post('/api/super/login', { password: SUPER_PASSWORD });
+    await su.post('/api/super/brands', { id: 'trial', name: 'تجربة' });
+    await su.post('/api/super/brands/trial/branches', { id: 'trial-a', name: 'الفرع', pin: '1234', qrMode: 'static' });
+    await su.post('/api/super/brands', { id: 'keep', name: 'Keep' });
+    await su.post('/api/super/brands/keep/branches', { id: 'keep-a', name: 'Keep', pin: '1234', qrMode: 'static' });
+  });
+  after(() => server?.stop());
+
+  async function playOrders(branch, n) {
+    const bar = client(server.url);
+    await bar.post('/api/bar/login', { shopId: branch, pin: '1234' });
+    const k = new URL((await bar.get(`/api/bar/${branch}/state`)).data.qr.staticUrl).searchParams.get('k');
+    for (let i = 0; i < n; i++) await client(server.url).post(`/api/b/${branch}/claim`, { k });
+    return bar;
+  }
+
+  test('orders, analytics and the count go; settings, PIN and other brands stay', async () => {
+    const bar = await playOrders('trial-a', 3);
+    await playOrders('keep-a', 2);
+    const before = (await bar.get('/api/bar/trial-a/state')).data;
+    assert.equal(before.orders.length, 3);
+    assert.equal(before.counter.next, 4);
+
+    const wrong = await su.post('/api/super/brands/trial/reset-activity', { confirm: 'trail' });
+    assert.equal(wrong.status, 400);
+    assert.equal(wrong.data.field, 'confirm');
+    assert.equal((await bar.get('/api/bar/trial-a/state')).data.orders.length, 3, 'nothing wiped');
+
+    const res = await su.post('/api/super/brands/trial/reset-activity', { confirm: 'trial' });
+    assert.equal(res.status, 200);
+    assert.equal(res.data.branches, 1);
+    assert.ok(res.data.backupDay, 'a backup first');
+
+    const after = (await bar.get('/api/bar/trial-a/state')).data;
+    assert.equal(after.orders.length, 0);
+    assert.equal(after.counter.next, 1);
+    const card = (await su.get('/api/super/overview')).data.brands.find((b) => b.id === 'trial').branches[0];
+    assert.equal(card.ordersToday, 0);
+
+    const again = client(server.url);
+    assert.equal((await again.post('/api/bar/login', { shopId: 'trial-a', pin: '1234' })).status, 200, 'the PIN stays');
+    const other = client(server.url);
+    await other.post('/api/bar/login', { shopId: 'keep-a', pin: '1234' });
+    assert.equal((await other.get('/api/bar/keep-a/state')).data.orders.length, 2, 'other brands untouched');
+
+    const audit = (await su.get('/api/super/audit?limit=20')).data.entries.map((e) => e.action);
+    assert.ok(audit.includes('brand.reset_activity'));
+  });
+
+  test('the demo café resets itself; the owner cannot reset', async () => {
+    // 403 where the demo café exists, 404 on a server without it: never wiped from here.
+    assert.ok([403, 404].includes((await su.post('/api/super/brands/demo/reset-activity', { confirm: 'demo' })).status));
+    assert.equal((await client(server.url).post('/api/super/brands/trial/reset-activity', { confirm: 'trial' })).status, 401);
+  });
+});

@@ -15,6 +15,36 @@ export function createService({ control, tenants, bus, notifier, screens, config
   let jobCursor = 0;
   const etaCache = new Map(); // branchId -> {key, at, stats}
   const lastQueue = new Map(); // branchId -> Map(orderId -> sent key)
+  const repeats = new Map(); // orderId -> timers ringing a ready order again
+
+  // A ready order rings again until it is picked up: the phone in a pocket, the screen off, a
+  // notification swiped away. Android plays a web notification's sound once, so this is what
+  // makes it a pager. Each repeat re-reads the order and stops once it is no longer ready.
+  function scheduleRepeats(branchId, orderId) {
+    clearRepeats(orderId);
+    const timers = config.readyRepeatSeconds.map((s) => setTimeout(() => {
+      try {
+        const ctx = tenants.get(branchId);
+        const order = ctx?.store.getOrder(orderId);
+        if (!order || order.status !== 'ready') {
+          clearRepeats(orderId);
+          return;
+        }
+        const shop = ctx.store.getShop();
+        bus.emit(channels(branchId).order(orderId), 'renotify', customerView(ctx, order, shop));
+        notifier.orderChanged(ctx, order, shop, { renotify: true });
+      } catch (err) {
+        log.error({ err, orderId }, 'ready repeat failed');
+      }
+    }, s * 1000));
+    for (const t of timers) t.unref?.();
+    repeats.set(orderId, timers);
+  }
+
+  function clearRepeats(orderId) {
+    for (const t of repeats.get(orderId) ?? []) clearTimeout(t);
+    repeats.delete(orderId);
+  }
 
   /** What the customer sees: the public order plus its queue position / ETA. */
   function customerView(ctx, order, shop) {
@@ -102,6 +132,8 @@ export function createService({ control, tenants, bus, notifier, screens, config
     if (order.status === status) return order;
     const updated = ctx.store.setStatus(order, status);
     publishOrder(ctx, updated, shop);
+    if (status === 'ready') scheduleRepeats(ctx.branch.id, order.id);
+    else clearRepeats(order.id);
     // Loyalty: a stamp only when staff hand the order over (never on claim, expiry or review).
     if (status === 'picked' && loyaltyEnabled(shop) && updated.device_hash) {
       ctx.store.stamp(updated, shop.loyalty_every);
@@ -180,5 +212,8 @@ export function createService({ control, tenants, bus, notifier, screens, config
 
   return {
     claim, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+    close: () => {
+      for (const id of [...repeats.keys()]) clearRepeats(id);
+    },
   };
 }

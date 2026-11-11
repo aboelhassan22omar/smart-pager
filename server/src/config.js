@@ -48,6 +48,9 @@ export function loadConfig(env = process.env) {
     nonceRotateSeconds: int(env.NONCE_ROTATE_SECONDS, 60, 5, 3600),
     claimRatePerMin: int(env.CLAIM_RATE_PER_MIN, 6, 1, 100000),
     claimIpRatePerMin: int(env.CLAIM_IP_RATE_PER_MIN, 120, 1, 100000),
+    // A ready order nobody picked up rings again after these many seconds (like a pager).
+    readyRepeatSeconds: String(env.READY_REPEAT_SECONDS ?? '45,90,150')
+      .split(',').map(Number).filter((n) => Number.isInteger(n) && n > 0 && n <= 3600).slice(0, 10),
     // Where "cashier screen closed in busy hours" alerts go (needs SMTP_HOST too).
     alertEmail: str(env.ALERT_EMAIL, ''),
     loginRatePerMin: int(env.LOGIN_RATE_PER_MIN, 5, 1, 100000),

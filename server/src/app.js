@@ -141,6 +141,7 @@ export async function buildApp(config) {
     clearInterval(summaries);
     stopBackups();
     notifier.close();
+    service.close();
     tenants.closeAll();
     control.close();
   });
