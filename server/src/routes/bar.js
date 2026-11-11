@@ -207,6 +207,8 @@ export default async function barRoutes(app, deps) {
     // The link this branch pastes into its POS (created the first time it is asked for).
     const posView = (shop) => ({
       url: `${config.publicUrl}/api/pos/${shop.id}/${shop.pos_token}`,
+      // For a POS that prints a QR with the order number in it: {order} is that number.
+      receiptUrl: `${config.publicUrl}/r/${shop.id}/${shop.static_key}/{order}`,
       last: shop.pos_last_event ? JSON.parse(shop.pos_last_event) : null,
     });
 

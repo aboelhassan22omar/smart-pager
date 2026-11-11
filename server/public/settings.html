@@ -135,6 +135,14 @@
           <label class="toggle-line"><input type="checkbox" id="pos-only">
             <span><strong>الأرقام من السيستم بس</strong><small>محدش ياخد رقم غير لو السيستم بعت طلبه، فمفيش أرقام وهمية من صورة الكود. شغّلها بعد ما تتأكد إن الطلبات بتوصل فوق.</small></span></label>
 
+          <details class="pos-guide">
+            <summary>كود الطلب على الفاتورة نفسها</summary>
+            <p class="muted small">لو السيستم بتاعك بيقدر يطبع QR في آخر الفاتورة بلينك فيه رقم الطلب (زي Odoo بإضافة QR للفاتورة، أو Shopify POS)، حط اللينك ده، وبدّل <code dir="ltr">{order}</code> بالمتغيّر اللي بيكتب رقم الطلب عندكم. كل فاتورة هيبقى ليها كودها، واللي يمسحه يدخل على طلبه هو بالظبط، وأكتر من موبايل يقدروا يتابعوا نفس الطلب.</p>
+            <input class="input" id="pos-receipt-url" dir="ltr" readonly>
+            <button class="btn" id="pos-receipt-copy" type="button">انسخ لينك الفاتورة</button>
+            <p class="muted small">Loyverse وFoodics مبيطبعوش كود مختلف لكل فاتورة. معاهم استخدم «كود لكل طلب» من خصائص الفرع: شاشة في وش العميل بتعرض كود الطلب أول ما يتضرب.</p>
+          </details>
+
           <h3 class="pos-how">إزاي تربط</h3>
           <details class="pos-guide" open>
             <summary>أسهل طريقة: ابعت الرسالة دي لدعم السيستم بتاعك</summary>

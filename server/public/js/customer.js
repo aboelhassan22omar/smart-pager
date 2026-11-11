@@ -481,6 +481,8 @@ async function resolveOrder() {
   const n = params.get('n');
   const k = params.get('k');
   if (!n && !k) return current;
+  // A receipt's own QR: that receipt's order, never the "new order?" question.
+  if (params.get('r')) return claimOrder();
   // Scanned again while an order is still open: a second order, or just checking the first?
   if (current && !CLOSED.includes(current.status)) return { again: current };
   return claimOrder();
@@ -494,12 +496,13 @@ function only(id) {
 async function claimOrder(pick) {
   const n = params.get('n');
   const k = params.get('k');
+  const receipt = params.get('r') ?? undefined; // the QR printed on the receipt
   const started = Date.now();
   for (;;) {
     try {
       const claimed = await api(`${branchApi}/claim`, {
         method: 'POST',
-        body: { n: n ?? undefined, k: k ?? undefined, canPick: true, pick },
+        body: { n: n ?? undefined, k: k ?? undefined, canPick: true, pick, receipt },
         headers: { ...deviceHeaders(), 'x-client-id': clientId() },
       });
       if (claimed.deviceToken) store.set(deviceKey, claimed.deviceToken);
