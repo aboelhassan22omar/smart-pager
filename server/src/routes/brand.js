@@ -3,6 +3,7 @@ import path from 'node:path';
 import { verifyPin } from '../auth.js';
 import { analyticsCsv, brandAnalytics, brandOverview } from '../aggregate.js';
 import { appView, ownerAppView } from '../apps.js';
+import { cleanTexts } from '../../public/js/texts.js';
 import { cleanEmail, cleanPhone } from '../contact.js';
 import { DEMO_LOCKED, isDemo } from '../demo.js';
 import { HttpError } from '../errors.js';
@@ -189,6 +190,16 @@ export default async function brandRoutes(app, deps) {
     // ---- cashier app: the download link to pass on, and the devices it is installed on ----
 
     b.get('/app', async (req) => appView(deps, control.getBrand(req.params.brand)));
+
+    // What customers read, in the brand's own words (empty = the default sentence).
+    b.get('/texts', async (req) => ({ texts: control.brandTexts(req.params.brand) }));
+    b.post('/texts', async (req) => {
+      const { texts, error, field } = cleanTexts(req.body?.texts);
+      if (error) throw new HttpError(400, error, { field });
+      const saved = control.setBrandTexts(req.params.brand, texts);
+      control.audit({ actor: `owner:${req.owner.id}`, action: 'brand.texts', brandId: req.params.brand, detail: { changed: Object.keys(saved) }, ip: req.ip });
+      return { texts: saved };
+    });
 
     // The owner's own app (Android, Windows): signed-in download links.
     b.get('/owner-app', async (req) => ownerAppView(deps, control.getBrand(req.params.brand)));

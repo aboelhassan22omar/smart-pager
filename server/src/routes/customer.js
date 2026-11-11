@@ -82,7 +82,11 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       return { order, shop: req.ctx.store.getShop() };
     }
 
-    b.get('/', async (req) => publicShop(req.ctx.store.getShop(), { today: dayIn(branchTz(req.ctx.branch, config)) }));
+    b.get('/', async (req) => ({
+      ...publicShop(req.ctx.store.getShop(), { today: dayIn(branchTz(req.ctx.branch, config)) }),
+      // The brand's own wording of the page (only what it changed; see public/js/texts.js).
+      texts: control.brandTexts(req.ctx.branch.brand_id),
+    }));
 
     b.post('/claim', async (req, reply) => {
       const clientId = req.headers['x-client-id'];

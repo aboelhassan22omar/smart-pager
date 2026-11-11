@@ -135,3 +135,37 @@ describe('renewal: cancel a paid plan, days left everywhere', () => {
     assert.deepEqual([plan.status, plan.daysLeft], ['trial', 4]);
   });
 });
+
+describe('the brand words what customers read', () => {
+  let server;
+  let owner;
+
+  before(async () => {
+    server = await startServer({ SUPER_PASSWORD_HASH: await hashPin(SUPER_PASSWORD) });
+    const su = client(server.url);
+    await su.post('/api/super/login', { password: SUPER_PASSWORD });
+    await su.post('/api/super/brands', { id: 'words', name: 'Words' });
+    await su.post('/api/super/brands/words/branches', { id: 'words-a', name: 'Words', pin: '1234', qrMode: 'static' });
+    await su.post('/api/super/brands/words/owners', { username: 'words.owner', password: 'words-owner-pass' });
+    owner = client(server.url);
+    await owner.post('/api/brand/login', { username: 'words.owner', password: 'words-owner-pass' });
+  });
+  after(() => server?.stop());
+
+  test('only changed sentences are kept; customers get them', async () => {
+    const res = await owner.post('/api/brand/words/texts', {
+      texts: { loyalty_title: 'كارت الكرم', review_title: '', order_label: 'رقم الطلب', nope: 'x' },
+    });
+    assert.equal(res.status, 200);
+    assert.deepEqual(res.data.texts, { loyalty_title: 'كارت الكرم' }, 'empty, unchanged and unknown are dropped');
+    assert.deepEqual((await client(server.url).get('/api/b/words-a')).data.texts, { loyalty_title: 'كارت الكرم' });
+  });
+
+  test('too long is refused; only the owner can save', async () => {
+    const res = await owner.post('/api/brand/words/texts', { texts: { review_title: 'ا'.repeat(161) } });
+    assert.equal(res.status, 400);
+    assert.equal(res.data.field, 'review_title');
+    assert.equal((await client(server.url).post('/api/brand/words/texts', { texts: {} })).status, 401);
+    assert.equal((await owner.post('/api/brand/words/texts', { texts: {} })).data.texts.loyalty_title, undefined, 'saving all empty resets');
+  });
+});

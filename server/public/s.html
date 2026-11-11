@@ -27,14 +27,14 @@
 
     <article id="card" class="card" data-status="preparing" aria-live="polite">
       <header class="card-head">
-        <span class="card-app">ORDER TRACKER</span>
+        <span class="card-app" data-t="card_app">ORDER TRACKER</span>
         <span class="card-when" id="card-when">دلوقتي</span>
       </header>
       <div class="card-brand">
         <span class="card-logo" id="card-logo"></span>
         <h1 class="card-shop" id="card-shop"></h1>
       </div>
-      <p class="card-label">رقم الطلب</p>
+      <p class="card-label" data-t="order_label">رقم الطلب</p>
       <p class="card-number num" id="card-number">--</p>
       <p class="card-status">
         <span class="card-icon" id="card-icon"></span>
@@ -49,27 +49,27 @@
 
     <section id="loyalty" class="loyalty" hidden aria-live="polite"></section>
 
-    <button id="enable" class="btn btn-primary btn-block enable" type="button">فعّل التنبيه</button>
-    <p id="ios-hint" class="hint" hidden>على الآيفون سيب الصفحة دي مفتوحة والشاشة منوّرة لحد ما طلبك يجهز.</p>
+    <button id="enable" class="btn btn-primary btn-block enable" type="button" data-t="enable">فعّل التنبيه</button>
+    <p id="ios-hint" class="hint" hidden data-t="ios_hint">على الآيفون سيب الصفحة دي مفتوحة والشاشة منوّرة لحد ما طلبك يجهز.</p>
 
     <section id="again" class="pick" hidden>
-      <h1 class="pick-title">ده طلب جديد؟</h1>
+      <h1 class="pick-title" data-t="again_title">ده طلب جديد؟</h1>
       <p class="muted">عندك طلب لسه مفتوح هنا، رقم <strong class="num" id="again-number"></strong>.</p>
-      <button class="btn btn-primary btn-block" type="button" data-again="new">أيوه، خد رقم للطلب الجديد</button>
-      <button class="btn btn-quiet btn-block" type="button" data-again="back">لأ، ارجع لطلبي</button>
+      <button class="btn btn-primary btn-block" type="button" data-again="new" data-t="again_new">أيوه، خد رقم للطلب الجديد</button>
+      <button class="btn btn-quiet btn-block" type="button" data-again="back" data-t="again_back">لأ، ارجع لطلبي</button>
     </section>
 
     <section id="waiting" class="pick" hidden aria-live="polite">
-      <h1 class="pick-title">ثواني…</h1>
-      <p class="muted">بنستنى طلبك يوصل من الكاشير عشان رقمك يبقى نفس رقم الفاتورة.</p>
+      <h1 class="pick-title" data-t="wait_title">ثواني…</h1>
+      <p class="muted" data-t="wait_hint">بنستنى طلبك يوصل من الكاشير عشان رقمك يبقى نفس رقم الفاتورة.</p>
     </section>
 
     <section id="pick" class="pick" hidden>
-      <h1 class="pick-title">إيه رقم طلبك؟</h1>
-      <p class="muted">هتلاقيه مكتوب على الفاتورة بتاعتك.</p>
+      <h1 class="pick-title" data-t="pick_title">إيه رقم طلبك؟</h1>
+      <p class="muted" data-t="pick_hint">هتلاقيه مكتوب على الفاتورة بتاعتك.</p>
       <p class="pick-note" id="pick-note" role="alert" hidden></p>
       <div class="pick-numbers" id="pick-numbers"></div>
-      <button class="btn btn-quiet btn-block" type="button" data-pick="new">رقمي مش موجود هنا</button>
+      <button class="btn btn-quiet btn-block" type="button" data-pick="new" data-t="pick_missing">رقمي مش موجود هنا</button>
     </section>
 
     <section id="fatal" class="fatal" hidden>
@@ -79,10 +79,10 @@
 
   <section id="ready" class="ready" hidden aria-live="assertive">
     <div class="ready-mark" id="ready-mark"></div>
-    <h2 class="ready-title">طلبك جاهز</h2>
+    <h2 class="ready-title" data-t="ready_title">طلبك جاهز</h2>
     <p class="ready-number num" id="ready-number"></p>
     <p class="ready-message" id="ready-message"></p>
-    <p class="ready-hint" id="ready-hint">المس الشاشة عشان توقّف التنبيه</p>
+    <p class="ready-hint" id="ready-hint" data-t="ready_hint">المس الشاشة عشان توقّف التنبيه</p>
   </section>
 </body>
 </html>

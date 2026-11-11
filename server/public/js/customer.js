@@ -3,6 +3,7 @@ import { applyTheme } from './color.js';
 import { icons } from './icons.js';
 import { loyaltyHtml } from './loyalty-card.js';
 import { aheadText, etaText } from './queue-text.js';
+import { applyTexts, setTexts, t } from './texts.js';
 import { reviewHtml } from './review.js';
 import { api, base64UrlToBytes, elapsedLabel, esc, isIOS, shopIdFromPath, sleep, SPLASH_MIN_MS } from './util.js';
 import { keepAwake, releaseAwake } from './wakelock.js';
@@ -148,7 +149,7 @@ function render() {
   card.dataset.status = order.status;
   $('card-shop').textContent = order.shopName;
   $('card-number').textContent = label(order);
-  $('card-message').textContent = order.message;
+  $('card-message').textContent = order.status === 'picked' ? t('msg_picked') : order.message;
   $('card-icon').innerHTML = icons[STATUS_ICON[order.status] ?? 'clock'](20);
   $('card-when').textContent = elapsedLabel(order.createdAt);
   document.title = `طلب ${label(order)} — ${order.shopName}`;
@@ -391,14 +392,14 @@ function onEnable() {
   chime.play('soft');
   keepAwake();
   button.disabled = true;
-  button.textContent = 'بنفعّل التنبيه…';
+  button.textContent = t('enable_working');
 
   permission
     .then(subscribePush)
     .catch(() => false)
     .then((pushed) => {
       button.classList.add('is-on');
-      button.textContent = pushed ? 'التنبيه شغّال، هنرن عليك أول ما يجهز' : 'التنبيه شغّال طول ما الصفحة مفتوحة';
+      button.textContent = pushed ? t('enable_on') : t('enable_page');
     });
 }
 
@@ -484,7 +485,7 @@ function renderOthers() {
   const list = [...others.values()].map((e) => e.order);
   $('others').hidden = !list.length;
   $('others').innerHTML = list.length
-    ? `<span>طلبك التاني:</span>${list.map((o) => `<button class="other-chip" type="button" data-other="${esc(o.id)}">
+    ? `<span>${esc(t('other_orders'))}</span>${list.map((o) => `<button class="other-chip" type="button" data-other="${esc(o.id)}">
         <span class="num">${esc(label(o))}</span> ${o.status === 'ready' ? 'جاهز' : 'بيتحضّر'}</button>`).join('')}`
     : '';
 }
@@ -583,6 +584,8 @@ async function boot() {
     return;
   }
   applyTheme(document.documentElement, shop.theme);
+  setTexts(shop.texts);
+  applyTexts(document);
   paintLogo($('splash-logo'), 136);
   $('splash-name').textContent = shop.name;
   paintLogo($('card-logo'), 56);
@@ -615,7 +618,7 @@ async function boot() {
     }
   }
   if (!resolved) {
-    fatal(failure ?? 'امسح الكود اللي عند الكاشير عشان تاخد رقم طلبك');
+    fatal(failure ?? t('scan_prompt'));
     return;
   }
   store.set(storageKey, resolved.id);
