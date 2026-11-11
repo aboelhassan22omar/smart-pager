@@ -229,6 +229,7 @@ function renderBrands() {
           <div class="actions">
             <button class="btn btn-sm" data-act="app" data-id="${esc(brand.id)}" type="button">تطبيق الكاشير${brand.appEnabled ? '' : ' (مقفول)'}</button>
             <button class="btn btn-sm" data-act="branch" data-id="${esc(brand.id)}" type="button">فرع جديد</button>
+            ${brand.demo ? '' : `<button class="btn btn-sm btn-quiet" data-act="reset-brand" data-id="${esc(brand.id)}" type="button">صفّر البيانات</button>`}
             <button class="icon-link icon-sm" data-act="trash-brand" data-id="${esc(brand.id)}" type="button"
                     aria-label="انقل البراند لسلة المهملات" title="انقل البراند لسلة المهملات">${icons.trash(18)}</button>
           </div>
@@ -864,6 +865,21 @@ async function appSheet(brandId, { focusErrors = false } = {}) {
   if (focusErrors) backdrop.querySelector('#app-errors')?.scrollIntoView({ block: 'start' });
 }
 
+// After a test run: orders, analytics, ratings and stamp cards go, the count starts at 1.
+function resetBrand(id) {
+  const brand = findBrand(id);
+  openForm({
+    title: `صفّر بيانات ${brand.name}؟`,
+    intro: `كل الطلبات والتحليلات والتقييمات وكروت الختم في ${brand.branches.length === 1 ? 'الفرع' : `الـ ${brand.branches.length} فروع`} هتتمسح، والعدّ يرجع لـ 1. الإعدادات والشعار والكلام والرقم السري والحسابات والتطبيقات بتفضل زي ما هي. قبل المسح بنعمل نسخة احتياطية.`,
+    fields: [{ name: 'confirm', label: `اكتب ${brand.id} عشان تأكد`, dir: 'ltr', placeholder: brand.id }],
+    submit: 'صفّر البيانات', danger: true,
+    onSubmit: async (v) => {
+      await post(`/brands/${encodeURIComponent(id)}/reset-activity`, { confirm: (v.confirm ?? '').trim() });
+      await done('البيانات اتصفّرت، والعدّ رجع لـ 1');
+    },
+  });
+}
+
 function trashBrand(id) {
   const brand = findBrand(id);
   openForm({
@@ -884,6 +900,7 @@ function onAction(el) {
   if (el.dataset.copy !== undefined) copyValue(el.dataset.copy);
   else if (act === 'enter') enterBranch(id, page);
   else if (act === 'trash-brand') trashBrand(id);
+  else if (act === 'reset-brand') resetBrand(id);
   else if (act === 'app') appSheet(id);
   else if (act === 'app-errors') appSheet(id, { focusErrors: true });
   else if (act === 'trash') openTrash();
