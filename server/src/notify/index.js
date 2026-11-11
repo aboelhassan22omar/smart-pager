@@ -1,4 +1,4 @@
-import webpush from 'web-push';
+import { sendNotification, setVapidDetails } from 'web-push';
 import { CLOSED_STATUSES } from '../store.js';
 import { logoUrl, statusMessage } from '../views.js';
 import { createApns } from './apns.js';
@@ -8,7 +8,7 @@ const DISMISS_AFTER_S = 15 * 60;
 // Push sends finish after the request, when the branch DB handle may have been evicted from
 // the LRU, so cleanups re-resolve the branch instead of keeping a store reference.
 export function createNotifier({ tenants, config, log }) {
-  webpush.setVapidDetails(config.vapid.subject, config.vapid.publicKey, config.vapid.privateKey);
+  setVapidDetails(config.vapid.subject, config.vapid.publicKey, config.vapid.privateKey);
   const apns = createApns(config.apple, log);
   const dropSubscription = (branchId, id) => tenants.get(branchId)?.store.deleteSubscription(id);
 
@@ -28,7 +28,7 @@ export function createNotifier({ tenants, config, log }) {
   async function sendWebPush(sub, order, shop, renotify = false) {
     const payload = JSON.stringify(webPushPayload(order, shop, renotify));
     try {
-      const res = await webpush.sendNotification(sub.payload, payload, {
+      const res = await sendNotification(sub.payload, payload, {
         TTL: 6 * 3600,
         urgency: order.status === 'ready' ? 'high' : 'normal',
         topic: order.id.slice(0, 32),
