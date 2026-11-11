@@ -156,6 +156,7 @@ function render() {
   const closed = CLOSED.includes(order.status);
   $('enable').hidden = closed || order.status === 'ready';
   $('ios-hint').hidden = closed || order.status === 'ready' || !isIOS(navigator) || isStandalone();
+  renderPushHint();
   renderReview();
   renderQueue();
   renderPromo();
@@ -359,12 +360,50 @@ function connect() {
 // ---------- enable alerts ----------
 
 const isStandalone = () => window.matchMedia?.('(display-mode: standalone)').matches || navigator.standalone === true;
+const isAndroid = () => /Android/i.test(navigator.userAgent);
+let pushOn = false;
+
+/** 'ready' (can ask), 'granted', 'denied', or 'unsupported' (in-app browsers, old phones). */
+function pushSupport() {
+  if (!('Notification' in window) || !('serviceWorker' in navigator) || !('PushManager' in window)) return 'unsupported';
+  return Notification.permission === 'default' ? 'ready' : Notification.permission;
+}
+
+// Opens this same page in Chrome (from WhatsApp, Facebook or a camera app's own browser).
+const chromeIntent = () => `intent://${location.host}${location.pathname}${location.search}#Intent;scheme=https;package=com.android.chrome;end`;
+
+/**
+ * Android only rings when the page is closed or the screen is off if notifications are on, so
+ * the page says so plainly, and says what to do when they can't be (browser, blocked).
+ */
+function renderPushHint() {
+  const el = $('push-hint');
+  const closed = !order || CLOSED.includes(order.status) || order.status === 'ready';
+  const support = pushSupport();
+  if (closed || pushOn || !isAndroid() || support === 'granted') {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  if (support === 'unsupported') {
+    el.innerHTML = `<strong>المتصفح ده مش هيرن عليك لو قفلت الصفحة</strong>
+      <span>افتح الصفحة في Chrome عشان التليفون يرن لما طلبك يجهز، حتى والشاشة مقفولة.</span>
+      <a class="btn btn-primary btn-block" href="${esc(chromeIntent())}">افتح في Chrome</a>`;
+  } else if (support === 'denied') {
+    el.innerHTML = `<strong>التنبيهات مقفولة للموقع ده</strong>
+      <span>من فوق دوس على ⋮ ← معلومات الموقع (أو القفل جنب اللينك) ← الإشعارات ← سماح. وبعدين دوس «فعّل التنبيه».</span>`;
+  } else {
+    el.innerHTML = `<strong>دوس «فعّل التنبيه» ووافق</strong>
+      <span>عشان التليفون يرن لما طلبك يجهز حتى لو قفلت الشاشة أو فتحت أبلكيشن تاني.</span>`;
+  }
+}
 
 async function subscribePush(permission) {
   if (permission !== 'granted' || !('serviceWorker' in navigator) || !('PushManager' in window)) return false;
   const registration = await navigator.serviceWorker.register('/sw.js');
   await navigator.serviceWorker.ready;
   const { key } = await api('/api/vapid-key');
+  if (!order) return false;
   const options = { userVisibleOnly: true, applicationServerKey: base64UrlToBytes(key) };
   let subscription;
   try {
@@ -397,9 +436,26 @@ function onEnable() {
     .then(subscribePush)
     .catch(() => false)
     .then((pushed) => {
+      pushOn = pushed;
       button.classList.add('is-on');
       button.textContent = pushed ? 'التنبيه شغّال، هنرن عليك أول ما يجهز' : 'التنبيه شغّال طول ما الصفحة مفتوحة';
+      renderPushHint();
     });
+}
+
+/** Notifications were allowed before (an earlier order): this order gets them with no tap. */
+async function autoSubscribe() {
+  if (pushOn || pushSupport() !== 'granted' || !order || CLOSED.includes(order.status)) return;
+  try {
+    pushOn = await subscribePush('granted');
+  } catch {
+    pushOn = false;
+  }
+  if (pushOn) {
+    $('enable').classList.add('is-on');
+    $('enable').textContent = 'التنبيه شغّال، هنرن عليك أول ما يجهز';
+  }
+  renderPushHint();
 }
 
 // ---------- boot ----------
@@ -533,8 +589,10 @@ function switchTo(id) {
   history.replaceState(null, '', `${location.pathname}?o=${encodeURIComponent(order.id)}`);
   Object.assign(review, { rating: 0, comment: '', sent: false });
   addOther(previous);
+  pushOn = false;
   render();
   connect();
+  autoSubscribe();
 }
 
 async function restoreOthers() {
@@ -639,6 +697,7 @@ async function boot() {
   });
 
   $('enable').addEventListener('click', onEnable);
+  autoSubscribe();
   setInterval(() => {
     if (!order) return;
     $('card-when').textContent = elapsedLabel(order.createdAt);

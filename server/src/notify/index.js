@@ -28,11 +28,12 @@ export function createNotifier({ tenants, config, log }) {
   async function sendWebPush(sub, order, shop, renotify = false) {
     const payload = JSON.stringify(webPushPayload(order, shop, renotify));
     try {
-      await webpush.sendNotification(sub.payload, payload, {
+      const res = await webpush.sendNotification(sub.payload, payload, {
         TTL: 6 * 3600,
         urgency: order.status === 'ready' ? 'high' : 'normal',
         topic: order.id.slice(0, 32),
       });
+      log.debug({ orderId: order.id, status: order.status, push: res.statusCode }, 'web push sent');
     } catch (err) {
       if (err.statusCode === 404 || err.statusCode === 410) {
         dropSubscription(shop.id, sub.id);
