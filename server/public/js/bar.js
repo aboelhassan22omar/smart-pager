@@ -142,6 +142,47 @@ async function addReceipt(e) {
   return undefined;
 }
 
+// A typed receipt cancelled: the number in the field, «الغي الفاتورة», then the same button
+// again to confirm (no browser dialog: the apps don't all show one).
+let cancelArmed = null;
+async function cancelReceipt() {
+  const input = $('manual-receipt');
+  const button = $('manual-cancel');
+  const receipt = input.value.trim();
+  if (!receipt) {
+    toast('اكتب رقم الفاتورة اللي عايز تلغيها الأول', 'error');
+    return input.focus();
+  }
+  if (cancelArmed?.receipt !== receipt) {
+    clearTimeout(cancelArmed?.timer);
+    button.textContent = `متأكد؟ الغي ${receipt}`;
+    button.classList.add('btn-danger');
+    cancelArmed = {
+      receipt,
+      timer: setTimeout(() => {
+        cancelArmed = null;
+        button.textContent = 'الغي الفاتورة';
+        button.classList.remove('btn-danger');
+      }, 4000),
+    };
+    return undefined;
+  }
+  clearTimeout(cancelArmed.timer);
+  cancelArmed = null;
+  button.textContent = 'الغي الفاتورة';
+  button.classList.remove('btn-danger');
+  try {
+    const res = await api(`${base}/receipts/cancel`, { method: 'POST', body: { receipt } });
+    liveCounter(res.counter);
+    if (res.order) upsert(res.order);
+    input.value = '';
+    toast(`فاتورة ${res.receipt} اتلغت (رقم ${res.number})`);
+  } catch (err) {
+    toast(err.message, 'error');
+  }
+  return undefined;
+}
+
 // Order QR mode: the order exists now; the customer screen shows its QR.
 async function newOrder() {
   const button = $('new-order');
@@ -497,6 +538,7 @@ async function boot() {
   $('count-plus').addEventListener('click', () => adjustCount(1));
   $('new-order').addEventListener('click', newOrder);
   $('manual').addEventListener('submit', addReceipt);
+  $('manual-cancel').addEventListener('click', cancelReceipt);
   $('count-minus').addEventListener('click', () => adjustCount(-1));
 
   $('sheet').addEventListener('click', (e) => {

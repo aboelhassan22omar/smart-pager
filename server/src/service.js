@@ -144,6 +144,16 @@ export function createService({ control, tenants, bus, notifier, screens, config
     return { receipt, number, repeated, order: order ? publicOrder(order, shop) : null, counter: ctx.store.counter() };
   }
 
+  /** A typed receipt cancelled: it stops waiting, or its order is cancelled (the customer sees it). */
+  function cancelManualReceipt(ctx, receipt) {
+    const found = ctx.store.cancelManualReceipt(receipt);
+    if (!found) throw new HttpError(404, `فاتورة ${receipt} مش متسجلة النهارده، أو اتقفلت خلاص`);
+    const shop = ctx.store.getShop();
+    const order = found.order ? setStatus(ctx, shop, found.order, 'cancelled') : null;
+    publishCounter(ctx);
+    return { receipt, number: order ? order.ref ?? order.number : found.number, order: order ? publicOrder(order, shop) : null, counter: ctx.store.counter() };
+  }
+
   /** Orders read from the branch's POS link. */
   function posOrders(ctx, orders) {
     const qrMode = Boolean(ctx.store.getShop()?.order_qr);
@@ -254,7 +264,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
   }
 
   return {
-    claim, createOrder, manualReceipt, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+    claim, createOrder, manualReceipt, cancelManualReceipt, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
     close: () => {
       for (const id of [...repeats.keys()]) clearRepeats(id);
     },

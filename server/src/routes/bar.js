@@ -210,6 +210,13 @@ export default async function barRoutes(app, deps) {
       return service.manualReceipt(req.ctx, receipt);
     });
 
+    // A typed receipt cancelled (at the POS, or typed by mistake).
+    bar.post('/receipts/cancel', async (req) => {
+      const receipt = latinDigits(String(req.body?.receipt ?? '').trim());
+      if (!RECEIPT_RE.test(receipt)) throw invalid('receipt', 'اكتب رقم الفاتورة بالأرقام بس');
+      return service.cancelManualReceipt(req.ctx, receipt);
+    });
+
     bar.post('/counter', async (req) => {
       const delta = req.body?.delta;
       if (delta !== 1 && delta !== -1) throw invalid('delta', 'لازم 1 أو -1');

@@ -302,6 +302,22 @@ export class BranchStore {
    * delivery too), the order gets the next takeaway number, 3, and waits for its customer's scan.
    * `create` (order QR mode): the order exists now. The same receipt again today: its number.
    */
+  /**
+   * A typed receipt the customer won't come for (cancelled at the POS, typed by mistake): not
+   * scanned yet, it stops waiting; scanned, its order is returned to be cancelled. Null: unknown.
+   */
+  cancelManualReceipt(receipt) {
+    const today = this.today();
+    const row = this.db.prepare(`SELECT number, state FROM pos_numbers WHERE day = ? AND ref = ? AND manual = 1`).get(today, receipt);
+    const order = this.db.prepare(`SELECT id FROM orders WHERE receipt = ? AND status IN ('preparing', 'ready') ORDER BY created_at DESC LIMIT 1`).get(receipt);
+    if (order) return { order: this.getOrder(order.id) };
+    if (row?.state === 'waiting') {
+      this.db.prepare('DELETE FROM pos_numbers WHERE day = ? AND ref = ? AND manual = 1').run(today, receipt);
+      return { removed: true, number: row.number };
+    }
+    return null;
+  }
+
   manualReceipt(receipt, { create = false } = {}) {
     return tx(this.db, () => {
       const shop = this.getShop();
