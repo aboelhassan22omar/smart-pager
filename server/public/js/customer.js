@@ -162,6 +162,7 @@ function render() {
   $('ios-hint').hidden = closed || order.status === 'ready' || !isIOS(navigator) || isStandalone();
   renderPushHint();
   renderReview();
+  renderNote();
   renderQueue();
   renderPromo();
   renderLoyalty();
@@ -193,53 +194,73 @@ async function loadLoyalty() {
   renderLoyalty();
 }
 
-// After pickup, every customer is asked (Google forbids asking only happy ones).
-// Stars + comment + the Google button, all at once (no review gating; see review.js).
-const review = { rating: 0, comment: '', sent: false, bound: false };
+// After pickup, every customer gets the Google button (no review gating; see review.js).
+let reviewBound = false;
 
 function renderReview() {
   const box = $('review');
-  const show = order.status === 'picked' && Boolean(shop?.feedback || shop?.googleReviewUrl);
+  const show = order.status === 'picked' && Boolean(shop?.googleReviewUrl);
   box.hidden = !show;
   if (!show) return;
-  if (order.feedback) {
-    review.sent = true;
-    review.rating = order.feedback.rating;
-  }
-  box.innerHTML = reviewHtml({
-    googleUrl: shop.googleReviewUrl, feedback: shop.feedback, rating: review.rating, sent: review.sent, comment: review.comment,
-  });
-  if (review.bound) return;
-  review.bound = true;
-  box.addEventListener('click', async (e) => {
-    const star = e.target.closest('[data-rating]');
-    if (star && !review.sent) {
-      review.rating = Number(star.dataset.rating);
-      renderReview();
-      $('review-comment')?.focus();
-      return;
-    }
+  box.innerHTML = reviewHtml({ googleUrl: shop.googleReviewUrl });
+  if (reviewBound) return;
+  reviewBound = true;
+  box.addEventListener('click', (e) => {
     if (e.target.closest('#review-link')) {
       navigator.sendBeacon?.(`${branchApi}/orders/${encodeURIComponent(order.id)}/review-click`, '');
-      return;
-    }
-    const send = e.target.closest('#review-send');
-    if (send) {
-      send.disabled = true;
-      try {
-        await api(`${branchApi}/orders/${encodeURIComponent(order.id)}/feedback`, {
-          method: 'POST', body: { rating: review.rating, comment: review.comment },
-        });
-        review.sent = true;
-      } catch (err) {
-        if (err.status === 409) review.sent = true;
-        else send.disabled = false;
-      }
-      renderReview();
     }
   });
+}
+
+// «رسالة للإدارة»: its own box at the bottom of the page, on/off per branch. One message per
+// order; the brand owner reads them in the analytics. Rebuilt only when its state changes, so
+// an order update never wipes what the customer is typing.
+const note = { text: '', sent: false, shown: null, bound: false };
+
+function renderNote() {
+  const box = $('note');
+  const show = Boolean(shop?.messageBox) && !['cancelled', 'expired'].includes(order.status);
+  box.hidden = !show;
+  if (!show) return;
+  if (order.noteSent) note.sent = true;
+  const state = note.sent ? 'sent' : 'form';
+  if (note.shown === state) return;
+  note.shown = state;
+  box.innerHTML = note.sent
+    ? `<p class="note-title">${esc(t('note_title'))}</p><p class="note-thanks">${esc(t('note_thanks'))}</p>`
+    : `<p class="note-title">${esc(t('note_title'))}</p>
+       <p class="note-hint">${esc(t('note_hint'))}</p>
+       <textarea class="input note-text" id="note-text" maxlength="500" rows="3" placeholder="${esc(t('note_placeholder'))}">${esc(note.text)}</textarea>
+       <p class="note-error" id="note-error" role="alert" hidden></p>
+       <button class="btn btn-block" id="note-send" type="button">${esc(t('note_send'))}</button>`;
+  if (note.bound) return;
+  note.bound = true;
   box.addEventListener('input', (e) => {
-    if (e.target.id === 'review-comment') review.comment = e.target.value;
+    if (e.target.id === 'note-text') note.text = e.target.value;
+  });
+  box.addEventListener('click', async (e) => {
+    const send = e.target.closest('#note-send');
+    if (!send) return;
+    const text = note.text.trim();
+    if (!text) {
+      $('note-text')?.focus();
+      return;
+    }
+    send.disabled = true;
+    try {
+      await api(`${branchApi}/orders/${encodeURIComponent(order.id)}/note`, { method: 'POST', body: { text } });
+      note.sent = true;
+    } catch (err) {
+      if (err.status === 409) {
+        note.sent = true;
+      } else {
+        send.disabled = false;
+        $('note-error').textContent = err.message;
+        $('note-error').hidden = false;
+        return;
+      }
+    }
+    renderNote();
   });
 }
 
@@ -595,7 +616,7 @@ function switchTo(id) {
   order = entry.order;
   store.set(storageKey, order.id);
   history.replaceState(null, '', `${location.pathname}?o=${encodeURIComponent(order.id)}`);
-  Object.assign(review, { rating: 0, comment: '', sent: false });
+  Object.assign(note, { text: '', sent: false, shown: null });
   addOther(previous);
   pushOn = false;
   render();

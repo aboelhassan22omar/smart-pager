@@ -1,40 +1,15 @@
-// Post-pickup review card (DESIGN §18.4).
+// After pickup: the Google review button, for every customer (DESIGN §18.4).
 //
-// NO REVIEW GATING: the Google button is rendered for every customer, at the same time as
-// the internal stars, whatever rating they give or don't give. We never ask satisfaction
-// first and only send happy customers to Google, and nothing (stamps, rewards) depends on it.
+// NO REVIEW GATING: nothing is asked first, the button is there whatever the customer thinks,
+// and nothing (stamps, rewards) depends on it. The page's own stars are gone; a customer who
+// wants to tell the management something has «رسالة للإدارة» at the bottom (customer.js).
 
-import { icons } from './icons.js';
 import { t } from './texts.js';
 import { esc } from './util.js';
 
-/**
- * @param googleUrl  the branch's Google review link (or null)
- * @param feedback   internal feedback enabled for the branch
- * @param rating     0 (none yet) .. 5
- * @param sent       internal feedback already submitted
- */
-export function reviewHtml({ googleUrl = null, feedback = false, rating = 0, sent = false, comment = '' } = {}) {
-  let html = `<p class="review-title">${esc(t('review_title'))}</p>`;
-  if (feedback) {
-    html += '<div class="review-stars" role="radiogroup" aria-label="تقييمك من 5">';
-    for (let i = 1; i <= 5; i++) {
-      html += `<button type="button" class="star${i <= rating ? ' is-on' : ''}" data-rating="${i}" role="radio"
-        aria-checked="${i === rating}" aria-label="${i} من 5" ${sent ? 'disabled' : ''}>${icons.star(30)}</button>`;
-    }
-    html += '</div>';
-    if (sent) {
-      html += `<p class="review-thanks">${esc(t('review_thanks'))}</p>`;
-    } else if (rating) {
-      html += `<textarea class="input review-comment" id="review-comment" maxlength="500" rows="2"
-        placeholder="${esc(t('review_placeholder'))}">${esc(comment)}</textarea>
-        <button class="btn btn-block" id="review-send" type="button">${esc(t('review_send'))}</button>`;
-    } else {
-      html += `<p class="review-sub">${esc(t('review_sub'))}</p>`;
-    }
-  }
-  if (googleUrl) {
-    html += `<a class="btn btn-primary btn-block" id="review-link" href="${esc(googleUrl)}" target="_blank" rel="noopener">${esc(t('review_google'))}</a>`;
-  }
-  return html;
+/** @param googleUrl  the branch's Google review link (or null: nothing to show) */
+export function reviewHtml({ googleUrl = null } = {}) {
+  if (!googleUrl) return '';
+  return `<p class="review-title">${esc(t('review_title'))}</p>
+    <a class="btn btn-primary btn-block" id="review-link" href="${esc(googleUrl)}" target="_blank" rel="noopener">${esc(t('review_google'))}</a>`;
 }

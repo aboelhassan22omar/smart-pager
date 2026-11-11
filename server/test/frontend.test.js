@@ -219,32 +219,21 @@ describe('Google review prompt', () => {
   const GOOGLE = 'https://search.google.com/local/writereview?placeid=ChIJ123';
   const googleLinks = (html) => html.match(/<a [^>]*id="review-link"[^>]*>/g) ?? [];
 
-  test('NO GATING: the Google button renders for every rating, before and after sending', () => {
-    for (const feedback of [true, false]) {
-      for (let rating = 0; rating <= 5; rating++) {
-        for (const sent of [false, true]) {
-          const html = reviewHtml({ googleUrl: GOOGLE, feedback, rating, sent });
-          const links = googleLinks(html);
-          assert.equal(links.length, 1, `rating=${rating} sent=${sent} feedback=${feedback}`);
-          assert.match(links[0], /target="_blank"[^>]*rel="noopener"/);
-          assert.ok(links[0].includes(`href="${esc(GOOGLE)}"`));
-        }
-      }
-    }
+  test('NO GATING: just the Google button, nothing asked first, opening in a new tab', () => {
+    const links = googleLinks(reviewHtml({ googleUrl: GOOGLE }));
+    assert.equal(links.length, 1);
+    assert.match(links[0], /target="_blank"[^>]*rel="noopener"/);
+    assert.ok(links[0].includes(`href="${esc(GOOGLE)}"`));
   });
 
-  test('stars only when internal feedback is on; nothing Google without a link', () => {
+  test('no stars any more, and nothing without a Google link', () => {
     assert.equal((reviewHtml({ googleUrl: GOOGLE }).match(/data-rating=/g) ?? []).length, 0);
-    assert.equal((reviewHtml({ feedback: true }).match(/data-rating=/g) ?? []).length, 5);
-    assert.equal(googleLinks(reviewHtml({ feedback: true, rating: 2 })).length, 0);
-    assert.match(reviewHtml({ feedback: true, rating: 3 }), /id="review-send"/);
-    assert.doesNotMatch(reviewHtml({ feedback: true, rating: 3, sent: true }), /id="review-send"/);
-    assert.ok(!reviewHtml({ feedback: true, rating: 1, comment: '<b>x</b>' }).includes('<b>x</b>'), 'comment is escaped');
+    assert.equal(reviewHtml({}), '');
   });
 
   test('shows after pickup only and counts the tap', () => {
     const js = read('public/js/customer.js');
-    assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.feedback \|\| shop\?\.googleReviewUrl\)/);
+    assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.googleReviewUrl\)/);
     assert.match(js, /sendBeacon\?\.\(`\$\{branchApi\}\/orders\/\$\{encodeURIComponent\(order\.id\)\}\/review-click`/);
     // Rewards never depend on reviews: the review card does not touch loyalty.
     const code = read('public/js/review.js').replace(/^\s*(\/\/|\*).*$/gm, '');
@@ -423,7 +412,7 @@ describe('customer texts', async () => {
   });
 
   test('cleaning: known keys, trimmed, not empty, not the default', () => {
-    assert.deepEqual(cleanTexts({ order_label: '  رقمك  ', ready_title: 'طلبك جاهز', x: 'y', review_sub: '' }).texts, { order_label: 'رقمك' });
+    assert.deepEqual(cleanTexts({ order_label: '  رقمك  ', ready_title: 'طلبك جاهز', x: 'y', note_hint: '' }).texts, { order_label: 'رقمك' });
     assert.equal(cleanTexts({ order_label: 'x'.repeat(161) }).field, 'order_label');
   });
 });

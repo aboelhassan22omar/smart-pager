@@ -16,7 +16,7 @@ const SETTING_COLUMNS = new Set([
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
   'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
   'pos_token', 'pos_last_event', 'theme_version', 'pos_only', 'order_qr', 'order_share',
-  'manual_numbers', 'print_agent', 'print_last',
+  'manual_numbers', 'print_agent', 'print_last', 'message_box',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
@@ -405,7 +405,7 @@ export class BranchStore {
    */
   resetActivity() {
     return tx(this.db, () => {
-      for (const table of ['subscriptions', 'feedback', 'loyalty_rewards', 'loyalty_devices', 'orders', 'hourly_stats', 'pos_numbers']) {
+      for (const table of ['subscriptions', 'feedback', 'messages', 'loyalty_rewards', 'loyalty_devices', 'orders', 'hourly_stats', 'pos_numbers']) {
         this.db.exec(`DELETE FROM ${table}`);
       }
       this.db.exec("DELETE FROM meta WHERE key = 'rollup_at'");
@@ -509,6 +509,7 @@ export class BranchStore {
     const subscriptions = Number(this.sql.purgeSubs.run(now - SUBSCRIPTION_RETENTION_MS).changes);
     const orders = Number(this.sql.purge.run(now - ORDER_RETENTION_MS).changes);
     this.db.prepare('DELETE FROM pos_numbers WHERE created_at < ?').run(now - POS_RETENTION_MS);
+    this.db.prepare('DELETE FROM messages WHERE created_at <= ?').run(now - ORDER_RETENTION_MS);
     return { orders, subscriptions };
   }
 
@@ -559,6 +560,22 @@ export class BranchStore {
     const res = this.db.prepare('INSERT OR IGNORE INTO feedback (order_id, rating, comment, created_at) VALUES (?, ?, ?, ?)')
       .run(orderId, rating, comment, Date.now());
     return Number(res.changes) === 1;
+  }
+
+  // ---- «رسالة للإدارة» ----
+
+  /** One per order; false if it was sent already. */
+  addMessage(orderId, text) {
+    return Number(this.db.prepare('INSERT OR IGNORE INTO messages (order_id, text, created_at) VALUES (?, ?, ?)')
+      .run(orderId, text, Date.now()).changes) === 1;
+  }
+
+  hasMessage(orderId) {
+    return Boolean(this.db.prepare('SELECT 1 FROM messages WHERE order_id = ?').get(orderId));
+  }
+
+  messagesSince(since, until = Date.now()) {
+    return this.db.prepare('SELECT * FROM messages WHERE created_at >= ? AND created_at < ? ORDER BY created_at DESC').all(since, until);
   }
 
   feedbackSince(since, until = Date.now()) {

@@ -186,6 +186,24 @@ function renderFeedback(el, fb, showBranch) {
     </ul>`;
 }
 
+/** «رسالة للإدارة»: what customers wrote, newest first. */
+function renderMessages(el, messages, showBranch) {
+  if (!messages?.count) {
+    el.hidden = true;
+    return;
+  }
+  el.hidden = false;
+  el.innerHTML = `
+    <h3>رسايل للإدارة</h3>
+    <p class="muted small">${fmtInt(messages.count)} رسالة في الفترة دي</p>
+    <ul class="feedback-list">${messages.latest.map((m) => `
+      <li>
+        <p>${esc(m.text)}</p>
+        <small>${showBranch ? `${esc(m.branchName)} · ` : ''}${esc(fmtWhen(m.at))}</small>
+      </li>`).join('')}
+    </ul>`;
+}
+
 // ---------- section ----------
 
 export function mountAnalytics(root, { base, branches }) {
@@ -219,6 +237,7 @@ export function mountAnalytics(root, { base, branches }) {
       <div id="an-heat"></div>
     </div>
     <div class="chart-card table-card" id="an-table"></div>
+    <div class="chart-card" id="an-messages" hidden></div>
     <div class="chart-card" id="an-feedback" hidden></div>`;
 
   const $ = (id) => root.querySelector(`#${id}`);
@@ -244,6 +263,7 @@ export function mountAnalytics(root, { base, branches }) {
       renderHeatmap($('an-heat'), last.heatmap);
       renderTable($('an-table'), branch.value ? [] : last.branches);
       $('an-table').hidden = Boolean(branch.value) || last.branches.length < 2;
+      renderMessages($('an-messages'), last.messages, !branch.value && last.branches.length > 1);
       renderFeedback($('an-feedback'), last.feedback, !branch.value && last.branches.length > 1);
     } catch (err) {
       $('an-error').textContent = err.message;

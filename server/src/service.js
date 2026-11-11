@@ -50,7 +50,10 @@ export function createService({ control, tenants, bus, notifier, screens, config
   function customerView(ctx, order, shop) {
     const stats = order.status === 'preparing' ? etaStats(ctx, { tz: branchTz(ctx.branch, config), cache: etaCache }) : null;
     const fb = order.status === 'picked' ? ctx.store.getFeedback(order.id) : null;
-    return { ...publicOrder(order, shop), queue: queueFor(ctx, order, stats), feedback: fb ? { rating: fb.rating } : null };
+    return {
+      ...publicOrder(order, shop), queue: queueFor(ctx, order, stats), feedback: fb ? { rating: fb.rating } : null,
+      noteSent: shop.message_box ? ctx.store.hasMessage(order.id) : false,
+    };
   }
 
   // After any change in a branch, push a `queue` event only to the orders whose

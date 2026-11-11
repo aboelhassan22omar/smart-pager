@@ -50,9 +50,11 @@ export const publicShop = (shop, { today } = {}) => ({
   accent: shop.accent_color ? readableAccent(shop.accent_color) : null,
   // The whole page in the logo's color (surfaces, text, accent); null = the default look.
   theme: shop.accent_color ? brandTheme(shop.accent_color) : null,
-  // Post-pickup review (phase 5): internal stars + the Google button, together.
+  // After pickup: the Google review button (the page's own stars are gone).
   feedback: reviewEnabled(shop),
   googleReviewUrl: reviewEnabled(shop) ? reviewUrl(shop) : null,
+  // «رسالة للإدارة» at the bottom of the order page.
+  messageBox: Boolean(shop.message_box),
   // Stamp card rule (phase 6); the device's own count comes from GET /loyalty.
   loyalty: loyaltyEnabled(shop) ? { every: shop.loyalty_every, rewardText: shop.loyalty_reward_text ?? '' } : null,
   promo: today ? promoView(shop, today) : null,

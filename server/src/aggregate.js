@@ -86,6 +86,7 @@ function branchSummary(deps, branch, now, { withPin = false, apps = {} } = {}) {
     promoText: shop?.promo_text ?? '',
     orderQr: Boolean(shop?.order_qr),
     manualNumbers: Boolean(shop?.manual_numbers),
+    messageBox: Boolean(shop?.message_box),
     orderShare: shop?.order_share == null ? true : Boolean(shop.order_share),
     promoImageUrl: shop?.promo_image ? `/media/b/${branch.id}/${shop.promo_image}` : null,
     promoStartsAt: shop?.promo_starts_at ?? null,
@@ -304,12 +305,24 @@ export function brandAnalytics(deps, brandId, { from, to, branchId = null, now =
     }
   }
   feedback.sort((a, b) => b.at - a.at);
+
+  // «رسالة للإدارة» in the range, newest first.
+  const messages = [];
+  for (const branch of branches) {
+    const ctx = tenants.get(branch.id);
+    if (!ctx?.store.getShop()) continue;
+    for (const m of ctx.store.messagesSince(start, endExact)) {
+      messages.push({ branchId: branch.id, branchName: branch.name, text: m.text, at: m.created_at });
+    }
+  }
+  messages.sort((a, b) => b.at - a.at);
   const ratingAvg = feedback.length ? Math.round((feedback.reduce((s, f) => s + f.rating, 0) / feedback.length) * 10) / 10 : null;
 
   return {
     range: { from, to },
     exact,
     feedback: { count: feedback.length, avg: ratingAvg, low: feedback.filter((f) => f.rating <= 2).length, latest: feedback.slice(0, 30) },
+    messages: { count: messages.length, latest: messages.slice(0, 50) },
     total: finish(totalAll, {
       prep: exact ? pooled.prep : null,
       wait: exact ? pooled.wait : null,
