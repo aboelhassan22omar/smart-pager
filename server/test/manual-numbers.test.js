@@ -6,7 +6,7 @@ import { client, startServer } from './helpers.js';
 const SUPER_PASSWORD = 'super-secret-pass';
 
 // Takeaway numbers typed by the cashier: the POS numbers dine-in, delivery and takeaway in one
-// row; receipt 27 gets takeaway number 3, and its customer picks receipt 27 when scanning.
+// row; receipt 27 gets the pager's next number, 3, and the next customer to scan lands on it.
 describe('takeaway numbers typed by the cashier', () => {
   let server;
   let owner;
@@ -42,48 +42,49 @@ describe('takeaway numbers typed by the cashier', () => {
     assert.equal((await bar.get('/api/bar/take-a/state')).data.shop.manualNumbers, true);
   });
 
-  test('a scan before the receipt is typed waits instead of taking a number', async () => {
+  test('nothing typed: a scan gets a number from the count, as always', async () => {
     const res = await scan();
-    assert.equal(res.status, 409);
-    assert.equal(res.data.wait, true);
+    assert.equal(res.status, 200);
+    assert.deepEqual([res.data.number, res.data.receipt], [1, null]);
   });
 
-  test('receipt 27 gets takeaway number 1, then 41 gets 2; Arabic digits are fine', async () => {
+  test('receipt 27 gets the next number, 2, then 41 gets 3; Arabic digits are fine', async () => {
     const a = await typed('27');
     assert.equal(a.status, 200);
-    assert.deepEqual([a.data.receipt, a.data.number, a.data.repeated], ['27', 1, false]);
+    assert.deepEqual([a.data.receipt, a.data.number, a.data.repeated], ['27', 2, false]);
     const b = await typed('٤١');
-    assert.deepEqual([b.data.receipt, b.data.number], ['41', 2]);
+    assert.deepEqual([b.data.receipt, b.data.number], ['41', 3]);
     assert.equal(b.data.counter.waiting, 2);
-    assert.equal((await typed('27')).data.number, 1, 'the same receipt again keeps its number');
+    assert.equal((await typed('27')).data.number, 2, 'the same receipt again keeps its number');
     assert.equal((await typed('27x')).status, 400);
   });
 
-  test('the customer picks their receipt, even when only one is waiting, and gets its number', async () => {
-    const choose = await scan();
-    assert.equal(choose.status, 200);
-    assert.deepEqual([...choose.data.choose].sort(), ['27', '41']);
-    const mine = await scan({ pick: '41' });
-    assert.equal(mine.status, 200);
-    assert.deepEqual([mine.data.number, mine.data.ref, mine.data.receipt], [2, null, '41']);
-    const last = await scan();
-    assert.deepEqual(last.data.choose, ['27'], 'one left: still asked, it may be someone else\'s');
-    const tile = (await bar.get('/api/bar/take-a/state')).data.orders.find((o) => o.id === mine.data.id);
+  test('the next customer to scan lands on the oldest typed receipt, nothing to choose', async () => {
+    const first = await scan();
+    assert.equal(first.status, 200);
+    assert.equal(first.data.choose, undefined);
+    assert.deepEqual([first.data.number, first.data.ref, first.data.receipt], [2, null, '27']);
+    const second = await scan();
+    assert.deepEqual([second.data.number, second.data.receipt], [3, '41']);
+    const tile = (await bar.get('/api/bar/take-a/state')).data.orders.find((o) => o.id === second.data.id);
     assert.equal(tile.receipt, '41', 'the cashier tile shows the receipt under the number');
+    const later = await scan();
+    assert.deepEqual([later.data.number, later.data.receipt], [4, null], 'none left: the count again');
   });
 
-  test('the QR on the receipt opens that receipt\'s number', async () => {
-    const res = await client(server.url).post('/api/b/take-a/claim', { k, receipt: '27' }, { headers: { 'x-client-id': 'r'.repeat(20) } });
+  test("the QR on the receipt opens that receipt's number", async () => {
+    assert.equal((await typed('60')).data.number, 5);
+    const res = await client(server.url).post('/api/b/take-a/claim', { k, receipt: '60' }, { headers: { 'x-client-id': 'r'.repeat(20) } });
     assert.equal(res.status, 200);
-    assert.deepEqual([res.data.number, res.data.receipt], [1, '27']);
+    assert.deepEqual([res.data.number, res.data.receipt], [5, '60']);
   });
 
   test('− takes back a typed receipt nobody scanned', async () => {
-    assert.equal((await typed('55')).data.number, 3);
+    assert.equal((await typed('55')).data.number, 6);
     const counter = (await bar.post('/api/bar/take-a/counter', { delta: -1 })).data;
-    assert.equal(counter.next, 3);
+    assert.equal(counter.next, 6);
     assert.equal(counter.waiting ?? 0, 0);
-    assert.equal((await typed('56')).data.number, 3, 'the number is given again');
+    assert.equal((await typed('56')).data.number, 6, 'the number is given again');
   });
 
   test('with order QR mode the order exists right away', async () => {
@@ -91,7 +92,7 @@ describe('takeaway numbers typed by the cashier', () => {
     const res = await typed('90');
     assert.equal(res.status, 200);
     assert.equal(res.data.order.receipt, '90');
-    assert.equal(res.data.order.number, 4);
+    assert.equal(res.data.order.number, 7);
     const open = (await bar.get('/api/bar/take-a/state')).data.orders.map((o) => o.receipt);
     assert.ok(open.includes('90'));
     await owner.post('/api/brand/take/branches/take-a/settings', { orderQr: false });
