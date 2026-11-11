@@ -4,7 +4,7 @@ import QRCode from 'qrcode';
 import { pinFields, PIN_RE, verifyPin } from '../auth.js';
 import { channels } from '../bus.js';
 import { staffCookieName } from '../cookies.js';
-import { planView } from '../plans.js';
+import { canClaim, planView } from '../plans.js';
 import { deviceFromRequest, setStaffSession, verifyStaffSession } from '../sessions.js';
 import { HttpError } from '../errors.js';
 import { randomId } from '../util.js';
@@ -12,7 +12,7 @@ import { DEMO_LOCKED, isDemo } from '../demo.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { newStaticKey, QR_MODES } from '../store.js';
-import { appleStatus, barShop, publicOrder, qrInfo } from '../views.js';
+import { appleStatus, barShop, orderUrl, publicOrder, qrInfo } from '../views.js';
 
 const STATUS_TARGETS = ['preparing', 'ready', 'picked', 'cancelled'];
 const HEX_COLOR_RE = /^#[0-9a-f]{6}$/i;
@@ -169,7 +169,10 @@ export default async function barRoutes(app, deps) {
       const shop = req.shop;
       const kind = req.query.kind === 'static' ? 'static' : 'dynamic';
       const info = qrInfo(shop, config);
-      const url = kind === 'static' ? info.staticUrl : info.dynamicUrl;
+      // ?order=<id>: that order's own QR (order QR mode), only while it is open.
+      const order = typeof req.query.order === 'string' ? req.ctx.store.getOrder(req.query.order) : null;
+      if (req.query.order && (!order || !['preparing', 'ready'].includes(order.status))) throw new HttpError(404, 'الطلب ده خلص');
+      const url = order ? orderUrl(config, shop.id, order.id) : kind === 'static' ? info.staticUrl : info.dynamicUrl;
       if (!url) throw new HttpError(409, 'نوع الكود ده مش مفعّل للمحل');
       const svg = await QRCode.toString(url, {
         type: 'svg',
@@ -185,6 +188,14 @@ export default async function barRoutes(app, deps) {
     });
 
     // +1 / -1 on the count: an order outside the pager (delivery), or a mistake.
+    // Order QR mode: the cashier rings an order up; the customer screen shows its QR.
+    bar.post('/orders', async (req) => {
+      if (!req.shop.order_qr) throw new HttpError(409, 'كود لكل طلب مش متفعّل للفرع ده');
+      if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الفرع متوقف. جدّد الاشتراك عشان ياخد طلبات');
+      const { order, shop } = service.createOrder(req.ctx);
+      return publicOrder(order, shop);
+    });
+
     bar.post('/counter', async (req) => {
       const delta = req.body?.delta;
       if (delta !== 1 && delta !== -1) throw invalid('delta', 'لازم 1 أو -1');

@@ -130,6 +130,24 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       return { enabled: true, ...loyaltyView(shop, req.ctx.store.loyaltyCard(hash)) };
     });
 
+    // A phone opened this order from its own QR (order QR mode, or the receipt). The first
+    // phone is remembered; with sharing off, another one is turned away. Loyalty: the first
+    // phone with a device token gets the stamp.
+    b.post('/orders/:id/join', async (req, reply) => {
+      const { order, shop } = loadOrder(req, req.params.id);
+      const clientId = CLIENT_ID_RE.test(req.headers['x-client-id'] ?? '') ? req.headers['x-client-id'] : null;
+      const share = shop.order_share == null ? true : Boolean(shop.order_share);
+      if (!req.ctx.store.joinOrder(order, clientId, { share })) {
+        throw new HttpError(409, 'الطلب ده مفتوح على موبايل تاني. اسأل الكاشير');
+      }
+      if (loyaltyEnabled(shop) && OPEN_STATUSES.includes(order.status)) {
+        const token = readDeviceToken(req, req.ctx.branch.id) ?? newDeviceToken();
+        req.ctx.store.attachDeviceIfFree(order.id, hashDevice(config, req.ctx.branch.id, token));
+        setDeviceCookie(reply, config, req.ctx.branch.id, token);
+      }
+      return service.customerView(req.ctx, req.ctx.store.getOrder(order.id), shop);
+    });
+
     b.get('/orders/:id', async (req) => {
       const { order, shop } = loadOrder(req, req.params.id);
       return service.customerView(req.ctx, order, shop);

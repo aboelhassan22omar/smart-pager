@@ -99,6 +99,21 @@ function renderCounter(counter) {
   $('count-waiting').textContent = counter.waiting ? `أرقام من السيستم مستنية سكان: ${counter.waiting}` : '';
 }
 
+// Order QR mode: the order exists now; the customer screen shows its QR.
+async function newOrder() {
+  const button = $('new-order');
+  button.disabled = true;
+  try {
+    const order = await api(`${base}/orders`, { method: 'POST', body: {} });
+    upsert(order);
+    toast(`طلب رقم ${order.number}: الكود بتاعه ظاهر على شاشة العميل`);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+  }
+}
+
 async function adjustCount(delta) {
   try {
     const counter = await api(`${base}/counter`, { method: 'POST', body: { delta } });
@@ -394,6 +409,7 @@ function applyState(state) {
   renderPlan(state.plan);
   renderCounter(state.counter);
   lateAfterMs = (state.shop.lateAfterMinutes ?? 10) * 60_000;
+  $('new-order').hidden = !state.shop.orderQr;
   $('shop-name').textContent = state.shop.name;
   document.title = `الطلبات — ${state.shop.name}`;
   orders.clear();
@@ -419,6 +435,7 @@ async function boot() {
   applyState(state);
   bindGrid();
   $('count-plus').addEventListener('click', () => adjustCount(1));
+  $('new-order').addEventListener('click', newOrder);
   $('count-minus').addEventListener('click', () => adjustCount(-1));
 
   $('sheet').addEventListener('click', (e) => {
@@ -447,6 +464,7 @@ async function boot() {
         $('shop-name').textContent = shop.name;
         applyTheme(document.documentElement, shop.theme);
         lateAfterMs = (shop.lateAfterMinutes ?? 10) * 60_000;
+        $('new-order').hidden = !shop.orderQr;
         renderGrid();
       },
     },

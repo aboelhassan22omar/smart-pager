@@ -89,9 +89,14 @@ export const barShop = (shop) => ({
   reviewClicks: shop.review_clicks ?? 0,
   themeVersion: shop.theme_version ?? 0,
   posOnly: Boolean(shop.pos_only),
+  orderQr: Boolean(shop.order_qr),
+  orderShare: shop.order_share == null ? true : Boolean(shop.order_share),
   dayStartHour: shop.day_start_hour ?? 0,
   timezone: shop.tz ?? null,
 });
+
+/** The link in an order's own QR: opens (joins) that order. */
+export const orderUrl = (config, shopId, orderId) => `${config.publicUrl}/s/${shopId}?o=${orderId}&j=1`;
 
 export function qrInfo(shop, config) {
   const base = `${config.publicUrl}/s/${shop.id}`;
