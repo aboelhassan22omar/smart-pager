@@ -85,6 +85,7 @@ function branchSummary(deps, branch, now, { withPin = false, apps = {} } = {}) {
     loyaltyRewardText: shop?.loyalty_reward_text ?? '',
     promoText: shop?.promo_text ?? '',
     orderQr: Boolean(shop?.order_qr),
+    manualNumbers: Boolean(shop?.manual_numbers),
     orderShare: shop?.order_share == null ? true : Boolean(shop.order_share),
     promoImageUrl: shop?.promo_image ? `/media/b/${branch.id}/${shop.promo_image}` : null,
     promoStartsAt: shop?.promo_starts_at ?? null,

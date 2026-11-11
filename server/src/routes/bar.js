@@ -44,6 +44,9 @@ export function sniffImage(buf) {
 }
 
 const invalid = (field, message) => new HttpError(400, message, { field });
+// A receipt number as the cashier types it: "27", or "2-1008"; Arabic digits are fine.
+const RECEIPT_RE = /^\d{1,6}(-\d{1,6})?$/;
+const latinDigits = (s) => s.replace(/[\u0660-\u0669\u06f0-\u06f9]/g, (d) => String(d.charCodeAt(0) & 0xf));
 
 function text(body, key, field, max) {
   const value = typeof body[key] === 'string' ? body[key].trim() : '';
@@ -194,6 +197,15 @@ export default async function barRoutes(app, deps) {
       if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الفرع متوقف. جدّد الاشتراك عشان ياخد طلبات');
       const { order, shop } = service.createOrder(req.ctx);
       return publicOrder(order, shop);
+    });
+
+    // Takeaway numbers typed by the cashier: the receipt's number in, the takeaway number out.
+    bar.post('/receipts', async (req) => {
+      if (!req.shop.manual_numbers) throw new HttpError(409, 'أرقام التيكاواي اليدوي مش متفعّلة للفرع ده');
+      if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الفرع متوقف. جدّد الاشتراك عشان ياخد طلبات');
+      const receipt = latinDigits(String(req.body?.receipt ?? '').trim());
+      if (!RECEIPT_RE.test(receipt)) throw invalid('receipt', 'اكتب رقم الفاتورة بالأرقام بس');
+      return service.manualReceipt(req.ctx, receipt);
     });
 
     bar.post('/counter', async (req) => {

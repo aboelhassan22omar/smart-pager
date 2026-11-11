@@ -160,6 +160,15 @@ export const BRANCH_MIGRATIONS = [
   `
   ALTER TABLE orders ADD COLUMN rev INTEGER NOT NULL DEFAULT 0;
   `,
+  // 11: takeaway numbers typed by the cashier. The POS numbers every order (dine-in, delivery,
+  //     takeaway) in one row; the cashier types a takeaway receipt's number (27) and it gets the
+  //     next takeaway number (3). pos_numbers.manual: a typed receipt (ref = the receipt);
+  //     orders.receipt: the receipt number of such an order.
+  `
+  ALTER TABLE branch_settings ADD COLUMN manual_numbers INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE pos_numbers ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE orders ADD COLUMN receipt TEXT;
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

@@ -156,6 +156,13 @@
   transition: opacity 240ms var(--ease);
 }
 
+.card-receipt {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: var(--fs-sm);
+  text-align: right;
+}
+
 .card-status {
   display: flex;
   align-items: center;

@@ -119,10 +119,26 @@ export function createService({ control, tenants, bus, notifier, screens, config
    */
   function createOrder(ctx, { number = null, ref = null } = {}) {
     const { order, shop } = ctx.store.createOrder({ number, ref });
+    orderRungUp(ctx, order, shop);
+    return { order, shop };
+  }
+
+  function orderRungUp(ctx, order, shop) {
     publishOrder(ctx, order, shop, { action: 'created' });
     bus.emit(channels(ctx.branch.id).bar, 'order-qr', { id: order.id, number: order.number, ref: order.ref ?? null });
     control.touch(ctx.branch.id);
-    return { order, shop };
+  }
+
+  /**
+   * Takeaway numbers typed by the cashier: receipt 27 gets the next takeaway number. It waits
+   * for its customer's scan; in order QR mode it is an order now, its QR on the customer screen.
+   */
+  function manualReceipt(ctx, receipt) {
+    const { number, repeated, order } = ctx.store.manualReceipt(receipt, { create: Boolean(ctx.store.getShop().order_qr) });
+    const shop = ctx.store.getShop();
+    if (order) orderRungUp(ctx, order, shop);
+    else publishCounter(ctx);
+    return { receipt, number, repeated, order: order ? publicOrder(order, shop) : null, counter: ctx.store.counter() };
   }
 
   /** Orders read from the branch's POS link. */
@@ -229,7 +245,7 @@ export function createService({ control, tenants, bus, notifier, screens, config
   }
 
   return {
-    claim, createOrder, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+    claim, createOrder, manualReceipt, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
     close: () => {
       for (const id of [...repeats.keys()]) clearRepeats(id);
     },

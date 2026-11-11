@@ -49,9 +49,10 @@ function tileHtml(o) {
   return `
     <button class="tile${fresh.has(o.id) ? ' is-new' : ''}${late ? ' is-late' : ''}" role="listitem" type="button"
             data-id="${esc(o.id)}" data-status="${esc(o.status)}"
-            aria-label="طلب ${esc(receiptNo(o))}، ${esc(label)}${gift ? '، عليه مكافأة' : ''}">
+            aria-label="طلب ${esc(receiptNo(o))}${o.receipt ? `، فاتورة ${esc(o.receipt)}` : ''}، ${esc(label)}${gift ? '، عليه مكافأة' : ''}">
       ${gift ? `<span class="tile-gift" title="عليه مكافأة">${icons.gift(16)}</span>` : ''}
       <span class="tile-num num">${esc(receiptNo(o))}</span>
+      ${o.receipt ? `<span class="tile-receipt">فاتورة <span class="num">${esc(o.receipt)}</span></span>` : ''}
       <span class="tile-foot">
         <span class="tile-status">${icon}${esc(label)}${esc(rings)}</span>
         <span>${esc(elapsedLabel(o.createdAt))}</span>
@@ -93,13 +94,53 @@ function upsert(o) {
 
 // ---------- the count: next and last number, + and − ----------
 
+let lastCounter = null;
 function renderCounter(counter) {
   if (!counter) return;
+  lastCounter = counter;
   $('count-next').textContent = String(counter.next ?? '—');
   $('count-last').textContent = counter.last == null ? 'لسه مفيش' : String(counter.last);
   $('count-minus').disabled = counter.last == null;
   $('count-waiting').hidden = !counter.waiting;
-  $('count-waiting').textContent = counter.waiting ? `أرقام من السيستم مستنية سكان: ${counter.waiting}` : '';
+  $('count-waiting').textContent = counter.waiting
+    ? `${manualMode ? 'فواتير' : 'أرقام من السيستم'} مستنية سكان: ${counter.waiting}` : '';
+}
+
+// ---------- takeaway numbers typed by the cashier ----------
+
+let manualMode = false;
+
+function setModes(shop) {
+  manualMode = Boolean(shop.manualNumbers);
+  $('manual').hidden = !manualMode;
+  $('manual-help').hidden = !manualMode;
+  $('count-help').hidden = manualMode; // the count is takeaway only: no "same as the POS" here
+  // Typed receipts make the orders here; «طلب جديد» would skip the receipt.
+  $('new-order').hidden = !shop.orderQr || manualMode;
+}
+
+async function addReceipt(e) {
+  e.preventDefault();
+  const input = $('manual-receipt');
+  const receipt = input.value.trim();
+  if (!receipt) return input.focus();
+  const button = $('manual').querySelector('button');
+  button.disabled = true;
+  try {
+    const res = await api(`${base}/receipts`, { method: 'POST', body: { receipt } });
+    liveCounter(res.counter);
+    if (res.order) upsert(res.order);
+    input.value = '';
+    toast(res.repeated
+      ? `فاتورة ${res.receipt} متسجلة قبل كده، رقمها ${res.number}`
+      : `فاتورة ${res.receipt}: رقم التيكاواي ${res.number}`);
+  } catch (err) {
+    toast(err.message, 'error');
+  } finally {
+    button.disabled = false;
+    input.focus();
+  }
+  return undefined;
 }
 
 // Order QR mode: the order exists now; the customer screen shows its QR.
@@ -428,7 +469,7 @@ function applyState(state) {
   renderPlan(state.plan);
   renderCounter(state.counter);
   lateAfterMs = (state.shop.lateAfterMinutes ?? 10) * 60_000;
-  $('new-order').hidden = !state.shop.orderQr;
+  setModes(state.shop);
   $('shop-name').textContent = state.shop.name;
   document.title = `الطلبات — ${state.shop.name}`;
   orders.clear();
@@ -455,6 +496,7 @@ async function boot() {
   bindGrid();
   $('count-plus').addEventListener('click', () => adjustCount(1));
   $('new-order').addEventListener('click', newOrder);
+  $('manual').addEventListener('submit', addReceipt);
   $('count-minus').addEventListener('click', () => adjustCount(-1));
 
   $('sheet').addEventListener('click', (e) => {
@@ -483,7 +525,8 @@ async function boot() {
         $('shop-name').textContent = shop.name;
         applyTheme(document.documentElement, shop.theme);
         lateAfterMs = (shop.lateAfterMinutes ?? 10) * 60_000;
-        $('new-order').hidden = !shop.orderQr;
+        setModes(shop);
+        renderCounter(lastCounter);
         renderGrid();
       },
     },
