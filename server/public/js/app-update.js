@@ -1,14 +1,23 @@
 // Inside an installed app (cashier or owner): when a newer build is out (new template, new
-// logo, renamed brand) a bar offers it. The update installs over the app, nothing to remove:
-//   Android: the APK downloads and the installer opens (from 1.1.0 by itself, before that from
-//            the download notification).
-//   Windows: from 1.1.0 the app fetches the new exe, swaps it in and reopens; older ones get
-//            the zip to run after closing the app.
+// logo, renamed brand) the app takes it by itself, at a quiet moment. Nothing to remove:
+//   Windows: from 1.1.0 the app fetches the new exe, swaps it in and reopens, on its own. Older
+//            ones get the zip to run after closing the app.
+//   Android: the APK downloads and the installer opens; Android asks for one tap on «تحديث»
+//            (no app can install itself silently). Until then a bar says an update is waiting,
+//            and the installer opens again an hour later.
+// The pages themselves (the web part) reload on a new server version: see util.js.
 
-import { api, esc, isCashierApp } from './util.js';
+import { api, esc, isCashierApp, pageBusy } from './util.js';
 
-const CHECK_MS = 6 * 3600 * 1000;
-const DISMISS_KEY = 'sp:update-dismissed';
+const CHECK_MS = 15 * 60_000;
+// Nobody touched the screen for this long: updating now interrupts no one.
+const QUIET_MS = 30_000;
+const ANDROID_RETRY_MS = 3600_000;
+const ANDROID_KEY = 'sp:update-opened';
+
+let lastTouch = Date.now();
+let pending = null;
+let started = false;
 
 function bar() {
   let el = document.getElementById('app-update');
@@ -28,50 +37,66 @@ function hint(info) {
   return 'لما التحميل يخلص: اقفل البرنامج، وافتح الملف اللي نزل وشغّل اللي جواه. هيحل مكان القديم.';
 }
 
-function show(info) {
-  const el = bar();
-  el.innerHTML = `
-    <span>فيه نسخة جديدة من التطبيق</span>
-    <button class="btn btn-sm btn-primary" type="button" data-update>حدّث</button>
-    <button class="app-update-close" type="button" aria-label="بعدين" data-later>✕</button>`;
-  el.hidden = false;
-  el.onclick = (e) => {
-    if (e.target.closest('[data-later]')) {
-      el.hidden = true;
-      try {
-        sessionStorage.setItem(DISMISS_KEY, '1');
-      } catch {
-        /* private mode */
-      }
-      return;
-    }
-    if (!e.target.closest('[data-update]')) return;
-    const absolute = (u) => new URL(u, location.href).href;
-    if (info.inApp && info.rawUrl && window.ipc?.postMessage) {
-      window.ipc.postMessage(`update:${absolute(info.rawUrl)}`);
-    } else {
-      location.href = info.url;
-    }
-    el.innerHTML = `<span>بيتحمّل… ${esc(hint(info))}</span>`;
-  };
-}
+const selfUpdating = (info) => Boolean(info.inApp && info.rawUrl && window.ipc?.postMessage);
 
-/** Checks now and every few hours; quiet outside the apps and on any error. */
-export function watchAppUpdates() {
-  if (typeof document === 'undefined' || !isCashierApp(document)) return;
-  const check = async () => {
+function start(info) {
+  started = true;
+  if (selfUpdating(info)) {
+    window.ipc.postMessage(`update:${new URL(info.rawUrl, location.href).href}`);
+  } else {
     try {
-      if (sessionStorage.getItem(DISMISS_KEY)) return;
+      localStorage.setItem(ANDROID_KEY, String(Date.now()));
     } catch {
       /* private mode */
     }
+    location.href = info.url;
+  }
+  bar().innerHTML = `<span>بيتحدّث… ${esc(hint(info))}</span>`;
+}
+
+function show(info) {
+  const el = bar();
+  el.innerHTML = `
+    <span>فيه نسخة جديدة، هتتحدّث لوحدها أول ما الشاشة تفضى</span>
+    <button class="btn btn-sm btn-primary" type="button" data-update>حدّث دلوقتي</button>`;
+  el.hidden = false;
+  el.onclick = (e) => {
+    if (e.target.closest('[data-update]')) start(info);
+  };
+}
+
+// Android opens the installer again only an hour after the last time it was opened.
+function androidDue() {
+  try {
+    return Date.now() - Number(localStorage.getItem(ANDROID_KEY) ?? 0) > ANDROID_RETRY_MS;
+  } catch {
+    return true;
+  }
+}
+
+function tryNow() {
+  if (!pending || started) return;
+  if (Date.now() - lastTouch < QUIET_MS || pageBusy()) return;
+  if (!selfUpdating(pending) && !androidDue()) return;
+  start(pending);
+}
+
+/** Checks now and every 15 minutes; quiet outside the apps and on any error. */
+export function watchAppUpdates() {
+  if (typeof document === 'undefined' || !isCashierApp(document)) return;
+  for (const e of ['pointerdown', 'keydown']) document.addEventListener(e, () => { lastTouch = Date.now(); }, true);
+  const check = async () => {
     try {
       const info = await api('/api/app/update');
-      if (info.update) show(info);
+      if (!info.update) return;
+      pending = info;
+      if (!started) show(info);
+      tryNow();
     } catch {
       /* offline or signed out: next time */
     }
   };
   check();
   setInterval(check, CHECK_MS);
+  setInterval(tryNow, 10_000);
 }

@@ -14,7 +14,7 @@ import {
   requireJson, requireSuper, setStaffSession, setSuperSession, SUPER_COOKIE, superEnabled,
 } from '../sessions.js';
 import { isTimeZone, randomId } from '../util.js';
-import { barShop } from '../views.js';
+import { barShop, publicOrder } from '../views.js';
 import { sniffImage } from './bar.js';
 
 export const USERNAME_RE = /^[a-z0-9._-]{3,32}$/;
@@ -70,6 +70,16 @@ export default async function superRoutes(app, deps) {
     s.addHook('onRequest', async (req) => {
       requireSuper(req, config);
       requireJson(req, req.url.split('?')[0].endsWith('/app-icon') ? ['image/png'] : []);
+    });
+
+    // A branch changed (plan, trial, payment, PIN, name, features...): its open screens fetch
+    // their state now, not on their next refresh. A brand put in or out of the trash: all of them.
+    s.addHook('onResponse', async (req, reply) => {
+      if (req.method !== 'POST' || reply.statusCode >= 300) return;
+      const ids = req.params?.branch ? [req.params.branch]
+        : req.params?.brand && /\/(trash|restore)$/.test(req.url.split('?')[0])
+          ? control.branchesOfBrand(req.params.brand).map((b) => b.id) : [];
+      for (const id of ids) bus.emit(channels(id).bar, 'state', {});
     });
 
     function branchCtx(req) {
@@ -175,8 +185,17 @@ export default async function superRoutes(app, deps) {
       if (!backup.ok) throw new HttpError(500, 'النسخة الاحتياطية فشلت، فمسحناش حاجة. جرّب تاني');
       const branches = control.branchesOfBrand(brand.id);
       for (const branch of branches) {
-        tenants.resolve(branch.id).store.resetActivity();
+        const ctx = tenants.resolve(branch.id);
+        const shop = ctx.store.getShop();
+        const open = ctx.store.openOrders();
+        ctx.store.resetActivity();
+        // Every open screen of the branch reloads now; a customer following an order that is
+        // gone sees it closed instead of waiting on it.
         bus.emit(channels(branch.id).bar, 'reload', {});
+        for (const order of open) {
+          const gone = { ...publicOrder({ ...order, status: 'cancelled', closed_at: Date.now() }, shop), queue: null, feedback: null };
+          bus.emit(channels(branch.id).order(order.id), 'order', gone);
+        }
       }
       audit(req, 'brand.reset_activity', { brandId: brand.id, detail: { branches: branches.length, backupDay: backup.day } });
       return { ok: true, branches: branches.length, backupDay: backup.day };

@@ -33,9 +33,60 @@ export async function api(path, { method = 'GET', body, raw, contentType, header
   } catch {
     throw new ApiError(0, 'مفيش اتصال بالإنترنت. جرّب تاني');
   }
+  noteBuild(res.headers.get('x-build'));
   const data = (res.headers.get('content-type') ?? '').includes('json') ? await res.json() : null;
   if (!res.ok) throw new ApiError(res.status, data?.error ?? 'حصلت مشكلة. جرّب تاني', data);
   return data;
+}
+
+// ---------- a new version on the server: staff pages reload themselves ----------
+// Every reply carries the server's build. A page that opted in reloads once the build changes,
+// at a moment it loses nothing: no form or sheet open, nothing being typed, nothing unsent.
+
+let autoReload = false;
+let seenBuild = null;
+let reloading = false;
+const holds = [];
+
+/** Staff pages (cashier, customer screen, owner, super) take new versions by themselves. */
+export function reloadOnNewVersion() {
+  autoReload = true;
+}
+
+/** The page says when a reload now would lose something (a tap not sent yet). */
+export function holdReloadWhile(fn) {
+  holds.push(fn);
+}
+
+/** Something on the page would be lost by a reload or an app update right now. */
+export function pageBusy(doc = globalThis.document) {
+  if (!doc) return false;
+  const el = doc.activeElement;
+  if (el && /^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.value) return true;
+  const shown = (m) => (m.checkVisibility ? m.checkVisibility() : m.offsetParent !== null);
+  if ([...doc.querySelectorAll('[aria-modal="true"]')].some(shown)) return true;
+  return holds.some((fn) => {
+    try {
+      return fn();
+    } catch {
+      return false;
+    }
+  });
+}
+
+export function noteBuild(build) {
+  if (!build) return;
+  if (seenBuild == null) {
+    seenBuild = build;
+    return;
+  }
+  if (build === seenBuild || !autoReload || reloading || typeof location === 'undefined') return;
+  reloading = true;
+  const attempt = () => {
+    if (pageBusy()) setTimeout(attempt, 5000);
+    else location.reload();
+  };
+  attempt();
 }
 
 export function shopIdFromPath(pathname) {

@@ -2,7 +2,7 @@ import { accentFromImage, applyTheme, brandTheme, MONO_COLOR, readableAccent } f
 import { renewalHtml } from './dashboard.js';
 import { icons } from './icons.js';
 import { loadStaffState, toast } from './staff.js';
-import { api, elapsedLabel, esc, shopIdFromPath } from './util.js';
+import { api, elapsedLabel, esc, reloadOnNewVersion, shopIdFromPath } from './util.js';
 
 const LOGO_TYPES = ['image/png', 'image/jpeg', 'image/webp'];
 const LOGO_MAX = 2 * 1024 * 1024;
@@ -380,6 +380,7 @@ function renderPlan(plan) {
 }
 
 async function boot() {
+  reloadOnNewVersion();
   let state;
   try {
     state = await loadStaffState(shopId, $('login-root'));

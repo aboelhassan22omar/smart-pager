@@ -2,7 +2,7 @@ import { ago, appInviteText, branchCardHtml, devicesHtml, PLATFORM_LABEL } from 
 import { openForm, showResult } from './forms.js';
 import { icons } from './icons.js';
 import { toast } from './staff.js';
-import { api, esc } from './util.js';
+import { api, esc, reloadOnNewVersion } from './util.js';
 
 const POLL_MS = 10_000;
 const ACTIVITY_PAGE = 15;
@@ -921,6 +921,7 @@ function onAction(el) {
 // ---------- boot ----------
 
 async function boot() {
+  reloadOnNewVersion();
   for (;;) {
     try {
       await api('/api/super/overview');

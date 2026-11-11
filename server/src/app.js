@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import Fastify from 'fastify';
 import fastifyCookie from '@fastify/cookie';
 import fastifyStatic from '@fastify/static';
+import { buildId } from './build.js';
 import { openStorage } from './bootstrap.js';
 import { createBus, createScreens } from './bus.js';
 import { HttpError } from './errors.js';
@@ -65,6 +66,7 @@ export async function buildApp(config) {
   });
 
   app.addHook('onSend', async (_req, reply) => {
+    reply.header('x-build', buildId());
     reply.header('x-content-type-options', 'nosniff');
     reply.header('referrer-policy', 'same-origin');
     reply.header('content-security-policy', CSP);
