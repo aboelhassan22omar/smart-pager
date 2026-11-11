@@ -157,9 +157,9 @@
 }
 
 .card-receipt {
-  margin: 4px 0 0;
-  color: var(--muted);
-  font-size: var(--fs-sm);
+  margin: 6px 0 0;
+  font-size: var(--fs-xl);
+  font-weight: 600;
   text-align: right;
 }
 

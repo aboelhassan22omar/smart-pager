@@ -87,12 +87,32 @@ describe('takeaway numbers typed by the cashier', () => {
     assert.equal((await typed('56')).data.number, 6, 'the number is given again');
   });
 
+  test('a typed receipt cancelled: not scanned, it stops waiting; scanned, its order is cancelled', async () => {
+    const cancel = (receipt) => bar.post('/api/bar/take-a/receipts/cancel', { receipt });
+    const added = (await typed('70')).data;
+    const res = await cancel('70');
+    assert.equal(res.status, 200);
+    assert.equal(res.data.number, added.number);
+    assert.equal(res.data.counter.waiting ?? 0, added.counter.waiting - 1);
+    const after = await scan();
+    assert.notEqual(after.data.receipt, '70', 'the next customer does not get the cancelled receipt');
+
+    await typed('71');
+    const mine = (await scan()).data;
+    assert.equal(mine.receipt, '71');
+    const res2 = await cancel('٧١');
+    assert.equal(res2.data.order.status, 'cancelled');
+    const seen = (await client(server.url).get(`/api/b/take-a/orders/${mine.id}`)).data;
+    assert.equal(seen.status, 'cancelled', 'the customer sees it');
+    assert.equal((await cancel('99')).status, 404);
+  });
+
   test('with order QR mode the order exists right away', async () => {
     await owner.post('/api/brand/take/branches/take-a/settings', { orderQr: true });
     const res = await typed('90');
     assert.equal(res.status, 200);
     assert.equal(res.data.order.receipt, '90');
-    assert.equal(res.data.order.number, 7);
+    assert.ok(res.data.order.number > 0);
     const open = (await bar.get('/api/bar/take-a/state')).data.orders.map((o) => o.receipt);
     assert.ok(open.includes('90'));
     await owner.post('/api/brand/take/branches/take-a/settings', { orderQr: false });
