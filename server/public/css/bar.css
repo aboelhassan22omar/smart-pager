@@ -70,8 +70,16 @@
 }
 
 .tile-receipt {
-  color: var(--muted);
-  font-size: var(--fs-xs);
+  color: var(--text);
+  font-size: var(--fs-md);
+  font-weight: 600;
+}
+
+.manual-cancel {
+  flex: none;
+  min-height: 56px;
+  padding: 0 14px;
+  touch-action: manipulation;
 }
 
 .new-order {
