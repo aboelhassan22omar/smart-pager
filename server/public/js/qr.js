@@ -7,9 +7,42 @@ import { keepAwake } from './wakelock.js';
 const $ = (id) => document.getElementById(id);
 const shopId = shopIdFromPath(location.pathname);
 const svgUrl = (kind) => `/api/bar/${encodeURIComponent(shopId)}/qr.svg?kind=${kind}&t=${Date.now()}`;
+const orderSvgUrl = (id) => `/api/bar/${encodeURIComponent(shopId)}/qr.svg?order=${encodeURIComponent(id)}`;
 
 let qr = null;
 let clockOffset = 0;
+
+// ---------- order QR mode: the screen facing the customer shows each new order's own QR ----------
+
+const ORDER_SHOW_MS = 120_000;
+const LEAD = 'امسح الكود بكاميرا الموبايل عشان تاخد رقم طلبك';
+let orderMode = false;
+let orderShare = true;
+let shown = null; // { id, number, ref }
+let idleTimer = null;
+
+function showIdle() {
+  shown = null;
+  clearTimeout(idleTimer);
+  $('qr-frame').hidden = true;
+  $('qr-order').hidden = true;
+  $('qr-lead').textContent = 'أهلاً بيك! كود طلبك هيظهر هنا أول ما الكاشير يسجّله';
+  $('qr-note').textContent = 'امسحه بكاميرا الموبايل، وموبايلك هيرن أول ما طلبك يجهز.';
+}
+
+function showOrder(o) {
+  shown = o;
+  clearTimeout(idleTimer);
+  idleTimer = setTimeout(showIdle, ORDER_SHOW_MS);
+  $('qr-frame').hidden = false;
+  swapImage($('qr-img'), orderSvgUrl(o.id));
+  $('qr-order').hidden = false;
+  $('qr-order').textContent = `طلب رقم ${o.ref ?? o.number}`;
+  $('qr-lead').textContent = 'امسح الكود عشان تتابع طلبك، وموبايلك يرن أول ما يجهز';
+  $('qr-note').textContent = orderShare
+    ? 'معاك حد؟ يقدر يمسح نفس الكود ويتابع نفس الطلب.'
+    : 'الكود ده لطلبك انت بس.';
+}
 
 function swapImage(img, src) {
   const next = new Image();
@@ -42,6 +75,21 @@ function render(state) {
   $('print-shop').textContent = state.shop.name;
   document.title = `الكود — ${state.shop.name}`;
 
+  orderMode = Boolean(state.shop.orderQr);
+  orderShare = state.shop.orderShare !== false;
+  if (orderMode) {
+    $('countdown').hidden = true;
+    $('print').hidden = true;
+    if (shown) showOrder(shown);
+    else showIdle();
+    return;
+  }
+  clearTimeout(idleTimer);
+  shown = null;
+  $('qr-frame').hidden = false;
+  $('qr-order').hidden = true;
+  $('qr-lead').textContent = LEAD;
+
   const dynamic = qr.mode !== 'static';
   const printable = qr.mode !== 'dynamic';
   swapImage($('qr-img'), svgUrl(dynamic ? 'dynamic' : 'static'));
@@ -58,7 +106,7 @@ function render(state) {
 }
 
 function tick() {
-  if (qr && qr.mode !== 'static') {
+  if (qr && qr.mode !== 'static' && !orderMode) {
     const left = Math.max(0, qr.expiresAt - (Date.now() + clockOffset));
     const ratio = Math.min(1, left / (qr.rotateSeconds * 1000));
     $('countdown-bar').style.transform = `scaleX(${ratio})`;
@@ -101,9 +149,17 @@ async function boot() {
         const modeChanged = qr && info.mode !== qr.mode;
         qr = info;
         clockOffset = info.serverNow - Date.now();
+        if (orderMode) return;
         if (modeChanged) reload();
         else if (info.mode !== 'static') swapImage($('qr-img'), svgUrl('dynamic'));
         if (info.mode !== 'dynamic') $('print-img').src = svgUrl('static');
+      },
+      'order-qr': (o) => {
+        if (orderMode) showOrder(o);
+      },
+      // The order on screen was cancelled: back to the welcome.
+      order: ({ order }) => {
+        if (orderMode && shown && order?.id === shown.id && ['cancelled', 'expired'].includes(order.status)) showIdle();
       },
       shop: reload,
     },
