@@ -237,12 +237,14 @@ export class BranchStore {
    * the customer waits for it. Returns { number, ref }, { choose }, or null for the count.
    */
   #fromPos(shop, pick, canPick) {
-    // Takeaway numbers typed by the cashier: like POS-only, no number until the receipt is typed,
-    // and the customer always picks their receipt (even one waiting may be someone else's).
     const manual = Boolean(shop.manual_numbers);
     const waiting = shop.pos_token || manual ? this.#posWaiting() : [];
-    const posOnly = Boolean(shop.pos_token && shop.pos_only) || manual;
+    const posOnly = Boolean(shop.pos_token && shop.pos_only);
     const wait = () => new HttpError(409, 'طلبك لسه موصلش من الكاشير. ثواني وهيظهر', { wait: true });
+    // Takeaway receipts typed by the cashier: the next customer to scan gets the oldest one
+    // straight away, nothing to choose. None typed: a number from the count, as always.
+    const typed = pick == null ? waiting.find((w) => w.receipt) : null;
+    if (typed) return typed;
     if (!waiting.length || pick === 'new') {
       if (posOnly) throw wait();
       return null;
@@ -253,7 +255,7 @@ export class BranchStore {
       if (hit) return hit;
       throw new HttpError(409, 'الرقم ده حد تاني أخده. اختار رقم طلبك تاني', { choose: labels });
     }
-    if (waiting.length === 1 && !(manual && canPick)) return waiting[0];
+    if (waiting.length === 1) return waiting[0];
     return canPick ? { choose: labels } : waiting.at(-1);
   }
 
@@ -263,8 +265,8 @@ export class BranchStore {
    * the order number. Returns { number, ref }.
    */
   #fromReceipt(shop, receipt) {
-    const linked = Boolean(shop.pos_token && shop.pos_last_event) || Boolean(shop.manual_numbers);
-    const hit = linked ? this.#posWaiting().find((w) => w.key === receipt) : null;
+    const linked = Boolean(shop.pos_token && shop.pos_last_event);
+    const hit = linked || shop.manual_numbers ? this.#posWaiting().find((w) => w.key === receipt) : null;
     if (hit) return hit;
     if (linked) throw new HttpError(409, 'طلبك لسه موصلش من الكاشير. ثواني وهيظهر', { wait: true });
     const number = Number(receipt.match(/(\d+)$/)[1]);
@@ -307,8 +309,9 @@ export class BranchStore {
       const now = Date.now();
       const seen = this.db.prepare('SELECT number FROM pos_numbers WHERE day = ? AND ref = ?').get(today, receipt);
       if (seen) {
-        // Typed again after a while: offered to customers again.
-        this.db.prepare(`UPDATE pos_numbers SET created_at = ? WHERE day = ? AND ref = ? AND state = 'waiting'`).run(now, today, receipt);
+        // Typed again after it stopped being offered: offered again (its place in line kept otherwise).
+        this.db.prepare(`UPDATE pos_numbers SET created_at = ? WHERE day = ? AND ref = ? AND state = 'waiting' AND created_at < ?`)
+          .run(now, today, receipt, now - POS_WAITING_MS);
         return { number: seen.number, repeated: true, order: null };
       }
       const number = this.#allocateNumber(shop);

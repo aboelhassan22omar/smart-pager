@@ -114,7 +114,6 @@ function setModes(shop) {
   manualMode = Boolean(shop.manualNumbers);
   $('manual').hidden = !manualMode;
   $('manual-help').hidden = !manualMode;
-  $('count-help').hidden = manualMode; // the count is takeaway only: no "same as the POS" here
   // Typed receipts make the orders here; «طلب جديد» would skip the receipt.
   $('new-order').hidden = !shop.orderQr || manualMode;
 }
