@@ -146,6 +146,14 @@ export const BRANCH_MIGRATIONS = [
   DROP TABLE pos_numbers;
   ALTER TABLE pos_refs RENAME TO pos_numbers;
   `,
+  // 9: a QR per order (the customer screen shows it the moment the order is rung up; anyone
+  //    who scans it follows that order). order_share: more than one phone on one order.
+  //    orders.viewer: the first phone's client id, for when sharing is off.
+  `
+  ALTER TABLE branch_settings ADD COLUMN order_qr INTEGER NOT NULL DEFAULT 0;
+  ALTER TABLE branch_settings ADD COLUMN order_share INTEGER NOT NULL DEFAULT 1;
+  ALTER TABLE orders ADD COLUMN viewer TEXT;
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

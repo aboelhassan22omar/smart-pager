@@ -15,7 +15,7 @@ const SETTING_COLUMNS = new Set([
   'preparing_message', 'ready_message', 'accent_color', 'google_review_url', 'late_after_minutes',
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
   'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
-  'pos_token', 'pos_last_event', 'theme_version', 'pos_only',
+  'pos_token', 'pos_last_event', 'theme_version', 'pos_only', 'order_qr', 'order_share',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
@@ -181,6 +181,39 @@ export class BranchStore {
       if (dynamicOk) this.sql.rotate.run(newNonce(), Date.now());
       return { order: this.sql.order.get(id), shop: this.getShop(), rotated: dynamicOk };
     });
+  }
+
+  /**
+   * An order rung up at the counter (order QR mode): no code to check, the customer joins it
+   * by scanning its own QR. `number`/`ref` come from the POS; without them, the next number.
+   */
+  createOrder({ number = null, ref = null } = {}) {
+    return tx(this.db, () => {
+      const shop = this.getShop();
+      const n = number ?? this.#allocateNumber(shop);
+      if (shop.pos_token) this.#markPos(ref ?? String(n), n);
+      const id = randomId(16);
+      this.sql.insertOrder.run(id, n, ref, Date.now());
+      return { order: this.sql.order.get(id), shop: this.getShop() };
+    });
+  }
+
+  /**
+   * A phone opens an order from its QR. The first one is remembered; with sharing off another
+   * phone is turned away. Returns false when it is.
+   */
+  joinOrder(order, clientId, { share }) {
+    if (!order.viewer) {
+      if (clientId) this.db.prepare('UPDATE orders SET viewer = ? WHERE id = ? AND viewer IS NULL').run(clientId, order.id);
+      return true;
+    }
+    return share || !clientId || order.viewer === clientId;
+  }
+
+  /** Loyalty on a joined order: the first phone with a device token takes it. */
+  attachDeviceIfFree(orderId, deviceHash) {
+    const order = this.sql.order.get(orderId);
+    if (order && !order.device_hash) this.#attachDevice(orderId, deviceHash);
   }
 
   // The number the next customer gets: daily reset, wrap after max_number, skip open numbers.

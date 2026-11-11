@@ -44,6 +44,13 @@
   font-size: var(--fs-lg);
 }
 
+.qr-order {
+  margin: 0;
+  font-size: clamp(1.75rem, 6vw, 3rem);
+  font-weight: 700;
+  color: var(--accent);
+}
+
 .qr-frame {
   margin: 10px 0 0;
   padding: 18px;
