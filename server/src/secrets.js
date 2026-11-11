@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import webpush from 'web-push';
+import { generateVAPIDKeys } from 'web-push';
 
 // Fills VAPID keys and the cookie secret from env, or from $DATA_DIR/secrets.json
 // (generated once on first boot).
@@ -17,7 +17,7 @@ export function ensureSecrets(config) {
 
   if (!config.vapid.publicKey || !config.vapid.privateKey) {
     if (!saved.vapidPublicKey || !saved.vapidPrivateKey) {
-      const keys = webpush.generateVAPIDKeys();
+      const keys = generateVAPIDKeys();
       saved.vapidPublicKey = keys.publicKey;
       saved.vapidPrivateKey = keys.privateKey;
       changed = true;
