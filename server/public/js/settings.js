@@ -215,6 +215,7 @@ ${url}
 function renderPos() {
   $('pos-url').value = pos.url;
   $('pos-url-foodics').value = `${pos.url}?delivery=3`;
+  $('pos-receipt-url').value = pos.receiptUrl;
   $('pos-message').value = posMessage(pos.url);
   posStatus();
 }
@@ -237,6 +238,7 @@ function bindPos() {
   });
   $('pos-copy').addEventListener('click', () => copyText(pos.url, 'اللينك اتنسخ'));
   $('pos-message-copy').addEventListener('click', () => copyText($('pos-message').value, 'الرسالة اتنسخت'));
+  $('pos-receipt-copy').addEventListener('click', () => copyText(pos.receiptUrl, 'لينك الفاتورة اتنسخ'));
   $('pos-test').addEventListener('click', async () => {
     try {
       const res = await api(pos.url, { method: 'POST', body: { test: true, number: 123, type: 'delivery' } });

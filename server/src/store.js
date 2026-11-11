@@ -152,7 +152,7 @@ export class BranchStore {
   // ---- orders ----
 
   /** `deviceHash` (loyalty on): the order is tied to the device and takes its oldest free reward. */
-  claim({ n, k, pick }, { deviceHash = null, canPick = false } = {}) {
+  claim({ n, k, pick, receipt = null }, { deviceHash = null, canPick = false } = {}) {
     return tx(this.db, () => {
       const shop = this.getShop();
       if (!shop) throw new HttpError(404, 'المحل ده مش موجود');
@@ -165,12 +165,13 @@ export class BranchStore {
       const dynamic = shop.qr_mode !== 'static';
       const dynamicOk = dynamic && ((age < 2 * period && safeEqual(n, shop.qr_nonce))
         || (age < period && safeEqual(n, shop.qr_prev_nonce)));
-      const staticOk = shop.qr_mode !== 'dynamic' && safeEqual(k, shop.static_key);
+      // A receipt's QR carries the static key whatever the screen's QR mode is.
+      const staticOk = (shop.qr_mode !== 'dynamic' || Boolean(receipt)) && safeEqual(k, shop.static_key);
       if (!dynamicOk && !staticOk) {
         throw new HttpError(403, 'الكود ده انتهى. امسح الكود اللي عند الكاشير تاني');
       }
 
-      const fromPos = this.#fromPos(shop, pick, canPick);
+      const fromPos = receipt ? this.#fromReceipt(shop, receipt) : this.#fromPos(shop, pick, canPick);
       if (fromPos?.choose) return fromPos;
       const number = fromPos?.number ?? this.#allocateNumber(shop);
       const ref = fromPos?.ref ?? null;
@@ -217,6 +218,27 @@ export class BranchStore {
     }
     if (waiting.length === 1) return waiting[0];
     return canPick ? { choose: labels } : waiting.at(-1);
+  }
+
+  /**
+   * The QR printed on a receipt carries its number. With a POS that sends its orders, it is the
+   * waiting POS number (or a short wait for it to arrive); without one, the receipt number is
+   * the order number. Returns { number, ref }.
+   */
+  #fromReceipt(shop, receipt) {
+    const linked = Boolean(shop.pos_token && shop.pos_last_event);
+    const hit = linked ? this.#posWaiting().find((w) => w.key === receipt) : null;
+    if (hit) return hit;
+    if (linked) throw new HttpError(409, 'طلبك لسه موصلش من الكاشير. ثواني وهيظهر', { wait: true });
+    const number = Number(receipt.match(/(\d+)$/)[1]);
+    return { number, ref: receipt === String(number) ? null : receipt };
+  }
+
+  /** The open order a receipt number belongs to (several phones scan one receipt), or null. */
+  openOrderByReceipt(receipt) {
+    const row = this.db.prepare(`SELECT id FROM orders WHERE status IN ('preparing', 'ready')
+      AND (ref = ? OR (ref IS NULL AND CAST(number AS TEXT) = ?)) ORDER BY created_at DESC LIMIT 1`).get(receipt, receipt);
+    return row ? this.getOrder(row.id) : null;
   }
 
   /** Waiting POS numbers, oldest first: [{ key, number, ref }] (ref only with a terminal prefix). */

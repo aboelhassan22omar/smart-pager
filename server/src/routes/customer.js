@@ -7,7 +7,7 @@ import { canClaim } from '../plans.js';
 import { createRateLimiter } from '../ratelimit.js';
 import { openSse } from '../sse.js';
 import { FEEDBACK_WINDOW_MS, OPEN_STATUSES } from '../store.js';
-import { branchTz, dayIn } from '../util.js';
+import { branchTz, dayIn, safeEqual } from '../util.js';
 import { publicShop, reviewEnabled, reviewUrl } from '../views.js';
 
 const MAX_SUBSCRIPTIONS = 5;
@@ -54,6 +54,21 @@ export function validateLiveActivity(payload) {
 }
 
 export default async function customerRoutes(app, { config, control, tenants, bus, notifier, service, screens }) {
+  // The QR a POS prints on each receipt: /r/<branch>/<static key>/<receipt number>. Opens that
+  // receipt's order: the one already open (another phone scanned it), or a new one with the
+  // receipt's number.
+  app.get('/r/:branch/:key/:receipt', async (req, reply) => {
+    const { branch, key, receipt } = req.params;
+    const ctx = tenants.get(branch);
+    const shop = ctx?.store.getShop();
+    if (!shop || !safeEqual(key, shop.static_key) || !PICK_RE.test(receipt)) {
+      return reply.code(404).type('text/plain; charset=utf-8').send('الكود ده مش شغال. امسح الكود اللي عند الكاشير');
+    }
+    const open = ctx.store.openOrderByReceipt(receipt);
+    const to = open ? `/s/${shop.id}?o=${open.id}&j=1` : `/s/${shop.id}?k=${encodeURIComponent(key)}&r=${encodeURIComponent(receipt)}`;
+    return reply.header('cache-control', 'no-store').redirect(to);
+  });
+
   // Per phone (the page's own id), plus a much higher cap per IP: on mobile data in Egypt many
   // phones share one IP, so an IP-only limit turned away real customers at rush hour.
   const claimLimiter = createRateLimiter({ limit: config.claimRatePerMin });
@@ -95,8 +110,13 @@ export default async function customerRoutes(app, { config, control, tenants, bu
       }
       // Suspended or trial over: no new orders (open ones finish normally).
       if (!canClaim(req.ctx.branch)) throw new HttpError(402, 'الخدمة متوقفة مؤقتًا، اسأل الكاشير');
-      const { n, k, pick, canPick } = req.body ?? {};
+      const { n, k, pick, canPick, receipt } = req.body ?? {};
       if (pick != null && pick !== 'new' && !PICK_RE.test(String(pick))) throw new HttpError(400, 'الرقم ده مش مظبوط', { field: 'pick' });
+      if (receipt != null && !PICK_RE.test(String(receipt))) throw new HttpError(400, 'رقم الفاتورة مش مظبوط', { field: 'receipt' });
+      // A receipt someone already scanned: this phone follows the same order.
+      const sameReceipt = receipt != null && safeEqual(String(k ?? ''), req.ctx.store.getShop()?.static_key ?? '')
+        ? req.ctx.store.openOrderByReceipt(String(receipt)) : null;
+      if (sameReceipt) return service.customerView(req.ctx, sameReceipt, req.ctx.store.getShop());
       const branchId = req.ctx.branch.id;
 
       // Loyalty on: the order is tied to this device (token created on its first claim).
@@ -111,7 +131,7 @@ export default async function customerRoutes(app, { config, control, tenants, bu
         }
       }
 
-      const claimed = service.claim(req.ctx, { n, k, pick }, { deviceHash: device?.hash, canPick: canPick === true });
+      const claimed = service.claim(req.ctx, { n, k, pick, receipt: receipt == null ? null : String(receipt) }, { deviceHash: device?.hash, canPick: canPick === true });
       // Several numbers from the POS are waiting: the customer picks the one on their receipt.
       if (claimed.choose) return { choose: claimed.choose };
       const { order, shop } = claimed;
