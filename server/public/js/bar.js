@@ -82,6 +82,9 @@ function renderGrid() {
 }
 
 function upsert(o) {
+  // Two screens on one branch: an older view (a late reply, a late event) never wins.
+  const known = orders.get(o.id);
+  if (known && (o.rev ?? 0) < (known.rev ?? 0)) return;
   if (o.status === 'preparing' || o.status === 'ready') orders.set(o.id, o);
   else orders.delete(o.id);
   if (sheetOrderId === o.id) closeSheet();
@@ -114,10 +117,19 @@ async function newOrder() {
   }
 }
 
+// Two screens pressing + together: the live count from the server (an event) is newer than a
+// reply that arrives after it, so that reply only shows when no event came in meanwhile.
+let counterEvents = 0;
+const liveCounter = (counter) => {
+  counterEvents++;
+  renderCounter(counter);
+};
+
 async function adjustCount(delta) {
+  const seen = counterEvents;
   try {
     const counter = await api(`${base}/counter`, { method: 'POST', body: { delta } });
-    renderCounter(counter);
+    if (counterEvents === seen) renderCounter(counter);
     toast(delta > 0 ? `عدّينا رقم ${counter.last}. الجاي ${counter.next}` : `رجعنا رقم. الجاي ${counter.next}`);
   } catch (err) {
     if (isOffline(err)) {
@@ -173,7 +185,7 @@ async function flushQueue() {
       const item = queue[0];
       try {
         if (item.kind === 'status') {
-          await api(`${base}/orders/${encodeURIComponent(item.id)}/status`, { method: 'POST', body: { status: item.status } });
+          await api(`${base}/orders/${encodeURIComponent(item.id)}/status`, { method: 'POST', body: { status: item.status, ...(item.from ? { from: item.from } : {}) } });
         } else {
           await api(`${base}/counter`, { method: 'POST', body: { delta: item.delta }, headers: { 'x-request-id': item.rid } });
         }
@@ -195,16 +207,23 @@ async function flushQueue() {
 const NEXT_STATUS = { preparing: 'ready', ready: 'picked' };
 
 async function act(id, path, body) {
+  // Every change says what this screen saw, so a second screen can't move the order twice.
+  const seen = orders.get(id)?.status;
   try {
-    const updated = await api(`${base}/orders/${encodeURIComponent(id)}/${path}`, { method: 'POST', body: body ?? {} });
+    const updated = await api(`${base}/orders/${encodeURIComponent(id)}/${path}`, { method: 'POST', body: { ...(body ?? {}), ...(seen ? { from: seen } : {}) } });
     upsert(updated);
     return updated;
   } catch (err) {
+    if (err.status === 409 && err.data?.order) {
+      upsert(err.data.order);
+      toast(err.message);
+      return null;
+    }
     // Status changes wait for the connection; the screen moves on right away.
     const o = orders.get(id);
     const status = path === 'advance' ? NEXT_STATUS[o?.status] : body?.status;
     if (isOffline(err) && o && status) {
-      enqueue({ kind: 'status', id, status });
+      enqueue({ kind: 'status', id, status, from: seen });
       upsert({ ...o, status });
       return null;
     }
@@ -451,9 +470,9 @@ async function boot() {
   staffEvents(
     shopId,
     {
-      counter: renderCounter,
+      counter: liveCounter,
       order: ({ action, order, counter }) => {
-        renderCounter(counter);
+        liveCounter(counter);
         if (action === 'created') {
           fresh.add(order.id);
           chime.play('order');

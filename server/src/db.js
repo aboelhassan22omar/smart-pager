@@ -154,6 +154,12 @@ export const BRANCH_MIGRATIONS = [
   ALTER TABLE branch_settings ADD COLUMN order_share INTEGER NOT NULL DEFAULT 1;
   ALTER TABLE orders ADD COLUMN viewer TEXT;
   `,
+  // 10: a revision per order, bumped on every change. Two cashier screens on one branch: a
+  //     screen never shows an older state over a newer one, and a tap made on what is already
+  //     stale is refused instead of moving the order twice.
+  `
+  ALTER TABLE orders ADD COLUMN rev INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export function openBranchDb(file, { backupFile } = {}) {

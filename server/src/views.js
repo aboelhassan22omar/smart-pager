@@ -76,6 +76,7 @@ export const publicOrder = (order, shop) => ({
   readyAt: order.ready_at ?? null,
   closedAt: order.closed_at ?? null,
   notifyCount: order.notify_count,
+  rev: order.rev ?? 0,
   reward: orderReward(order, shop),
 });
 

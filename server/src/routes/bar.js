@@ -217,12 +217,27 @@ export default async function barRoutes(app, deps) {
     // The old link stops working right away.
     bar.post('/pos/rotate', async (req) => posView(req.ctx.store.updateShop({ pos_token: randomId(24), pos_last_event: null })));
 
-    bar.post('/orders/:id/advance', async (req) => publicOrder(service.advance(req.ctx, req.shop, shopOrder(req)), req.shop));
+    // `from`: the status the cashier saw when tapping. Another screen already moved the order:
+    // nothing happens, and the screen gets the order as it is now.
+    function sameAsSeen(req, order) {
+      const from = req.body?.from;
+      if (from != null && from !== order.status) {
+        throw new HttpError(409, `رقم ${order.ref ?? order.number} اتغيّر من شاشة تانية`, { order: publicOrder(order, req.shop) });
+      }
+    }
+
+    bar.post('/orders/:id/advance', async (req) => {
+      const order = shopOrder(req);
+      sameAsSeen(req, order);
+      return publicOrder(service.advance(req.ctx, req.shop, order), req.shop);
+    });
 
     bar.post('/orders/:id/status', async (req) => {
       const status = req.body?.status;
       if (!STATUS_TARGETS.includes(status)) throw invalid('status', 'الحالة دي مش معروفة');
-      return publicOrder(service.setStatus(req.ctx, req.shop, shopOrder(req), status), req.shop);
+      const order = shopOrder(req);
+      sameAsSeen(req, order);
+      return publicOrder(service.setStatus(req.ctx, req.shop, order, status), req.shop);
     });
 
     bar.post('/orders/:id/renotify', async (req) => publicOrder(service.renotify(req.ctx, req.shop, shopOrder(req)), req.shop));
