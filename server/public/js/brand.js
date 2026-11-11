@@ -367,6 +367,15 @@ function featureFields(b) {
     featureToggle(b, 'loyalty', 'ختم مع كل طلب', 'العميل بياخد ختم لما يستلم، وهدية كل كام طلب'),
     { name: 'loyaltyEvery', label: 'الهدية كل كام طلب', type: 'number', inputmode: 'numeric', dir: 'ltr', value: b.loyaltyEvery, hint: 'من 2 لـ 20' },
     { name: 'loyaltyRewardText', label: 'الهدية', value: b.loyaltyRewardText, placeholder: 'مثلًا: مشروب ببلاش', maxlength: 60 },
+    { type: 'heading', label: 'كود لكل طلب' },
+    {
+      name: 'orderQr', type: 'toggle', label: 'شاشة العميل بتعرض كود الطلب',
+      hint: 'أول ما الكاشير يضرب الطلب (من السيستم أو زرار «طلب جديد»)، شاشة العميل بتعرض كود الطلب ده بس. أي حد يمسحه بيتابع نفس الطلب', value: b.orderQr,
+    },
+    {
+      name: 'orderShare', type: 'toggle', label: 'أكتر من موبايل على نفس الطلب',
+      hint: 'كل اللي مسحوا الكود يتابعوا الطلب وموبايلاتهم كلها ترن. لو اتقفلت، أول موبايل بس', value: b.orderShare,
+    },
     { type: 'heading', label: 'عرض وقت الانتظار' },
     featureToggle(b, 'promo', 'عرض تحت رقم الطلب', 'بيظهر بس وهو مستني طلبه'),
     { name: 'promoText', label: 'نص العرض', type: 'textarea', value: b.promoText, maxlength: 120, placeholder: 'مثلًا: جرّب الكرواسون الجديد' },
@@ -393,6 +402,8 @@ function featureBody(b, v) {
     promoText: v.promoText ?? '',
     promoStartsAt: v.promoStartsAt ?? '',
     promoEndsAt: v.promoEndsAt ?? '',
+    orderQr: v.orderQr === 'on',
+    orderShare: v.orderShare === 'on',
   };
 }
 

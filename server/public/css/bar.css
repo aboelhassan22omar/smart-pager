@@ -31,6 +31,14 @@
   touch-action: manipulation;
 }
 
+.new-order {
+  flex: none;
+  min-height: 60px;
+  padding: 0 16px;
+  font-weight: 600;
+  touch-action: manipulation;
+}
+
 .counter-text {
   flex: 1;
   min-width: 0;
