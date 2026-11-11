@@ -233,7 +233,7 @@ describe('Google review prompt', () => {
 
   test('shows after pickup only and counts the tap', () => {
     const js = read('public/js/customer.js');
-    assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.feedback \|\| shop\?\.googleReviewUrl\)/);
+    assert.match(js, /order\.status === 'picked' && Boolean\(shop\?\.googleReviewUrl\)/);
     assert.match(js, /sendBeacon\?\.\(`\$\{branchApi\}\/orders\/\$\{encodeURIComponent\(order\.id\)\}\/review-click`/);
     // Rewards never depend on reviews: the review card does not touch loyalty.
     const code = read('public/js/review.js').replace(/^\s*(\/\/|\*).*$/gm, '');

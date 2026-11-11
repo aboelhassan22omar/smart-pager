@@ -151,6 +151,12 @@ export function createService({ control, tenants, bus, notifier, screens, config
       const result = ctx.store.posOrder(order);
       // A takeaway / counter order: in order QR mode it becomes an order now, shown on the screen.
       if (qrMode && result === 'waiting') createOrder(ctx, { number: order.number, ref: order.ref ?? null });
+      // Cancelled at the POS after the customer scanned: the order is cancelled here too, and
+      // the customer's page says so.
+      if (result === 'cancelled') {
+        const open = ctx.store.openOrderByReceipt(order.ref ?? String(order.number));
+        if (open) setStatus(ctx, ctx.store.getShop(), open, 'cancelled');
+      }
       return { ...order, result };
     });
     const last = results.at(-1);

@@ -169,7 +169,13 @@ export const BRANCH_MIGRATIONS = [
   ALTER TABLE pos_numbers ADD COLUMN manual INTEGER NOT NULL DEFAULT 0;
   ALTER TABLE orders ADD COLUMN receipt TEXT;
   `,
-  // 12: «رسالة للإدارة»: a box at the bottom of the order page, on/off per branch. One message
+  // 12: the receipt printer agent (a QR for the order at the end of every printed receipt).
+  //     print_agent: its settings (JSON, null = off); print_last: the last receipt it saw.
+  `
+  ALTER TABLE branch_settings ADD COLUMN print_agent TEXT;
+  ALTER TABLE branch_settings ADD COLUMN print_last TEXT;
+  `,
+  // 13: «رسالة للإدارة»: a box at the bottom of the order page, on/off per branch. One message
   //     per order, read by the brand owner (analytics).
   `
   ALTER TABLE branch_settings ADD COLUMN message_box INTEGER NOT NULL DEFAULT 0;

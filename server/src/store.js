@@ -16,7 +16,7 @@ const SETTING_COLUMNS = new Set([
   'google_place_id', 'loyalty_every', 'loyalty_reward_text',
   'promo_text', 'promo_image', 'promo_starts_at', 'promo_ends_at',
   'pos_token', 'pos_last_event', 'theme_version', 'pos_only', 'order_qr', 'order_share',
-  'manual_numbers', 'message_box',
+  'manual_numbers', 'print_agent', 'print_last', 'message_box',
 ]);
 export const FEEDBACK_WINDOW_MS = 48 * 3600 * 1000;
 // Closed orders hold no personal data and feed analytics for 90 days; push subscriptions
