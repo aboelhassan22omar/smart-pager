@@ -18,27 +18,62 @@ const ORDER_SHOW_MS = 120_000;
 const LEAD = 'امسح الكود بكاميرا الموبايل عشان تاخد رقم طلبك';
 let orderMode = false;
 let orderShare = true;
-let shown = null; // { id, number, ref }
-let idleTimer = null;
+// The latest orders still on screen, newest first. Two cashiers can ring orders up seconds
+// apart on one customer screen: the earlier QR stays next to the new one, it isn't replaced.
+const MAX_SHOWN = 3;
+let shown = []; // [{ id, number, ref, timer }]
 
-function showIdle() {
-  shown = null;
-  clearTimeout(idleTimer);
-  $('qr-frame').hidden = true;
-  $('qr-order').hidden = true;
-  $('qr-lead').textContent = 'أهلاً بيك! كود طلبك هيظهر هنا أول ما الكاشير يسجّله';
-  $('qr-note').textContent = 'امسحه بكاميرا الموبايل، وموبايلك هيرن أول ما طلبك يجهز.';
+function dropShown(id) {
+  const i = shown.findIndex((s) => s.id === id);
+  if (i < 0) return;
+  clearTimeout(shown[i].timer);
+  shown.splice(i, 1);
+  renderShown();
 }
 
-function showOrder(o) {
-  shown = o;
-  clearTimeout(idleTimer);
-  idleTimer = setTimeout(showIdle, ORDER_SHOW_MS);
-  $('qr-frame').hidden = false;
-  swapImage($('qr-img'), orderSvgUrl(o.id));
-  $('qr-order').hidden = false;
-  $('qr-order').textContent = `طلب رقم ${o.ref ?? o.number}`;
-  $('qr-lead').textContent = 'امسح الكود عشان تتابع طلبك، وموبايلك يرن أول ما يجهز';
+function addShown(o) {
+  dropShown(o.id);
+  const entry = { id: o.id, number: o.number, ref: o.ref ?? null };
+  entry.timer = setTimeout(() => dropShown(o.id), ORDER_SHOW_MS);
+  shown.unshift(entry);
+  while (shown.length > MAX_SHOWN) clearTimeout(shown.pop().timer);
+  renderShown();
+}
+
+function clearShown() {
+  for (const s of shown) clearTimeout(s.timer);
+  shown = [];
+}
+
+function renderShown() {
+  const multi = $('qr-multi');
+  if (!shown.length) {
+    $('qr-frame').hidden = true;
+    $('qr-order').hidden = true;
+    multi.hidden = true;
+    $('qr-lead').textContent = 'أهلاً بيك! كود طلبك هيظهر هنا أول ما الكاشير يسجّله';
+    $('qr-note').textContent = 'امسحه بكاميرا الموبايل، وموبايلك هيرن أول ما طلبك يجهز.';
+    return;
+  }
+  const label = (s) => `طلب رقم ${s.ref ?? s.number}`;
+  if (shown.length === 1) {
+    multi.hidden = true;
+    $('qr-frame').hidden = false;
+    swapImage($('qr-img'), orderSvgUrl(shown[0].id));
+    $('qr-order').hidden = false;
+    $('qr-order').textContent = label(shown[0]);
+    $('qr-lead').textContent = 'امسح الكود عشان تتابع طلبك، وموبايلك يرن أول ما يجهز';
+  } else {
+    $('qr-frame').hidden = true;
+    $('qr-order').hidden = true;
+    multi.hidden = false;
+    multi.innerHTML = shown.map((s) => `
+      <figure class="qr-mini">
+        <figcaption class="num">${esc(label(s))}</figcaption>
+        <img src="${esc(orderSvgUrl(s.id))}" alt="كود ${esc(label(s))}" width="220" height="220">
+      </figure>`).join('');
+    $('qr-lead').textContent = 'كل واحد يمسح الكود اللي عليه رقم طلبه';
+  }
   $('qr-note').textContent = orderShare
     ? 'معاك حد؟ يقدر يمسح نفس الكود ويتابع نفس الطلب.'
     : 'الكود ده لطلبك انت بس.';
@@ -80,12 +115,11 @@ function render(state) {
   if (orderMode) {
     $('countdown').hidden = true;
     $('print').hidden = true;
-    if (shown) showOrder(shown);
-    else showIdle();
+    renderShown();
     return;
   }
-  clearTimeout(idleTimer);
-  shown = null;
+  clearShown();
+  $('qr-multi').hidden = true;
   $('qr-frame').hidden = false;
   $('qr-order').hidden = true;
   $('qr-lead').textContent = LEAD;
@@ -155,11 +189,11 @@ async function boot() {
         if (info.mode !== 'dynamic') $('print-img').src = svgUrl('static');
       },
       'order-qr': (o) => {
-        if (orderMode) showOrder(o);
+        if (orderMode) addShown(o);
       },
       // The order on screen was cancelled: back to the welcome.
       order: ({ order }) => {
-        if (orderMode && shown && order?.id === shown.id && ['cancelled', 'expired'].includes(order.status)) showIdle();
+        if (orderMode && order && ['cancelled', 'expired'].includes(order.status)) dropShown(order.id);
       },
       shop: reload,
     },

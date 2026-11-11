@@ -44,6 +44,34 @@
   font-size: var(--fs-lg);
 }
 
+.qr-multi {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 20px;
+}
+
+.qr-mini {
+  display: grid;
+  justify-items: center;
+  gap: 8px;
+  margin: 0;
+}
+
+.qr-mini figcaption {
+  font-size: clamp(1.25rem, 3vw, 1.75rem);
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.qr-mini img {
+  width: clamp(160px, 24vw, 240px);
+  height: auto;
+  padding: 12px;
+  border-radius: 18px;
+  background: #fff;
+}
+
 .qr-order {
   margin: 0;
   font-size: clamp(1.75rem, 6vw, 3rem);

@@ -414,6 +414,7 @@ export class BranchStore {
     const closedAt = CLOSED_STATUSES.includes(status) ? now : null;
     tx(this.db, () => {
       this.sql.setStatus.run(status, readyAt, closedAt, order.id);
+      this.db.prepare('UPDATE orders SET rev = rev + 1 WHERE id = ?').run(order.id);
       if (status === 'ready' && order.status !== 'ready') this.sql.bumpNotify.run(order.id);
       // Closed without redeeming: the reward goes back to the device for its next order.
       if (closedAt && order.reward_id) {
@@ -426,6 +427,7 @@ export class BranchStore {
 
   bumpNotify(order) {
     this.sql.bumpNotify.run(order.id);
+    this.db.prepare('UPDATE orders SET rev = rev + 1 WHERE id = ?').run(order.id);
     return this.sql.order.get(order.id);
   }
 
