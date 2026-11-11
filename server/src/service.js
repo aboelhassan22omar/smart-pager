@@ -83,9 +83,27 @@ export function createService({ control, tenants, bus, notifier, screens, config
   const publishCounter = (ctx) => bus.emit(channels(ctx.branch.id).bar, 'counter', ctx.store.counter());
   const posEvent = (ctx, event) => ctx.store.updateShop({ pos_last_event: JSON.stringify({ at: Date.now(), ...event }) });
 
+  /**
+   * Order QR mode: the cashier (or the POS) rings an order up, it exists right away, and the
+   * customer screen shows its QR.
+   */
+  function createOrder(ctx, { number = null, ref = null } = {}) {
+    const { order, shop } = ctx.store.createOrder({ number, ref });
+    publishOrder(ctx, order, shop, { action: 'created' });
+    bus.emit(channels(ctx.branch.id).bar, 'order-qr', { id: order.id, number: order.number, ref: order.ref ?? null });
+    control.touch(ctx.branch.id);
+    return { order, shop };
+  }
+
   /** Orders read from the branch's POS link. */
   function posOrders(ctx, orders) {
-    const results = orders.map((order) => ({ ...order, result: ctx.store.posOrder(order) }));
+    const qrMode = Boolean(ctx.store.getShop()?.order_qr);
+    const results = orders.map((order) => {
+      const result = ctx.store.posOrder(order);
+      // A takeaway / counter order: in order QR mode it becomes an order now, shown on the screen.
+      if (qrMode && result === 'waiting') createOrder(ctx, { number: order.number, ref: order.ref ?? null });
+      return { ...order, result };
+    });
     const last = results.at(-1);
     posEvent(ctx, { number: last.ref ?? last.number, delivery: last.delivery, cancelled: last.cancelled });
     publishCounter(ctx);
@@ -179,6 +197,6 @@ export function createService({ control, tenants, bus, notifier, screens, config
   }
 
   return {
-    claim, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
+    claim, createOrder, adjustCounter, posOrders, posUnread, setStatus, advance, renotify, redeem, publishNonce, publishShop, rotateDue, runJobs, runRollups, customerView,
   };
 }

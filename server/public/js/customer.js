@@ -405,6 +405,12 @@ function onEnable() {
 // ---------- boot ----------
 
 async function resolveOrder() {
+  // An order's own QR (customer screen, receipt): every phone that scans it follows that order.
+  if (params.get('o') && params.get('j')) {
+    return api(`${branchApi}/orders/${encodeURIComponent(params.get('o'))}/join`, {
+      method: 'POST', body: {}, headers: { ...deviceHeaders(), 'x-client-id': clientId() },
+    });
+  }
   const savedId = params.get('o') ?? store.get(storageKey);
   let current = null;
   if (savedId) {

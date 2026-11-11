@@ -48,6 +48,9 @@ export function ownerExtraFields(body) {
     if (text.length > PROMO_TEXT_MAX) throw new HttpError(400, `نص العرض لحد ${PROMO_TEXT_MAX} حرف`, { field: 'promoText' });
     fields.promo_text = text || null;
   }
+  // Order QR mode and sharing one order between phones: plain switches.
+  if ('orderQr' in body) fields.order_qr = body.orderQr === true ? 1 : 0;
+  if ('orderShare' in body) fields.order_share = body.orderShare === false ? 0 : 1;
   if ('promoStartsAt' in body) fields.promo_starts_at = promoDay(body, 'promoStartsAt');
   if ('promoEndsAt' in body) fields.promo_ends_at = promoDay(body, 'promoEndsAt');
   if (fields.promo_starts_at && fields.promo_ends_at && fields.promo_ends_at < fields.promo_starts_at) {
@@ -58,7 +61,7 @@ export function ownerExtraFields(body) {
 
 // Brand owner: sees and manages the branches of their own brand only.
 export default async function brandRoutes(app, deps) {
-  const { config, control, tenants } = deps;
+  const { config, control, tenants, service } = deps;
   const loginLimiter = createRateLimiter({ limit: config.loginRatePerMin });
   app.addHook('onClose', async () => loginLimiter.close());
 
@@ -177,6 +180,8 @@ export default async function brandRoutes(app, deps) {
 
       if (Object.keys(fields).length) {
         ctx.store.updateShop(fields);
+        // Open cashier and QR screens pick the change up (order QR mode, name, ...).
+        service.publishShop(ctx, ctx.store.getShop());
         audit(fields.name ? 'branch.rename' : 'branch.owner_settings', { fields: Object.keys(fields), name: fields.name });
       }
       for (const [feature, on] of toggles) {
