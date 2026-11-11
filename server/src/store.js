@@ -285,6 +285,20 @@ export class BranchStore {
     return n;
   }
 
+  /**
+   * Wipes what the branch did (orders, analytics, ratings, stamp cards, POS numbers) and starts
+   * the count at 1 again, as after a test run. Settings, PIN, logo, texts and links stay.
+   */
+  resetActivity() {
+    return tx(this.db, () => {
+      for (const table of ['subscriptions', 'feedback', 'loyalty_rewards', 'loyalty_devices', 'orders', 'hourly_stats', 'pos_numbers']) {
+        this.db.exec(`DELETE FROM ${table}`);
+      }
+      this.db.exec("DELETE FROM meta WHERE key = 'rollup_at'");
+      this.db.exec('UPDATE branch_settings SET next_number = 1, number_day = NULL, review_clicks = 0, pos_last_event = NULL');
+    });
+  }
+
   /** What the cashier sees: the next number and the one before it (null at the start of the count). */
   counter() {
     const shop = this.sql.settings.get();
