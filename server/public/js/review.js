@@ -5,6 +5,7 @@
 // first and only send happy customers to Google, and nothing (stamps, rewards) depends on it.
 
 import { icons } from './icons.js';
+import { t } from './texts.js';
 import { esc } from './util.js';
 
 /**
@@ -14,7 +15,7 @@ import { esc } from './util.js';
  * @param sent       internal feedback already submitted
  */
 export function reviewHtml({ googleUrl = null, feedback = false, rating = 0, sent = false, comment = '' } = {}) {
-  let html = '<p class="review-title">عجبتك التجربة؟</p>';
+  let html = `<p class="review-title">${esc(t('review_title'))}</p>`;
   if (feedback) {
     html += '<div class="review-stars" role="radiogroup" aria-label="تقييمك من 5">';
     for (let i = 1; i <= 5; i++) {
@@ -23,17 +24,17 @@ export function reviewHtml({ googleUrl = null, feedback = false, rating = 0, sen
     }
     html += '</div>';
     if (sent) {
-      html += '<p class="review-thanks">شكراً، رأيك وصلنا</p>';
+      html += `<p class="review-thanks">${esc(t('review_thanks'))}</p>`;
     } else if (rating) {
       html += `<textarea class="input review-comment" id="review-comment" maxlength="500" rows="2"
-        placeholder="تحب تقولنا حاجة؟ (اختياري)">${esc(comment)}</textarea>
-        <button class="btn btn-block" id="review-send" type="button">ابعت رأيك</button>`;
+        placeholder="${esc(t('review_placeholder'))}">${esc(comment)}</textarea>
+        <button class="btn btn-block" id="review-send" type="button">${esc(t('review_send'))}</button>`;
     } else {
-      html += '<p class="review-sub">قيّمنا من 1 لـ 5</p>';
+      html += `<p class="review-sub">${esc(t('review_sub'))}</p>`;
     }
   }
   if (googleUrl) {
-    html += `<a class="btn btn-primary btn-block" id="review-link" href="${esc(googleUrl)}" target="_blank" rel="noopener">قيّمنا على جوجل</a>`;
+    html += `<a class="btn btn-primary btn-block" id="review-link" href="${esc(googleUrl)}" target="_blank" rel="noopener">${esc(t('review_google'))}</a>`;
   }
   return html;
 }

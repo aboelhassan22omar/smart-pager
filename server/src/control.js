@@ -135,6 +135,10 @@ export const CONTROL_MIGRATIONS = [
   `
   ALTER TABLE owners ADD COLUMN phone TEXT;
   `,
+  // 10: the brand's own wording of what customers read (JSON of the changed sentences).
+  `
+  ALTER TABLE brands ADD COLUMN texts TEXT;
+  `,
 ];
 
 export const branchDbPath = (brandId, branchId) => `tenants/${brandId}/${branchId}/pager.db`;
@@ -339,6 +343,22 @@ export class ControlStore {
       this.sql.restoreBrandBranches.run(id);
     });
     this.refreshPlanStatuses();
+  }
+
+  // ---- the brand's customer texts ----
+
+  /** The sentences this brand reworded: { key: text }. */
+  brandTexts(brandId) {
+    try {
+      return JSON.parse(this.db.prepare('SELECT texts FROM brands WHERE id = ?').get(brandId)?.texts || '{}');
+    } catch {
+      return {};
+    }
+  }
+
+  setBrandTexts(brandId, texts) {
+    this.db.prepare('UPDATE brands SET texts = ? WHERE id = ?').run(Object.keys(texts).length ? JSON.stringify(texts) : null, brandId);
+    return this.brandTexts(brandId);
   }
 
   // ---- owners ----

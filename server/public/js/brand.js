@@ -4,6 +4,7 @@ import { applyTheme } from './color.js';
 import { appInviteText, branchCardHtml, devicesHtml, renewalHtml, renewalInfo } from './dashboard.js';
 import { openForm } from './forms.js';
 import { icons } from './icons.js';
+import { TEXT_DEFAULTS, TEXT_GROUPS, TEXT_MAX } from './texts.js';
 import { toast } from './staff.js';
 import { api, esc, isCashierApp, isIOS, shopIdFromPath } from './util.js';
 
@@ -148,6 +149,50 @@ function render() {
         <button class="btn btn-sm" data-act="rename" data-branch="${esc(b.id)}" type="button">غيّر الاسم</button>`,
     })).join('')}</div>`
     : '<p class="empty-note">لسه مفيش فروع. كلّم Aurexis عشان نضيفها.</p>';
+}
+
+// ---------- what customers read, in the brand's own words ----------
+
+let brandTexts = {};
+
+function renderTexts() {
+  const changed = Object.keys(brandTexts).length;
+  $('texts-body').innerHTML = `
+    <div class="creds texts-card">
+      <p>كل جملة بتظهر للعميل في صفحة طلبه تقدر تكتبها بطريقتك: اسم بطاقة الختم، سؤال التقييم، الزراير، رسالة الطابور... في كل الفروع.</p>
+      <p class="muted small">${changed ? `غيّرت ${changed} ${changed === 1 ? 'جملة' : changed === 2 ? 'جملتين' : 'جمل'}، والباقي بالكلام الأصلي.` : 'كله بالكلام الأصلي دلوقتي.'}
+        رسايل «بيتحضّر» و«جاهز» بتتغيّر من إعدادات كل فرع.</p>
+      ${data.demo ? '' : '<button class="btn btn-primary" data-act="texts" type="button">عدّل الكلام</button>'}
+    </div>`;
+}
+
+async function loadTexts() {
+  try {
+    brandTexts = (await api(`${base}/texts`)).texts ?? {};
+  } catch {
+    brandTexts = {};
+  }
+  renderTexts();
+}
+
+function openTexts() {
+  openForm({
+    title: 'الكلام اللي العميل بيشوفه',
+    intro: 'اكتب الجملة زي ما تحب تظهر. سيب الخانة فاضية عشان ترجع للكلام الأصلي (مكتوب باهت جوه الخانة). الكلمات اللي بين {} زي {n} و{reward} سيبها زي ما هي، بيتحط مكانها الرقم أو الهدية.',
+    submit: 'احفظ الكلام',
+    fields: TEXT_GROUPS.flatMap((g) => [
+      { type: 'heading', label: g.title },
+      ...g.items.map(([key, label]) => ({
+        name: key, label, value: brandTexts[key] ?? '', placeholder: TEXT_DEFAULTS[key], maxlength: TEXT_MAX,
+      })),
+    ]),
+    onSubmit: async (v) => {
+      const texts = Object.fromEntries(Object.keys(TEXT_DEFAULTS).map((k) => [k, v[k] ?? '']));
+      brandTexts = (await api(`${base}/texts`, { method: 'POST', body: { texts } })).texts;
+      renderTexts();
+      toast('اتحفظ، والعملاء هيشوفوه من الطلب الجاي');
+    },
+  });
 }
 
 // ---------- account: the owner's own email and phone ----------
@@ -409,7 +454,7 @@ async function boot() {
   showTab(firstTab());
   addEventListener('hashchange', () => showTab(location.hash.slice(1)));
   render();
-  await Promise.all([loadApp(), loadOwnerApp()]);
+  await Promise.all([loadApp(), loadOwnerApp(), loadTexts()]);
   mountAnalytics($('analytics'), { base, branches: data.branches });
   $('app-body').addEventListener('click', (e) => {
     const el = e.target.closest('[data-act], [data-copy]');
@@ -417,6 +462,9 @@ async function boot() {
   });
   setInterval(refresh, POLL_MS);
 
+  $('texts-body').addEventListener('click', (e) => {
+    if (e.target.closest('[data-act="texts"]')) openTexts();
+  });
   $('account-body').addEventListener('click', (e) => {
     const el = e.target.closest('[data-act]');
     if (el) accountAction(el.dataset.act);

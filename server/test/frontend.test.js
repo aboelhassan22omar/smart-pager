@@ -401,3 +401,29 @@ describe('renewal wording (owner cards, cashier settings)', async () => {
     assert.equal(renewalInfo({ status: 'suspended', reason: 'unpaid', until: null }).title, 'الفرع متوقف');
   });
 });
+
+describe('customer texts', async () => {
+  const { cleanTexts, setTexts, t, tHtml, TEXT_DEFAULTS } = await import('../public/js/texts.js');
+  const { aheadText } = await import('../public/js/queue-text.js');
+
+  test('defaults, the brand wording, and the values filled in', () => {
+    setTexts({});
+    assert.equal(aheadText(3), 'قدامك 3 طلبات');
+    setTexts({ ahead_many: 'فيه {n} قبلك' });
+    assert.equal(aheadText(4), 'فيه 4 قبلك');
+    assert.equal(t('order_label'), TEXT_DEFAULTS.order_label);
+    setTexts({});
+  });
+
+  test('HTML: the sentence and the values are escaped, values in strong', () => {
+    setTexts({ loyalty_won: '<b>yay</b> {reward}' });
+    const esc = (s) => s.replace(/</g, '&lt;');
+    assert.equal(tHtml('loyalty_won', { reward: '<x>' }, esc), '&lt;b>yay&lt;/b> <strong>&lt;x></strong>');
+    setTexts({});
+  });
+
+  test('cleaning: known keys, trimmed, not empty, not the default', () => {
+    assert.deepEqual(cleanTexts({ order_label: '  رقمك  ', ready_title: 'طلبك جاهز', x: 'y', review_sub: '' }).texts, { order_label: 'رقمك' });
+    assert.equal(cleanTexts({ order_label: 'x'.repeat(161) }).field, 'order_label');
+  });
+});
